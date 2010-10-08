@@ -28,6 +28,8 @@ character*(256) :: logmsg
 TYPE(winsockport) :: awp_0, awp_1, awp_2, awp_3
 logical :: use_TCP = .true.
 
+!DEC$ ATTRIBUTES DLLEXPORT :: use_TCP
+
 contains
 
 !-----------------------------------------------------------------------------------------
