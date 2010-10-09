@@ -75,12 +75,6 @@ do while (nmono < NMONO_INITIAL)
 	if (occupancy(x,y,z)%region /= MARROW) cycle
 	site = (/x,y,z/)
 	call addMono(site)
-!	mono(i)%ID = i
-!	mono(i)%region = MARROW
-!	mono(i)%site = (/x,y,z/)
-!	mono(i)%lastdir = random_int(1,6,kpar)
-!	mono(i)%S1P1 = 0
-!	occupancy(x,y,z)%species = MONOCYTE
 enddo
 
 !nstem = 500
