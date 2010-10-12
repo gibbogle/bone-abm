@@ -10,7 +10,7 @@
 #include "misc.h"
 #include "plot.h"
 #include "myvtk.h"
-#ifdef __WIN32
+#ifdef _WIN32
 #include "windows.h"
 #define sleep(n) Sleep(1000 * n)
 #endif
