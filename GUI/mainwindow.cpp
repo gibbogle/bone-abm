@@ -84,6 +84,8 @@ MainWindow::MainWindow(QWidget *parent)
 	savepos_start = 0;
 	ntimes = 0;
 
+	DISABLE_TABS = true;
+
 	QFileInfo cellfile_info(cellfile);
 	LOG_QMSG(cellfile_info.path());
 	LOG_QMSG(cellfile_info.fileName());
@@ -109,6 +111,11 @@ MainWindow::MainWindow(QWidget *parent)
 	vtk = new MyVTK(page_VTK);
 	vtk->init();
 	tabs->setCurrentIndex(0);
+	if (DISABLE_TABS) {
+		tab_monocyte->setEnabled(false);
+		tab_osteoclast->setEnabled(false);
+		tab_receptor->setEnabled(false);
+	}
 	goToInputs();
 }
 
@@ -210,12 +217,12 @@ void MainWindow::createLists()
 	distplot_list[0] = qp;
 	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DIVIDE1");
 	distplot_list[1] = qp;
-	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DIVIDE2");
-	distplot_list[2] = qp;
-	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DC_ANTIGEN");
-	distplot_list[3] = qp;
+//	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DIVIDE2");
+//	distplot_list[1] = qp;
+//	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DC_ANTIGEN");
+//	distplot_list[2] = qp;
 	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DC_LIFETIME");
-	distplot_list[4] = qp;
+	distplot_list[2] = qp;
 }
 
 //--------------------------------------------------------------------------------------------------------
@@ -229,13 +236,10 @@ void MainWindow:: drawDistPlots()
 	string name_str;
 	QString median_qstr, shape_qstr;
 	double median, shape;
-	for (int j=0; j<5; j++) {
+	for (int j=0; j<3; j++) {
 		qp = distplot_list[j];
         QString name = qp->objectName();
-		if (name.contains("TC_AVIDITY")) {
-			name_str = name.toStdString();
-			LOG_QMSG(name);
-		}
+		LOG_QMSG(name);
 		if (j == 0) {
 			qp->setTitle("TCR Avidity");
 			median_qstr = line_TC_AVIDITY_MEDIAN->text();
@@ -244,22 +248,26 @@ void MainWindow:: drawDistPlots()
 			qp->setTitle("First division time (hrs)");
 			median_qstr = line_DIVIDE1_MEDIAN->text();
 			shape_qstr = line_DIVIDE1_SHAPE->text();
+			/*
 		} else if (j == 2) {
 			qp->setTitle("Later division time (hrs)");
 			median_qstr = line_DIVIDE2_MEDIAN->text();
 			shape_qstr = line_DIVIDE2_SHAPE->text();
-		} else if (j == 3) {
+		} else if (j == 2) {
 			qp->setTitle("DC antigen density");
 			median_qstr = line_DC_ANTIGEN_MEDIAN->text();
 			shape_qstr = line_DC_ANTIGEN_SHAPE->text();
-		} else if (j == 4) {
+			*/
+		} else if (j == 2) {
 			qp->setTitle("DC lifetime (days)");
 			median_qstr = line_DC_LIFETIME_MEDIAN->text();
 			shape_qstr = line_DC_LIFETIME_SHAPE->text();
 		}
+		LOG_MSG("drawDistPlots (a)")
 		median = median_qstr.toDouble();
 		shape = shape_qstr.toDouble();
         create_lognorm_dist(median,shape,nDistPts,x,prob);
+		LOG_MSG("drawDistPlots (b)")
 
         int n = dist_limit(prob,nDistPts);
         double xmax = x[n];
@@ -269,10 +277,12 @@ void MainWindow:: drawDistPlots()
 		}
         qp->setAxisScale(QwtPlot::xBottom, 0.0, xmax, 0.0);
         QwtPlotCurve *curve = new QwtPlotCurve("title");
-        curve->attach(qp);
+		LOG_MSG("drawDistPlots (c)")
+		curve->attach(qp);
         curve->setData(x, prob, n);
         curve_list[j] = curve;
 		qp->replot();
+		LOG_MSG("drawDistPlots (d)")
 	}
 	delete [] x;
 	x = NULL;
@@ -997,9 +1007,9 @@ void MainWindow::runServer()
     action_inputs->setEnabled(true);
     action_VTK->setEnabled(true);
 	action_save_snapshot->setEnabled(false);
-    tab_T->setEnabled(false);
-    tab_DC->setEnabled(false);
-    tab_TCR->setEnabled(false);
+	tab_monocyte->setEnabled(false);
+	tab_osteoclast->setEnabled(false);
+	tab_receptor->setEnabled(false);
     tab_run->setEnabled(false);
 
 	if (show_outputdata)
@@ -1023,7 +1033,8 @@ void MainWindow::runServer()
     connect(sthread1, SIGNAL(sh_output(QString)), this, SLOT(outputData(QString))); 
 	connect(sthread1, SIGNAL(sh_connected()), this, SLOT(preConnection()));
 	connect(sthread1, SIGNAL(sh_disconnected()), this, SLOT(postConnection()));
-    sthread1->start();
+//	connect(sthread0, SIGNAL(sh_disconnected()), this, SLOT(postConnection()));
+	sthread1->start();
 
 	sleep(1);
 
@@ -1134,8 +1145,7 @@ void MainWindow::initializeGraphs(RESULT_SET *R)
 
     graph_teffgen = new Plot("teffgen",R->casename);
     graph_teffgen->setTitle("Efferent Cognate Cells");
-	graph_teffgen->setAxisTitle(QwtPlot::yLeft, "No. of Cells");
-    
+	graph_teffgen->setAxisTitle(QwtPlot::yLeft, "No. of Cells");    
 	nGraphCases = 1;
 	graphResultSet[0] = R;
 
@@ -1308,10 +1318,12 @@ void MainWindow::postConnection()
     action_pause->setEnabled(false);
     action_stop->setEnabled(false);
 	action_save_snapshot->setEnabled(true);
-    tab_T->setEnabled(true);
-    tab_DC->setEnabled(true);
-    tab_TCR->setEnabled(true);
-    tab_run->setEnabled(true);
+	if (!DISABLE_TABS) {
+		tab_monocyte->setEnabled(true);
+		tab_osteoclast->setEnabled(true);
+		tab_receptor->setEnabled(true);
+	}
+	tab_run->setEnabled(true);
 
 	// Check if a result set of this name is already in the list, if so remove it
 	for (int i=0; i<result_list.size(); i++) {
@@ -1782,7 +1794,7 @@ void MainWindow::redrawDistPlot()
 {
         int i_m = 0, i_s = 0;
     QString sname = sender()->objectName();
-	for (int k=0; k<5; k++) {
+	for (int k=0; k<3; k++) {
 		QwtPlot *qp = distplot_list[k];
         QString tag = qp->objectName().mid(8);
         QString tag_m = tag + "_MEDIAN";

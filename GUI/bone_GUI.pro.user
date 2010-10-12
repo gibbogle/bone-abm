@@ -99,7 +99,7 @@
     <valuelist key="Qt4ProjectManager.Qt4RunConfiguration.UserEnvironmentChanges" type="QVariantList"/>
     <value key="Qt4ProjectManager.Qt4RunConfiguration.UserSetName" type="bool">false</value>
     <value key="Qt4ProjectManager.Qt4RunConfiguration.UserSetWorkingDirectory" type="bool">true</value>
-    <value key="Qt4ProjectManager.Qt4RunConfiguration.UserWorkingDirectory" type="QString">C:\Users\Gib\bone_GUI-build-desktop\release</value>
+    <value key="Qt4ProjectManager.Qt4RunConfiguration.UserWorkingDirectory" type="QString">C:\Users\Gib\bone-abm\GUI-build\execution</value>
    </valuemap>
    <value key="ProjectExplorer.Target.RunConfigurationCount" type="int">1</value>
   </valuemap>

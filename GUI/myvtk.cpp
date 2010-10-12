@@ -160,8 +160,8 @@ void MyVTK::read_cell_positions(QString infileName, QString outfileName, bool sa
 					cp.x = s[2].toInt();
 					cp.y = s[3].toInt();
 					cp.z = s[4].toInt();
-					cp.diameter = s[5].toDouble();
-					cp.state = s[6].toDouble();
+//					cp.diameter = s[5].toDouble();
+//					cp.state = s[6].toDouble();
 					TCpos_list.append(cp);
 				} else if (s[0].compare("M") == 0) {
 					CELL_POS cp;
@@ -169,8 +169,8 @@ void MyVTK::read_cell_positions(QString infileName, QString outfileName, bool sa
 					cp.x = s[2].toInt();
 					cp.y = s[3].toInt();
 					cp.z = s[4].toInt();
-					cp.diameter = s[5].toDouble();
-					cp.state = s[6].toDouble();
+//					cp.diameter = s[5].toDouble();
+					cp.state = s[5].toInt();
 					MCpos_list.append(cp);
 				} else if (s[0].compare("B") == 0) {
 					BOND_POS cp;
@@ -503,9 +503,13 @@ void MyVTK::process_Mcells()
 		}
 		if (actor != 0) {
 			actor->SetPosition(cp.x, cp.y, cp.z);
-			if (cp.state == 0.0) {
+			if (cp.state == 0) {			// MOTILE
 				r = 0; g = 0.5; b = 0.5;
-			} else if (cp.state == 1.0) {
+			} else if (cp.state == 1) {		// CROSSING
+				r = 0; g = 1; b = 0;
+			} else if (cp.state < 101) {	// FUSING
+				r = (154 + cp.state)/255.; g = 1; b = (101 - cp.state)/255.;
+			} else {						// FUSED
 				nf++;
 				r = 1; g = 1; b = 0;
 			}
@@ -790,8 +794,8 @@ bool MyVTK::nextFrame()
 				cp.x = s[2].toInt();
 				cp.y = s[3].toInt();
 				cp.z = s[4].toInt();
-				cp.diameter = s[5].toDouble();
-				cp.state = s[6].toDouble();
+//				cp.diameter = s[5].toDouble();
+//				cp.state = s[6].toDouble();
 				TCpos_list.append(cp);
 			} else if (s[0].compare("M") == 0) {
 				CELL_POS cp;
@@ -799,8 +803,8 @@ bool MyVTK::nextFrame()
 				cp.x = s[2].toInt();
 				cp.y = s[3].toInt();
 				cp.z = s[4].toInt();
-				cp.diameter = s[5].toDouble();
-				cp.state = s[6].toDouble();
+//				cp.diameter = s[5].toDouble();
+				cp.state = s[5].toInt();
 				MCpos_list.append(cp);
 			} else if (s[0].compare("B") == 0) {
 				BOND_POS cp;

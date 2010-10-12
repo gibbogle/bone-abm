@@ -49,9 +49,6 @@ void SocketHandler::run()
     tcpServer = new QTcpServer(this);
 	connect(tcpServer, SIGNAL(newConnection()), this, SLOT(processor()), Qt::DirectConnection);
     if (!tcpServer->listen(hostAddress,qport)) {
- //       QMessageBox::critical(this, tr("Fortune Server"),
- //                              tr("Unable to start the server: %1.")
- //                              .arg(tcpServer->errorString()));
 		sprintf(msg,"Unable to start the server: port: %d", port);
 		LOG_MSG(msg);
         return;
@@ -148,7 +145,6 @@ void ExecThread::run()
 
 	LOG_MSG("Invoking DLL...");
 	const char *infile, *outfile, *resfile, *runfile;
-//    int ncpu = 3;
 	QString infile_path = inputFile;
 	QString casename = QFileInfo(inputFile).baseName();
     QString outfile_path = casename + ".res";	
@@ -183,7 +179,8 @@ void ExecThread::run()
 //					len_resfile, \
 //					len_runfile);
 #else
-	EXECUTE(&nsteps);
+//	EXECUTE(&nsteps);
+	EXECUTE(const_cast<char *>(infile),len_infile);
 #endif
 	LOG_MSG("Returned from execute");
 
@@ -203,12 +200,14 @@ void ExecThread::run()
 
 #ifdef __GFORTRAN_DLL__
 //	typedef int (*MyPrototype)(int *, char *, char *, char *, char *, int, int, int, int);
-	typedef int (*MyPrototype)(int *);
+//	typedef int (*MyPrototype)(int *);
+	typedef int (*MyPrototype)(char *, int);
 	LOG_MSG("__GNUC__ is defined");
 	MyPrototype execute = (MyPrototype) myLib.resolve("__bone_mod_MOD_execute");	// NOTE: DLL procedure name must be in uppercase
 	if (execute) {
 			LOG_MSG("resolved EXECUTE()");
-			execute(&nsteps);
+			execute(const_cast<char *>(infile), len_infile);
+//			execute(&nsteps);
 //					const_cast<char *>(infile),   \
 //					const_cast<char *>(outfile),  \
 //					const_cast<char *>(resfile),  \
@@ -221,11 +220,13 @@ void ExecThread::run()
 #else
 
 //	typedef int (*MyPrototype)(int *, char *, int, char *, int, char *, int, char *, int);
-	typedef int (*MyPrototype)(int *);
+//	typedef int (*MyPrototype)(int *);
+	typedef int (*MyPrototype)(char *, int);
 	MyPrototype execute = (MyPrototype) myLib.resolve("EXECUTE");	// NOTE: DLL procedure name must be in uppercase
 	if (execute) {	
 		LOG_MSG("resolved EXECUTE()");
-		execute(&nsteps);
+		execute(const_cast<char *>(infile), len_infile);
+//		execute(&nsteps);
 //			const_cast<char *>(infile), len_infile, \
 //			const_cast<char *>(outfile), len_outfile, \
 //			const_cast<char *>(resfile), len_resfile, \

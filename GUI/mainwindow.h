@@ -221,6 +221,8 @@ private:
 	int savepos_start;
 	int ncpu;
 
+	bool DISABLE_TABS;
+
 	RESULT_SET *newR;
 
 	Plot *graph_act;

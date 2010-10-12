@@ -34,8 +34,8 @@ using namespace std;
 struct cell_pos {
 	int tag;
 	int x, y, z;
-	double diameter;
-	double state;
+//	double diameter;
+	int state;
 };
 typedef cell_pos CELL_POS;
 
