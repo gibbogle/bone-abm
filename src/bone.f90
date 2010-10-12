@@ -26,17 +26,23 @@ end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
-subroutine setup(ok)
+subroutine setup(infile,ok)
 logical :: ok
-integer :: x, y, z, del, ix, iy, i, site(3)
-real :: xc, yc, fac, xx, yy
+character*(*) :: infile
+integer :: x, y, z, del, dx, dy, dz, ix, i, site(3)
+real :: xc, yc, zc, fac, x2, y2, z2
 integer :: kpar = 0
 real :: R
 
 ok = .true.
+inputfile = infile
+call read_inputfile(ok)
+if (.not.ok) return
 call rng_initialisation
 call make_reldir
 
+write(logmsg,*) 'NX,NY,NZ: ',NX,NY,NZ
+call logger(logmsg)
 allocate(occupancy(NX,NY,NZ))
 occupancy%region = MARROW
 occupancy%indx = 0
@@ -45,27 +51,53 @@ occupancy%intensity = 0
 do y = 1,NBY
 	occupancy(:,y,:)%region = BONE
 enddo
+
+! Set up capillary sites - this is currently VERY CRUDE
+! If the centre of a site (cube) falls inside the capillary tube,
+! the site is tagged BLOOD.  
+! Note that (xc,yc,zc), which lies on the capillary centreline,
+! is in (x,y,z) coord values, offset from site index values by 0.5
+! E.g. if site(:) = (/2, 3, 4/), corresponding (x,y,z) = (/1.5, 2.5, 3.5/)
+! This has the origin of the axis system at the lower left rear corner
+! of the region.  (Note that in OpenGL/VTK Z axis is out of the screen.)
+
 !write(*,*) 'z=1:  x,y: ',cap(1,1),cap(1,2)
 !write(*,*) 'z=NZ: x,y: ',cap(2,1),cap(2,2)
-del = capR+1
-do z = 1,NZ
-	fac = (z-1.)/(NZ-1.)
-	xc = cap(1,1)*(1-fac) + cap(2,1)*fac
+del = capR+2
+do ix = 1,NX
+	xc = ix - 0.5
+	fac = (xc-1.)/(NX-1.)
+	zc = cap(1,1)*(1-fac) + cap(2,1)*fac
 	yc = cap(1,2)*(1-fac) + cap(2,2)*fac
-	do ix = -del,del
-		do iy = -del,del
-			x = xc + ix + 0.5
-			y = yc + iy + 0.5
-			if ((x-xc)**2 + (y-yc)**2 <= capR**2) then
-				occupancy(x,y,z)%region = BLOOD
-!				write(*,'(3i4)') x,y,z
-			endif
+	do dx = -del,del
+		x = xc + dx
+		if (x < 1 .or. x > NX) cycle
+		do dy = -del,del
+			y = yc + dy
+			if (y <= NBY .or. y > NY) cycle
+			do dz = -del,del
+				z = zc + dz
+				if (z < 1 .or. z > NZ) cycle
+				x2 = (x - 0.5 - xc)*(x - 0.5 - xc)
+				y2 = (y - 0.5 - yc)*(y - 0.5 - yc)
+				z2 = (z - 0.5 - zc)*(z - 0.5 - zc)
+				! These are the squared distances, in three axis directions, from the
+				! site (cube) midpoint to the capillary centreline location (xc,yc,zc)
+				if (x2+y2+z2 <= capR**2) then
+					occupancy(x,y,z)%region = BLOOD
+					if (ix <= 10) then
+						write(nflog,'(4f6.1,3i4)') xc,yc,zc,sqrt(x2+y2+z2),x,y,z
+					endif
+				endif
+			enddo
 		enddo
 	enddo
 enddo
-
+NMONO_INITIAL = (NX*NY*NZ)/250
 nclast = 0
 nmono = 0
+nleft = 0
+mono_cnt = 0
 allocate(mono(MAX_MONO))
 allocate(clast(MAX_CLAST))
 do while (nmono < NMONO_INITIAL)
@@ -77,7 +109,6 @@ do while (nmono < NMONO_INITIAL)
 	call addMono(site)
 enddo
 
-!nstem = 500
 allocate(stem(NSTEM))
 i = 0
 do while (i < NSTEM)
@@ -89,7 +120,7 @@ do while (i < NSTEM)
 	stem(i)%ID = i
 	stem(i)%site = (/x,y,z/)
 	call random_number(R)
-	stem(i)%dividetime = R*STEM_CYCLETIME
+	stem(i)%dividetime = R*STEM_CYCLETIME	! stem cells are due to divide at random times
 	occupancy(x,y,z)%species = STEMCELL
 enddo
 
@@ -107,16 +138,19 @@ end subroutine
 !------------------------------------------------------------------------------------------------
 subroutine updater
 real :: S
-integer :: i, k, irel, dir, region, kcell, site(3)
+integer :: i, k, iclast, irel, dir, region, kcell, site(3)
 real :: tnow, R
+type(osteoclast_type), pointer :: pclast
 
 tnow = istep*DELTA_T
+! Monocyte S1P1 level grows
 do i = 1,nmono
 	if (mono(i)%region /= MARROW) cycle
 	S = mono(i)%S1P1
 	S = S + DELTA_T*rate_S1P1(S)
 	mono(i)%S1P1 = min(S,1.0)
 enddo
+! Stem cells divide
 do i = 1,NSTEM
 	if (tnow > stem(i)%dividetime) then
 		call random_number(R)
@@ -135,26 +169,34 @@ do i = 1,NSTEM
 		enddo
 	endif
 enddo
-do i = 1,nclast
-	if (clast(i)%status /= ALIVE) cycle
-	if (tnow > clast(i)%dietime) then
-		call clastDeath(i)
+! Osteoclasts complete fusing, dissolve bone, or die.
+do iclast = 1,nclast
+	pclast => clast(iclast)
+	if (pclast%status == DEAD) cycle
+	if (pclast%status == ALIVE .and. tnow > pclast%dietime) then
+		call clastDeath(iclast)
 		cycle
 	endif
-	do k = 1,clast(i)%npit
-		if (clast(i)%pit(k)%fraction > 0) then
-			clast(i)%pit(k)%fraction = clast(i)%pit(k)%fraction - clast(i)%pit(k)%rate*DELTA_T
-			if (clast(i)%pit(k)%fraction <= 0) then
-				site = clast(i)%pit(k)%site
+	if (pclast%status == FUSING) then
+		if (tnow >= pclast%entrytime) then
+			call completeFusing(iclast)
+			cycle
+		endif
+	endif
+	do k = 1,pclast%npit
+		if (pclast%pit(k)%fraction > 0) then
+			pclast%pit(k)%fraction = pclast%pit(k)%fraction - pclast%pit(k)%rate*DELTA_T
+			if (pclast%pit(k)%fraction <= 0) then
+				site = pclast%pit(k)%site
 				occupancy(site(1),site(2),site(3))%region = PIT
 				occupancy(site(1),site(2),site(3))%indx = 0
 				if (site(2) > 1) then
 					write(logmsg,*) 'Created pit site: ',site
 					call logger(logmsg)
-					clast(i)%pit(k)%site(2) = site(2) - 1
-					clast(i)%pit(k)%fraction = 1
+					pclast%pit(k)%site(2) = site(2) - 1
+					pclast%pit(k)%fraction = 1
 				else
-					clast(i)%pit(k)%fraction = 0
+					pclast%pit(k)%fraction = 0
 				endif
 			endif
 		endif
@@ -177,7 +219,7 @@ mono_cnt = mono_cnt + 1
 mono(nmono)%ID = nmono
 mono(nmono)%site = site
 mono(nmono)%region = MARROW
-mono(nmono)%status = ALIVE
+mono(nmono)%status = MOTILE
 mono(nmono)%lastdir = random_int(1,6,kpar)
 mono(nmono)%S1P1 = 0
 occupancy(site(1),site(2),site(3))%species = MONOCYTE
@@ -248,6 +290,9 @@ enddo
 end subroutine
 
 !------------------------------------------------------------------------------------------------
+! Each osteocyte(?) signal is checked to see if the number of monocytes that have gathered is
+! sufficient to initiate osteoclastogenesis.  Currently only the number of monocytes within
+! a specified volume is used to determine the initiation.  It would be 
 !------------------------------------------------------------------------------------------------
 subroutine checkSignals(ok)
 logical :: ok
@@ -292,7 +337,7 @@ do isig = 1,nsignal
 	if (n >= 0.8*nt) then
 		write(logmsg,*) 'fusing monocytes: ',n,nt
 		call logger(logmsg)
-		call fuser(isig,n,ok)
+		call startFusing(isig,n,ok)
 		if (ok == .false.) return
 		call setSignal(isig,OFF,ok)
 		if (ok == .false.) return
@@ -306,7 +351,7 @@ end subroutine
 ! i.e. that it is normal to the Y axis.  This makes it easy to determine which
 ! bone sites are subject to resorption.
 !------------------------------------------------------------------------------------------------
-subroutine fuser(isig,n,ok)
+subroutine startFusing(isig,n,ok)
 integer :: isig,n
 logical :: ok
 integer :: site(3)
@@ -319,8 +364,14 @@ type(occupancy_type), pointer :: p
 
 ok = .true.
 tnow = istep*DELTA_T
-nclast = nclast + 1
 site = signal(isig)%site
+nclast = nclast + 1
+clast(nclast)%ID = nclast
+clast(nclast)%site = site
+clast(nclast)%normal = signal(isig)%normal
+clast(nclast)%status = FUSING
+clast(nclast)%fusetime = tnow
+clast(nclast)%entrytime = tnow + FUSING_TIME
 x1 = site(1) - (SIG_RADIUS+1)
 x2 = site(1) + (SIG_RADIUS+1)
 y1 = site(2) - (SIG_RADIUS+1)
@@ -337,7 +388,9 @@ do x = x1,x2
 				.and. p%region == MARROW .and. p%indx /= 0) then
 				cnt = cnt+1
 				clast(nclast)%mono(cnt) = p%indx
-				mono(p%indx)%status = FUSED
+				mono(p%indx)%iclast = nclast
+				mono(p%indx)%status = FUSING
+				mono(p%indx)%exittime = clast(nclast)%entrytime
 				yb = y
 				do
 					yb = yb - 1
@@ -368,12 +421,7 @@ do x = x1,x2
 		enddo
 	enddo
 enddo
-clast(nclast)%ID = nclast
-clast(nclast)%site = site
-clast(nclast)%normal = signal(isig)%normal
-clast(nclast)%status = ALIVE
-clast(nclast)%entrytime = tnow
-clast(nclast)%dietime = tnow + clastLifetime()
+
 clast(nclast)%count = cnt
 clast(nclast)%npit = npit
 allocate(clast(nclast)%pit(npit))
@@ -382,6 +430,21 @@ do i = 1,npit
 	clast(nclast)%pit(i)%fraction = 1.0
 	d = sqrt(real((bonesite(1,i)-site(1))**2 + (bonesite(2,i)-site(2))**2 + (bonesite(3,i)-site(3))**2))
 	clast(nclast)%pit(i)%rate = resorptionRate(cnt,d)
+enddo
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+subroutine completeFusing(iclast)
+integer :: iclast
+integer :: i
+real :: tnow
+
+tnow = istep*DELTA_T
+clast(iclast)%status = ALIVE
+clast(iclast)%dietime = tnow + clastLifetime()
+do i = 1,clast(iclast)%count
+	mono(clast(iclast)%mono(i))%status = FUSED
 enddo
 end subroutine
 
@@ -477,8 +540,8 @@ end subroutine
 !--------------------------------------------------------------------------------
 subroutine save_cell_positions
 !!!use ifport
-integer :: k, kcell, site(3), j, nfused, x, y, z
-real :: mono_state
+integer :: k, kcell, iclast, site(3), j, nfused, x, y, z, status, mono_state
+real :: tnow, t1, t2, fraction
 !integer :: itcstate, stype, ctype
 real :: clast_diam = 0.9
 real :: mono_diam = 0.5
@@ -486,6 +549,7 @@ logical :: ex
 character*(12) :: fname = 'cell_pos.dat'
 character*(9) :: removefile = 'TO_REMOVE'
 
+tnow = istep*DELTA_T
 if (simulation_start) then
 	inquire(file=fname,exist=ex)
 	if (ex) then
@@ -521,16 +585,28 @@ open(nfpos,file=fname,status='new')
 if (nmono > 0) then
 	nfused = 0
     do kcell = 1,nmono
-		if (mono(kcell)%status == DEAD) cycle
+		status = mono(kcell)%status
+		if (status == DEAD) cycle
 		if (mono(kcell)%region /= MARROW) cycle
-		if (mono(kcell)%status == FUSED) then
-			mono_state = 1.0
+		if (status == CROSSING) then
+			mono_state = 1
+		elseif (status == FUSING) then
+			iclast = mono(kcell)%iclast
+			t1 = clast(iclast)%fusetime
+			t2 = clast(iclast)%entrytime
+			fraction = min(1.0,(tnow-t1)/(t2-t1))
+			mono_state = 2 + fraction*99
+		elseif (status == FUSED) then
+			mono_state = 101
 			nfused = nfused + 1
 		else
-            mono_state = 0.0
+            mono_state = 0
 		endif
         site = mono(kcell)%site
-        write(nfpos,'(a2,i4,3i4,f4.1,f5.2)') 'M ',kcell-1, site, mono_diam, mono_state
+        write(nfpos,'(a2,i6,4i4)') 'M ',kcell-1, site, mono_state
+        if (status == FUSING .or. status == FUSED) then
+			write(nflog,*) istep, kcell, site, mono_state
+		endif
     enddo
     if (nfused > 0) then
 	    write(logmsg,*) 'nfused: ',nfused
@@ -539,7 +615,7 @@ if (nmono > 0) then
 endif
 
 ! Capillary section
-write(nfpos,'(a,6i4,f5.2)') 'C ',cap(1,1),cap(1,2),1,cap(2,1),cap(2,2),NZ,capR
+write(nfpos,'(a,6i4,f5.2)') 'C ',1,cap(1,2),cap(1,1),NZ,cap(2,2),cap(2,1),capR
 
 ! Pit section
 do x = 1,NX
@@ -613,6 +689,111 @@ if (paused) then
 endif
 end subroutine
 
+!----------------------------------------------------------------------------------------
+!----------------------------------------------------------------------------------------
+subroutine read_inputfile(ok)
+logical :: ok
+real :: TC_AVIDITY_MEAN,TC_AVIDITY_SHAPE,TC_STIM_RATE_CONSTANT,TC_STIM_HALFLIFE,divide_mean1,divide_shape1
+real :: DC_LIFETIME_MEAN,DC_LIFETIME_SHAPE
+real :: IL2_THRESHOLD,ACTIVATION_THRESHOLD,FIRST_DIVISION_THRESHOLD,DIVISION_THRESHOLD,EXIT_THRESHOLD,STIMULATION_LIMIT
+real :: chemo_radius,chemo_K_exit,chemo_K_DC
+
+ok = .false.
+open(nfinp,file=inputfile,status='old')
+
+read(nfinp,*) TC_AVIDITY_MEAN				! mean of avidity distribution (only if fix_avidity = false)
+read(nfinp,*) TC_AVIDITY_SHAPE			    ! shape -> 1 gives normal dist with small variance
+read(nfinp,*) TC_STIM_RATE_CONSTANT			! rate const for TCR stimulation (-> molecules/min)
+read(nfinp,*) TC_STIM_HALFLIFE				! halflife of T cell stimulation (hours)
+read(nfinp,*) divide_mean1
+read(nfinp,*) divide_shape1
+read(nfinp,*) BETA							! speed: 0 < beta < 1		(0.65)
+read(nfinp,*) RHO							! persistence: 0 < rho < 1	(0.95)
+
+read(nfinp,*) DC_LIFETIME_MEAN				! days
+read(nfinp,*) DC_LIFETIME_SHAPE 			! days
+
+read(nfinp,*) IL2_THRESHOLD					! stimulation needed to initiate IL-2/CD25 production
+read(nfinp,*) ACTIVATION_THRESHOLD			! stimulation needed for activation
+read(nfinp,*) FIRST_DIVISION_THRESHOLD		! activation level needed for first division
+read(nfinp,*) DIVISION_THRESHOLD			! activation level needed for subsequent division
+read(nfinp,*) EXIT_THRESHOLD				! activation level below which exit is permitted
+read(nfinp,*) STIMULATION_LIMIT				! maximum activation level
+
+read(nfinp,*) NX							! size of cubical region
+
+read(nfinp,*) exit_rule						! 1 = no chemotaxis, 2 = chemotaxis
+read(nfinp,*) exit_region					! region for cell exits 1 = capillary, 2 = sinusoid
+read(nfinp,*) cross_prob					! probability (/timestep) of monocyte egress to capillary
+read(nfinp,*) chemo_radius					! radius of chemotactic influence (sites)
+read(nfinp,*) chemo_K_exit					! level of chemotactic influence towards exits
+read(nfinp,*) chemo_K_DC					! level of chemotactic influence towards DCs
+
+read(nfinp,*) days							! number of days to simulate
+read(nfinp,*) seed(1)						! seed vector(1) for the RNGs
+read(nfinp,*) seed(2)						! seed vector(2) for the RNGs
+read(nfinp,*) ncpu							! number of threads, not used currently
+read(nfinp,*) NT_GUI_OUT					! interval between GUI outputs (timesteps)
+read(nfinp,*) SPECIES						! animal species
+close(nfinp)
+!call logger('Finished reading input file')
+
+if (mod(NX,2) /= 0) NX = NX+1				! ensure that NX is even
+NY = NX
+NZ = NX
+DELTA_X = MONOCYTE_DIAMETER
+chemo_radius = chemo_radius/DELTA_X
+!write(*,*) 'DC_RADIUS, chemo_radius: ',DC_RADIUS,chemo_radius
+!chemo_N = max(3,int(chemo_radius + 0.5))	! convert from um to lattice grids
+!write(*,*) 'chemo_N: ',chemo_N
+! Note that currently exit chemotaxis and DC chemotaxis are treated in the same way - same decay
+!chemo_exp = log(1/CHEMO_MIN)/log(chemo_radius)
+
+!sigma = log(TC_AVIDITY_SHAPE)
+!TC_AVIDITY_MEDIAN = TC_AVIDITY_MEAN/exp(sigma*sigma/2)
+!sigma = log(DC_ANTIGEN_SHAPE)
+!DC_ANTIGEN_MEDIAN = DC_ANTIGEN_MEAN/exp(sigma*sigma/2)
+!sigma = log(DC_LIFETIME_SHAPE)
+!DC_LIFETIME_MEDIAN = DC_LIFETIME_MEAN/exp(sigma*sigma/2)
+
+!sigma = log(divide_shape1)
+!divide_dist1%p1 = log(60*divide_mean1/exp(sigma*sigma/2))
+!divide_dist1%p2 = sigma
+!sigma = log(divide_shape2)
+!divide_dist2%p1 = log(60*divide_mean2/exp(sigma*sigma/2))
+!divide_dist2%p2 = sigma
+!write(*,*) 'divide_dist2: ',divide_dist2
+
+!if (chemo_K_exit == 0.0) then
+!    ep_factor = 2.4
+!elseif (chemo_K_exit <= 0.2) then
+!    ep_factor = 2.3
+!elseif (chemo_K_exit <= 0.4) then
+!    ep_factor = 2.2
+!elseif (chemo_K_exit <= 0.6) then
+!    ep_factor = 2.15
+!elseif (chemo_K_exit <= 0.8) then
+!    ep_factor = 2.1
+!else
+!    ep_factor = 2.1
+!endif
+
+!call setup_dists
+
+Nsteps = days*60*24/DELTA_T
+
+!open(nfout,file=outputfile,status='replace')
+!if (save_input) then
+!    call save_inputfile(inputfile)
+!    call save_parameters
+!	call save_inputfile(fixedfile)
+!endif
+!write(*,*) 'open resultfile: ',resultfile
+
+ok = .true.
+end subroutine
+
+
 !-----------------------------------------------------------------------------------------
 !-----------------------------------------------------------------------------------------
 subroutine connection(awp,port,error)
@@ -683,8 +864,7 @@ end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
-subroutine simulate(nsteps,ok)
-integer :: nsteps
+subroutine simulate(ok)
 logical :: ok
 integer :: error
 
@@ -701,7 +881,7 @@ do istep = 1,nsteps
 	endif
 	call check_pause	
 	if (mod(istep,100) == 0) then
-		write(logmsg,*) 'istep: ',istep,mono_cnt
+		write(logmsg,'(a,4i6)') 'istep: ',istep,mono_cnt,nmono,nleft
 		call logger(logmsg)
 	endif
 	if (mod(istep,100) == 0) then
@@ -719,24 +899,87 @@ end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
-subroutine terminate
+subroutine wrapup
 call par_zigfree
 if (allocated(occupancy)) deallocate(occupancy)
 if (allocated(mono)) deallocate(mono)
 if (allocated(clast)) deallocate(clast)
 if (allocated(stem)) deallocate(stem)
-close(nflog)
 end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
-subroutine execute(nsteps)
+subroutine terminate(success)
+logical :: success
+character*(8), parameter :: quit = '__EXIT__'
+integer :: error, i
+
+call wrapup
+
+if (success) then
+	call logger(' Execution successful')
+else
+	call logger('  === Execution failed ===')
+	call sleeper(1)
+endif
+close(nflog)
+
+if (use_TCP) then
+	if (stopped) then
+	    call winsock_close(awp_0)
+	    call winsock_close(awp_1)
+	else
+	    call winsock_send(awp_0,quit,8,error)
+	    call winsock_close(awp_0)
+!	    call logger("closed PORT_0")
+	    call winsock_send(awp_1,quit,8,error)
+	    call winsock_close(awp_1)
+!	    call logger("closed PORT_1")
+	endif
+endif
+
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+subroutine execute(infile)
 !DEC$ ATTRIBUTES DLLEXPORT :: EXECUTE
 !DEC$ ATTRIBUTES C, REFERENCE, MIXED_STR_LEN_ARG, ALIAS:"EXECUTE" :: execute
-integer :: nsteps
+character*(*) :: infile
 logical :: ok
 
 open(nflog,file='bone.log',status='replace')
+awp_0%is_open = .false.
+awp_1%is_open = .false.
+
+#ifdef GFORTRAN
+    write(logmsg,'(a)') 'Built with GFORTRAN'
+	call logger(logmsg)
+#endif
+
+logmsg = 'OS??'
+#ifdef LINUX
+    write(logmsg,'(a)') 'OS is Linux'
+#endif
+#ifdef OSX
+    write(logmsg,'(a)') 'OS is OS-X'
+#endif
+#ifdef _WIN32
+    write(logmsg,'(a)') 'OS is Windows'
+#endif
+#ifdef WINDOWS
+    write(logmsg,'(a)') 'OS is Windows'
+#endif
+call logger(logmsg)
+
+!#ifdef OPENMP
+#if defined(OPENMP) || defined(_OPENMP)
+    write(logmsg,'(a)') 'Executing with OpenMP'
+	call logger(logmsg)
+#endif
+
+write(logmsg,*) 'inputfile:  ', infile
+call logger(logmsg)
 if (use_tcp) then
 	call logger('call connecter')
 	call connecter(ok)
@@ -746,15 +989,15 @@ if (use_tcp) then
 	endif
 	call logger('did connecter')
 endif
-call setup(ok)
+call setup(infile,ok)
 if (ok) then
-	call simulate(nsteps,ok)
+	call simulate(ok)
 	call logger('Ended simulation')
 	call logger('Execution successful')
 else
 	call logger('setup failed')
 endif
-call terminate
+call terminate(ok)
 end subroutine
 
 end module

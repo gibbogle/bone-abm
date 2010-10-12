@@ -7,16 +7,14 @@ implicit none
 
 type(occupancy_type), allocatable, target :: occupancy(:,:,:)
 type(monocyte_type), allocatable, target :: mono(:)
-type(osteoclast_type), allocatable :: clast(:)
+type(osteoclast_type), allocatable, target :: clast(:)
 type(osteoblast_type), allocatable :: blast(:)
 type(stem_type), allocatable :: stem(:)
 
 type(signal_type) :: signal(MAX_SIGNAL)
 
-integer :: nmono, mono_cnt, nsignal, nclast
 logical :: diagonal_jumps, clear_to_send, simulation_start, stopped
 integer :: Mnodes = 1
-integer :: seed(2) = (/1234,5678/)
 
 integer :: istep
 
@@ -27,8 +25,26 @@ character*(128) :: runningfile
 character*(256) :: logmsg
 TYPE(winsockport) :: awp_0, awp_1, awp_2, awp_3
 logical :: use_TCP = .true.
-
 !DEC$ ATTRIBUTES DLLEXPORT :: use_TCP
+
+! Parameters read from inputfile
+real :: BETA							! speed: 0 < beta < 1
+real :: RHO								! persistence: 0 < rho < 1
+integer :: NX,NY,NZ						! size of cubical region
+integer :: exit_rule					! 1 = no chemotaxis, 2 = chemotaxis
+integer :: exit_region					! region for cell exits 1 = capillary, 2 = sinusoid
+real :: cross_prob						! probability (/timestep) of monocyte egress to capillary
+real :: days							! number of days to simulate
+integer :: seed(2)						! seed vector(1) for the RNGs
+integer :: ncpu							! number of threads, not used currently
+integer :: NT_GUI_OUT					! interval between GUI outputs (timesteps)
+integer :: SPECIES						! animal species (0=mouse, 1=human)
+
+! Misc parameters
+real :: DELTA_X
+integer :: Nsteps
+integer :: NMONO_INITIAL
+integer :: nmono, mono_cnt, nsignal, nclast, nleft
 
 contains
 

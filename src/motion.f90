@@ -5,7 +5,6 @@ implicit none
 
 integer :: reldir(6,26)
 
-real :: RHO = 0.5, BETA = 0.2
 integer :: MODEL = MOORE26_MODEL
 real, parameter :: Kchemo = 1.0
 
@@ -25,12 +24,25 @@ integer :: kcell
 logical :: go
 integer :: kpar = 0
 integer :: kdbug = -1
+integer :: site(3)
+real :: tnow
 
+tnow = istep*DELTA_T
 do kcell = 1,nmono
-	if (mono(kcell)%status == ALIVE .and. mono(kcell)%region == MARROW) then	! interim criterion
+	if (mono(kcell)%status == MOTILE) then	! interim criterion
 		call mono_jumper(kcell,go,kpar)
 		if (kcell == kdbug) then
 			write(*,'(3i4)') mono(kcell)%site
+		endif
+	elseif (mono(kcell)%status == CROSSING) then
+		if (tnow >= mono(kcell)%exittime) then
+			mono(kcell)%status = LEFT
+			mono(kcell)%region = BLOOD
+			site = mono(kcell)%site
+			occupancy(site(1),site(2),site(3))%indx = 0
+			mono_cnt = mono_cnt - 1
+			nleft = nleft + 1
+!			write(*,'(a,2i6,2f6.3,i6)') 'monocyte leaves: ',istep,kcell,cell%S1P1,prob,mono_cnt
 		endif
 	endif
 enddo
@@ -329,6 +341,7 @@ logical function crossToBlood(kcell,site)
 real :: R, prob
 integer :: kcell, site(3)
 type(monocyte_type), pointer :: cell
+real :: tnow
 
 cell => mono(kcell)
 crossToBlood = .false.
@@ -336,11 +349,10 @@ if (cell%S1P1 > S1P1_THRESHOLD) then
 	prob = CROSS_PROB*(cell%S1P1 - S1P1_THRESHOLD)/(1 - S1P1_THRESHOLD)
 	call random_number(R)
 	if (R < prob) then
+		tnow = istep*DELTA_T
 		crossToBlood = .true.
-		cell%region = BLOOD
-		occupancy(site(1),site(2),site(3))%indx = 0
-		mono_cnt = mono_cnt - 1
-!		write(*,'(a,2i6,2f6.3,i6)') 'monocyte leaves: ',istep,kcell,cell%S1P1,prob,mono_cnt
+		cell%status = CROSSING
+		cell%exittime = tnow + CROSSING_TIME
 	endif
 endif
 end function

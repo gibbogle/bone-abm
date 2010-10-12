@@ -9,6 +9,7 @@ integer, parameter :: MARROW = 0
 integer, parameter :: PIT = -1
 integer, parameter :: BLOOD = -2
 integer, parameter :: BONE = -3
+
 integer, parameter :: MONOCYTE = 10
 integer, parameter :: OSTEOBLAST = 11
 integer, parameter :: STROMAL = 12
@@ -16,9 +17,14 @@ integer, parameter :: OSTEOCLAST = 13
 integer, parameter :: STEMCELL = 14
 integer, parameter :: OFF = 0
 integer, parameter :: ON = 1
+
+integer, parameter :: DEAD = -1
+integer, parameter :: MOTILE = 1
 integer, parameter :: ALIVE = 1
-integer, parameter :: DEAD = 2
+integer, parameter :: FUSING = 2
 integer, parameter :: FUSED = 3
+integer, parameter :: CROSSING = 4
+integer, parameter :: LEFT = 5
 
 integer, parameter :: NEUMANN_MODEL = 1
 integer, parameter :: MOORE18_MODEL = 2
@@ -28,13 +34,12 @@ integer, parameter :: neumann(3,6) = reshape((/ -1,0,0, 1,0,0, 0,-1,0, 0,1,0, 0,
 
 real, parameter :: capR = 1.5
 
-integer, parameter :: NX = 50, NY = NX, NZ = NX
 integer, parameter :: NBY = 8
 integer, parameter :: MAX_MONO = 50000
 integer, parameter :: MAX_CLAST = 100
-integer, parameter :: NMONO_INITIAL = (NX*NY*NZ)/250
 integer, parameter :: NSTEM = 150
 integer, parameter :: MAX_SIGNAL = MAX_CLAST
+real, parameter :: MONOCYTE_DIAMETER = 7	! um
 real, parameter :: SIG_RADIUS = 4
 real, parameter :: FTHRESHOLD = 0.14
 real, parameter :: AFACTOR = 0.2	! field amplification factor
@@ -42,13 +47,13 @@ real, parameter :: MAX_RESORPTION_RATE = 0.002
 real, parameter :: MAX_RESORPTION_D = 10
 integer, parameter :: MAX_RESORPTION_N = 25
 real, parameter :: MEAN_CLAST_LIFETIME = 48*60
-integer, parameter :: cap(2,2) = reshape((/30,35,35,30/),(/2,2/))	! cap(side,coord), side(z=1,z=NZ), coord(x,y)
+real, parameter :: CROSSING_TIME = 2*60
+real, parameter :: FUSING_TIME = 2*60
+integer, parameter :: cap(2,2) = reshape((/30,30,30,30/),(/2,2/))	! cap(side,coord), side(x=1,x=NX), coord(z,y)
 
 real, parameter :: DELTA_T = 0.25		! minutes
-real, parameter :: DELTA_X = 1.0
 
 ! S1P1 parameters
-real, parameter :: CROSS_PROB = 0.001
 real, parameter :: S1P1_THRESHOLD = 0.5
 real, parameter :: S1P1_BASERATE = 1.0/(6*60)	! 6 hours
 logical, parameter :: S1P_chemotaxis = .false.
@@ -69,13 +74,15 @@ end type
 
 type monocyte_type
     integer :: ID
-	integer :: region
+	integer(2) :: region
+	integer(2) :: iclast
     integer :: site(3)
     integer :: step
     integer(2) :: status
 	integer(2) :: lastdir
 	real :: S1P1
     real :: entrytime			! time that the cell entered the marrow (from blood or stem cell division)
+    real :: exittime			! time that the cell left the marrow (for the blood, or to form an osteoclast)
     real :: dietime             ! time cell will die
 !    type(O_type),    pointer :: optr    ! because NULL is used by winsock (from ifwinty).  NULLIFY() instead.
 end type
@@ -95,6 +102,7 @@ type osteoclast_type
     integer :: site(3)
 	real :: normal(3)
     integer(2) :: status
+    real :: fusetime			! time that the monocytes began to fuse to form the osteoclast
     real :: entrytime			! time that the cell entered the marrow (from blood or stem cell division)
     real :: dietime             ! time cell will die
 	integer :: count
