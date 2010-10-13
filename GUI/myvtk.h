@@ -26,6 +26,8 @@
 #include <vtkPolygon.h>
 #include <vtkCellArray.h>
 #include <vtkCellData.h>
+#include <vtkTextSource.h>
+//#include <vtkLegendScaleActor.h>
 
 //#include <vtkConfigure.h>
 
@@ -46,7 +48,8 @@ struct bond_pos {
 typedef bond_pos BOND_POS;
 
 struct capillary_segment {
-	int pos1[3], pos2[3];
+	int tag;
+	double pos1[3], pos2[3];
 	double radius;
 };
 typedef capillary_segment CAPILLARY_SEGMENT;
@@ -59,6 +62,7 @@ typedef pit_pos PIT_POS;
 struct surface_tile {
 	int pos[3];
 	char axis;
+	bool pit;
 };
 typedef surface_tile SURFACE_TILE;
 
@@ -111,6 +115,9 @@ public:
 	vtkPolyDataMapper *bondMapper;
 	vtkPolyDataMapper *capillaryMapper;
 	vtkPolyDataMapper *tileMapper;
+	vtkPolyDataMapper *textMapper;
+
+//	vtkSmartPointer<vtkLegendScaleActor> legendScaleActor;
 
 	vtkMPEG2Writer *mpg;
 //	vtkSmartPointer<vtkPNGWriter> writer;

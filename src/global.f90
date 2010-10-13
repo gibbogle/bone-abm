@@ -11,6 +11,7 @@ type(osteoclast_type), allocatable, target :: clast(:)
 type(osteoblast_type), allocatable :: blast(:)
 type(stem_type), allocatable :: stem(:)
 
+type(capillary_type), allocatable :: capillary(:)
 type(signal_type) :: signal(MAX_SIGNAL)
 
 logical :: diagonal_jumps, clear_to_send, simulation_start, stopped
@@ -44,7 +45,7 @@ integer :: SPECIES						! animal species (0=mouse, 1=human)
 real :: DELTA_X
 integer :: Nsteps
 integer :: NMONO_INITIAL
-integer :: nmono, mono_cnt, nsignal, nclast, nleft
+integer :: nmono, mono_cnt, nsignal, nclast, nborn, nleft, ncap
 
 contains
 

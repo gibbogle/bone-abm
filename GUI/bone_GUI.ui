@@ -32,9 +32,21 @@ padding: 8px
 }</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QGridLayout" name="gridLayout_5">
-    <item row="0" column="0">
+   <layout class="QHBoxLayout" name="horizontalLayout">
+    <item>
      <widget class="QStackedWidget" name="stackedWidget">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="minimumSize">
+       <size>
+        <width>480</width>
+        <height>400</height>
+       </size>
+      </property>
       <property name="currentIndex">
        <number>0</number>
       </property>
@@ -43,6 +55,30 @@ padding: 8px
         <property name="topMargin">
          <number>0</number>
         </property>
+        <item>
+         <widget class="QLabel" name="label_input">
+          <property name="maximumSize">
+           <size>
+            <width>16777215</width>
+            <height>30</height>
+           </size>
+          </property>
+          <property name="font">
+           <font>
+            <family>Segoe UI</family>
+            <pointsize>16</pointsize>
+            <weight>75</weight>
+            <bold>true</bold>
+           </font>
+          </property>
+          <property name="text">
+           <string>Inputs</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignCenter</set>
+          </property>
+         </widget>
+        </item>
         <item>
          <widget class="QTabWidget" name="tabs">
           <property name="enabled">
@@ -67,7 +103,7 @@ padding: 8px
            <enum>QTabWidget::West</enum>
           </property>
           <property name="currentIndex">
-           <number>3</number>
+           <number>0</number>
           </property>
           <property name="elideMode">
            <enum>Qt::ElideNone</enum>
@@ -567,8 +603,8 @@ padding: 8px
            <widget class="QMyLabel" name="label_DC_LIFETIME_SHAPE">
             <property name="geometry">
              <rect>
-              <x>790</x>
-              <y>430</y>
+              <x>780</x>
+              <y>160</y>
               <width>61</width>
               <height>20</height>
              </rect>
@@ -592,8 +628,8 @@ padding: 8px
            <widget class="QwtPlot" name="qwtPlot_DC_LIFETIME">
             <property name="geometry">
              <rect>
-              <x>430</x>
-              <y>350</y>
+              <x>420</x>
+              <y>80</y>
               <width>300</width>
               <height>200</height>
              </rect>
@@ -602,8 +638,8 @@ padding: 8px
            <widget class="QLineEdit" name="line_DC_LIFETIME_SHAPE">
             <property name="geometry">
              <rect>
-              <x>940</x>
-              <y>430</y>
+              <x>930</x>
+              <y>160</y>
               <width>51</width>
               <height>20</height>
              </rect>
@@ -615,8 +651,8 @@ padding: 8px
            <widget class="QMyLabel" name="label_DC_LIFETIME_MEDIAN">
             <property name="geometry">
              <rect>
-              <x>790</x>
-              <y>390</y>
+              <x>780</x>
+              <y>120</y>
               <width>61</width>
               <height>20</height>
              </rect>
@@ -640,8 +676,8 @@ padding: 8px
            <widget class="QLineEdit" name="line_DC_LIFETIME_MEDIAN">
             <property name="geometry">
              <rect>
-              <x>940</x>
-              <y>390</y>
+              <x>930</x>
+              <y>120</y>
               <width>51</width>
               <height>20</height>
              </rect>
@@ -653,8 +689,8 @@ padding: 8px
            <widget class="QSlider" name="slider_DC_LIFETIME_SHAPE">
             <property name="geometry">
              <rect>
-              <x>850</x>
-              <y>430</y>
+              <x>840</x>
+              <y>160</y>
               <width>61</width>
               <height>16</height>
              </rect>
@@ -666,8 +702,8 @@ padding: 8px
            <widget class="QSlider" name="slider_DC_LIFETIME_MEDIAN">
             <property name="geometry">
              <rect>
-              <x>850</x>
-              <y>390</y>
+              <x>840</x>
+              <y>120</y>
               <width>61</width>
               <height>16</height>
              </rect>
@@ -873,7 +909,7 @@ padding: 8px
              </font>
             </property>
             <property name="text">
-             <string>TCR activation thresholds</string>
+             <string>Activation thresholds</string>
             </property>
            </widget>
           </widget>
@@ -1438,30 +1474,6 @@ padding: 8px
          </widget>
         </item>
         <item>
-         <widget class="QLabel" name="label_input">
-          <property name="maximumSize">
-           <size>
-            <width>16777215</width>
-            <height>30</height>
-           </size>
-          </property>
-          <property name="font">
-           <font>
-            <family>Segoe UI</family>
-            <pointsize>16</pointsize>
-            <weight>75</weight>
-            <bold>true</bold>
-           </font>
-          </property>
-          <property name="text">
-           <string>Inputs</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignCenter</set>
-          </property>
-         </widget>
-        </item>
-        <item>
          <widget class="QTextEdit" name="text_more">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
@@ -1500,7 +1512,7 @@ padding: 8px
       <widget class="QWidget" name="page_output">
        <layout class="QVBoxLayout" name="verticalLayout_2">
         <item>
-         <widget class="QMdiArea" name="mdiArea">
+         <widget class="QMdiArea" name="mdiArea_plots">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
             <horstretch>0</horstretch>
@@ -1560,7 +1572,78 @@ padding: 8px
         </item>
        </layout>
       </widget>
-      <widget class="QWidget" name="page_VTK"/>
+      <widget class="QWidget" name="page_3D">
+       <widget class="QMdiArea" name="mdiArea_VTK">
+        <property name="geometry">
+         <rect>
+          <x>50</x>
+          <y>30</y>
+          <width>1091</width>
+          <height>851</height>
+         </rect>
+        </property>
+       </widget>
+       <widget class="QProgressBar" name="progressBar">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>30</y>
+          <width>21</width>
+          <height>291</height>
+         </rect>
+        </property>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="value">
+         <number>24</number>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Vertical</enum>
+        </property>
+       </widget>
+       <widget class="QLabel" name="label_hour">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>0</y>
+          <width>31</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="font">
+         <font>
+          <pointsize>10</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>Hour:</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="hour_display">
+        <property name="geometry">
+         <rect>
+          <x>50</x>
+          <y>0</y>
+          <width>51</width>
+          <height>21</height>
+         </rect>
+        </property>
+        <property name="font">
+         <font>
+          <pointsize>10</pointsize>
+          <weight>50</weight>
+          <bold>false</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+       </widget>
+      </widget>
      </widget>
     </item>
    </layout>

@@ -29,10 +29,10 @@ end subroutine
 subroutine setup(infile,ok)
 logical :: ok
 character*(*) :: infile
-integer :: x, y, z, del, dx, dy, dz, ix, i, site(3)
+integer :: x, y, z, del, dx, dy, dz, ix, i, site(3), ndiv, icap, k
 real :: xc, yc, zc, fac, x2, y2, z2
 integer :: kpar = 0
-real :: R
+real :: R, alfa
 
 ok = .true.
 inputfile = infile
@@ -52,6 +52,13 @@ do y = 1,NBY
 	occupancy(:,y,:)%region = BONE
 enddo
 
+! Create a test capillary
+ncap = 1
+allocate(capillary(ncap))
+capillary(1)%radius = capR
+capillary(1)%pos1 = (/ 0.5, NY/2., NZ/2. /)
+capillary(1)%pos2 = (/ NX+0.5, NY/2., NZ/2. /)
+
 ! Set up capillary sites - this is currently VERY CRUDE
 ! If the centre of a site (cube) falls inside the capillary tube,
 ! the site is tagged BLOOD.  
@@ -61,41 +68,46 @@ enddo
 ! This has the origin of the axis system at the lower left rear corner
 ! of the region.  (Note that in OpenGL/VTK Z axis is out of the screen.)
 
-!write(*,*) 'z=1:  x,y: ',cap(1,1),cap(1,2)
-!write(*,*) 'z=NZ: x,y: ',cap(2,1),cap(2,2)
-del = capR+2
-do ix = 1,NX
-	xc = ix - 0.5
-	fac = (xc-1.)/(NX-1.)
-	zc = cap(1,1)*(1-fac) + cap(2,1)*fac
-	yc = cap(1,2)*(1-fac) + cap(2,2)*fac
-	do dx = -del,del
-		x = xc + dx
-		if (x < 1 .or. x > NX) cycle
-		do dy = -del,del
-			y = yc + dy
-			if (y <= NBY .or. y > NY) cycle
-			do dz = -del,del
-				z = zc + dz
-				if (z < 1 .or. z > NZ) cycle
-				x2 = (x - 0.5 - xc)*(x - 0.5 - xc)
-				y2 = (y - 0.5 - yc)*(y - 0.5 - yc)
-				z2 = (z - 0.5 - zc)*(z - 0.5 - zc)
-				! These are the squared distances, in three axis directions, from the
-				! site (cube) midpoint to the capillary centreline location (xc,yc,zc)
-				if (x2+y2+z2 <= capR**2) then
-					occupancy(x,y,z)%region = BLOOD
-					if (ix <= 10) then
-						write(nflog,'(4f6.1,3i4)') xc,yc,zc,sqrt(x2+y2+z2),x,y,z
+ndiv = 100
+do icap = 1,ncap
+	del = capillary(icap)%radius + 2
+	do k = 1,ndiv
+		alfa = (k-1.0)/(ndiv-1.0)
+		xc = (1-alfa)*capillary(icap)%pos1(1) + alfa*capillary(icap)%pos2(1)
+		yc = (1-alfa)*capillary(icap)%pos1(2) + alfa*capillary(icap)%pos2(2)
+		zc = (1-alfa)*capillary(icap)%pos1(3) + alfa*capillary(icap)%pos2(3)		
+		do dx = -del,del
+			x = xc + dx
+			if (x < 1 .or. x > NX) cycle
+			do dy = -del,del
+				y = yc + dy
+				if (y <= NBY .or. y > NY) cycle
+				do dz = -del,del
+					z = zc + dz
+					if (z < 1 .or. z > NZ) cycle
+!					x2 = (x - 0.5 - xc)*(x - 0.5 - xc)
+!					y2 = (y - 0.5 - yc)*(y - 0.5 - yc)
+!					z2 = (z - 0.5 - zc)*(z - 0.5 - zc)
+					x2 = (x - xc)*(x - xc)
+					y2 = (y - yc)*(y - yc)
+					z2 = (z - zc)*(z - zc)
+					! These are the squared distances, in three axis directions, from the
+					! site (cube) midpoint to the capillary centreline location (xc,yc,zc)
+					if (x2+y2+z2 <= (capillary(icap)%radius)**2) then
+						occupancy(x,y,z)%region = BLOOD
+						if (k <= 10) then
+							write(nflog,'(4f6.1,3i4)') xc,yc,zc,sqrt(x2+y2+z2),x,y,z
+						endif
 					endif
-				endif
+				enddo
 			enddo
 		enddo
 	enddo
 enddo
-NMONO_INITIAL = (NX*NY*NZ)/250
+NMONO_INITIAL = (NX*(NY-NBY)*NZ)/40
 nclast = 0
 nmono = 0
+nborn = 0
 nleft = 0
 mono_cnt = 0
 allocate(mono(MAX_MONO))
@@ -164,6 +176,7 @@ do i = 1,NSTEM
 				call addMono(site)
 !				write(*,*) 'added monocyte: ',i,site
 				stem(i)%dividetime = tnow + STEM_CYCLETIME
+				nborn = nborn + 1
 				exit
 			endif
 		enddo
@@ -334,7 +347,8 @@ do isig = 1,nsignal
 		enddo
 	enddo
 !	write(*,*) 'Total near sites: ',nt
-	if (n >= 0.8*nt) then
+! Was using 0.8*nt
+	if (n >= MTHRESHOLD) then
 		write(logmsg,*) 'fusing monocytes: ',n,nt
 		call logger(logmsg)
 		call startFusing(isig,n,ok)
@@ -395,7 +409,7 @@ do x = x1,x2
 				do
 					yb = yb - 1
 					if (yb < 1) then
-						write(logmsg,*) 'Error: fuser: yb < 1'
+						write(logmsg,*) 'Error: startFusing: yb < 1'
 						call logger(logmsg)
 						ok = .false.
 						return
@@ -540,7 +554,7 @@ end subroutine
 !--------------------------------------------------------------------------------
 subroutine save_cell_positions
 !!!use ifport
-integer :: k, kcell, iclast, site(3), j, nfused, x, y, z, status, mono_state
+integer :: k, kcell, iclast, site(3), j, nfused, x, y, z, status, mono_state, icap
 real :: tnow, t1, t2, fraction
 !integer :: itcstate, stype, ctype
 real :: clast_diam = 0.9
@@ -608,14 +622,16 @@ if (nmono > 0) then
 			write(nflog,*) istep, kcell, site, mono_state
 		endif
     enddo
-    if (nfused > 0) then
-	    write(logmsg,*) 'nfused: ',nfused
-		call logger(logmsg)
-	endif
+!    if (nfused > 0) then
+!	    write(logmsg,*) 'nfused: ',nfused
+!		call logger(logmsg)
+!	endif
 endif
 
 ! Capillary section
-write(nfpos,'(a,6i4,f5.2)') 'C ',1,cap(1,2),cap(1,1),NZ,cap(2,2),cap(2,1),capR
+do icap = 1,ncap
+	write(nfpos,'(a,i4,6f6.1,f5.2)') 'C ',icap,capillary(icap)%pos1,capillary(icap)%pos2,capillary(icap)%radius + 0.25
+enddo
 
 ! Pit section
 do x = 1,NX
@@ -861,6 +877,22 @@ write(logmsg,'(a)') 'Connected to TCP_PORT_1  '
 call logger(logmsg)
 end subroutine
 
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+subroutine snapshot
+character*(128) :: msg
+integer :: error
+
+if (use_TCP) then
+    if (.not.awp_1%is_open) then
+        call logger("snapshot: awp_1 is not open")
+        return
+    endif
+	write(msg,'(4i6)') istep,mono_cnt,nborn,nleft
+!	call logger(msg)
+    call winsock_send(awp_1,msg,len_trim(msg),error)
+endif
+end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
@@ -880,11 +912,12 @@ do istep = 1,nsteps
 		return
 	endif
 	call check_pause	
-	if (mod(istep,100) == 0) then
-		write(logmsg,'(a,4i6)') 'istep: ',istep,mono_cnt,nmono,nleft
-		call logger(logmsg)
+	if (mod(istep,240) == 0) then
+		call snapshot
+!		write(logmsg,'(a,4i6)') 'istep: ',istep,mono_cnt,nmono,nleft
+!		call logger(logmsg)
 	endif
-	if (mod(istep,100) == 0) then
+	if (mod(istep,NT_GUI_OUT) == 0) then
 		call save_pos(ok)
 		if (.not.ok) return
 	endif
@@ -905,6 +938,7 @@ if (allocated(occupancy)) deallocate(occupancy)
 if (allocated(mono)) deallocate(mono)
 if (allocated(clast)) deallocate(clast)
 if (allocated(stem)) deallocate(stem)
+if (allocated(capillary)) deallocate(capillary)
 end subroutine
 
 !------------------------------------------------------------------------------------------------
