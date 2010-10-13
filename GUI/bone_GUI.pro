@@ -4,18 +4,19 @@ CONFIG += release
 INCLUDEPATH += C:\VTK C:\VTK\rendering \
                 C:\VTK-src\GUISupport\Qt C:\VTK-src\common C:\VTK-src\rendering \
                 C:\VTK-src\graphics C:\VTK-src\filtering C:\VTK-src\IO \
-                C:\VTK-src\imaging \
+				C:\VTK-src\imaging C:\VTK-src\hybrid
 INCLUDEPATH  += c:/qt/qwt-5.2.1/src
 
 FORMS         = bone_GUI.ui
 HEADERS       = mainwindow.h qmylabel.h params.h plot.h log.h myvtk.h misc.h \
-    			libbone.h
+    			libbone.h \
+    result_set.h
 RESOURCES     += icons.qrc
 SOURCES       = main.cpp mainwindow.cpp params.cpp plot.cpp \
                 myvtk.cpp misc.cpp lognormal.cpp
 
 LIBS += -L"c:\VTK\bin" -lvtkCommon -lvtkGraphics \
-		-lvtkFiltering -lvtkIO -lvtkImaging -lvtkRendering -lQVTK
+		-lvtkFiltering -lvtkIO -lvtkImaging -lvtkRendering -lvtkHybrid -lQVTK
 LIBS += -LC:\qt\qwt-5.2.1\lib -lqwt5
 
 DEPENDPATH   += c:/qt/qwt-5.2.1/lib

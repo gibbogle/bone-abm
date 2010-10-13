@@ -10,7 +10,7 @@
 #include "misc.h"
 #include "plot.h"
 #include "myvtk.h"
-#ifdef __WIN32
+#ifdef _WIN32
 #include "windows.h"
 #define sleep(n) Sleep(1000 * n)
 #endif
@@ -77,12 +77,12 @@ MainWindow::MainWindow(QWidget *parent)
 #ifdef __GFORTRAN_DLL__
 	dll_path = "libbone.dll";
 #else
-
 	dll_path = "bone.dll";
 #endif
 	vtkfile = "basecase.pos";
 	savepos_start = 0;
 	ntimes = 0;
+	hour = 0;
 
 	DISABLE_TABS = true;
 
@@ -108,7 +108,8 @@ MainWindow::MainWindow(QWidget *parent)
 	loadParams();
 	writeout();
     timer = new QTimer(this);
-	vtk = new MyVTK(page_VTK);
+//	vtk = new MyVTK(page_VTK);
+	vtk = new MyVTK(mdiArea_VTK);
 	vtk->init();
 	tabs->setCurrentIndex(0);
 	if (DISABLE_TABS) {
@@ -154,6 +155,9 @@ void MainWindow::createActions()
     connect(action_remove_graph, SIGNAL(triggered()), this, SLOT(removeGraph()));
     connect(action_remove_all, SIGNAL(triggered()), this, SLOT(removeAllGraphs()));
     connect(action_save_snapshot, SIGNAL(triggered()), this, SLOT(saveSnapshot()));
+
+//	connect((QObject *)lcdNumber_hour, SIGNAL(hourUpdate(double)), this, SLOT(Display(double)));
+
 }
 
 //--------------------------------------------------------------------------------------------------------
@@ -241,7 +245,7 @@ void MainWindow:: drawDistPlots()
         QString name = qp->objectName();
 		LOG_QMSG(name);
 		if (j == 0) {
-			qp->setTitle("TCR Avidity");
+			qp->setTitle("Receptor Avidity");
 			median_qstr = line_TC_AVIDITY_MEDIAN->text();
 			shape_qstr = line_TC_AVIDITY_SHAPE->text();
 		} else if (j == 1) {
@@ -259,7 +263,7 @@ void MainWindow:: drawDistPlots()
 			shape_qstr = line_DC_ANTIGEN_SHAPE->text();
 			*/
 		} else if (j == 2) {
-			qp->setTitle("DC lifetime (days)");
+			qp->setTitle("Cell lifetime (days)");
 			median_qstr = line_DC_LIFETIME_MEDIAN->text();
 			shape_qstr = line_DC_LIFETIME_SHAPE->text();
 		}
@@ -727,7 +731,7 @@ void MainWindow::loadResultFile()
 	in.seek(0);
 	R->tnow = new double[R->nsteps];
 	R->nDC = new double[R->nsteps];
-	R->act = new double[R->nsteps];
+	R->nborn = new double[R->nsteps];
 	R->ntot = new double[R->nsteps];
 	R->ncogseed = new double[R->nsteps];
 	R->ncog = new double[R->nsteps];
@@ -751,7 +755,7 @@ void MainWindow::loadResultFile()
 				}
 				R->tnow[step] = step;		//data[1];
 				R->nDC[step] = data[2];
-				R->act[step] = data[3];
+				R->nborn[step] = data[3];
 				R->ntot[step] = data[4];
 				R->ncogseed[step] = data[5];
 				R->ncog[step] = data[6];
@@ -765,7 +769,7 @@ void MainWindow::loadResultFile()
 	} while (!line.isNull());
 
 	// Compute the maxima
-	R->max_act = getMaximum(R,R->act);
+	R->max_nborn = getMaximum(R,R->nborn);
 	R->max_ncog = getMaximum(R,R->ncog);
 	R->max_ncogseed = getMaximum(R,R->ncogseed);
 	R->max_nDC = getMaximum(R,R->nDC);
@@ -991,7 +995,7 @@ void MainWindow::runServer()
 						tr("Would you like to clear the graphs from the previous run?"),
 						QMessageBox::Yes | QMessageBox::No);
 		if (response == QMessageBox::Yes)
-            mdiArea->closeAllSubWindows();
+			mdiArea_plots->closeAllSubWindows();
 		else if (response == QMessageBox::Cancel)
             return;
 	}
@@ -1053,8 +1057,7 @@ void MainWindow::zzz()
 void MainWindow::preConnection()
 {
 	LOG_MSG("preConnection");
-
-        double hours = 0;
+	hours = 0;
 	for (int k=0; k<parm->nParams; k++) {
 		PARAM_SET p = parm->get_param(k);
 		if (p.tag.compare("NDAYS") == 0) {
@@ -1072,7 +1075,7 @@ void MainWindow::preConnection()
 	newR->nsteps = nsteps;
 	newR->tnow = new double[nsteps];
 	newR->nDC = new double[nsteps];
-	newR->act = new double[nsteps];
+	newR->nborn = new double[nsteps];
 	newR->ntot = new double[nsteps];
 	newR->ncogseed = new double[nsteps];
 	newR->ncog = new double[nsteps];
@@ -1083,7 +1086,7 @@ void MainWindow::preConnection()
 	step = -1;
 	newR->tnow[0] = 0;	// These are not the right initial values
 	newR->nDC[0] = 0;
-	newR->act[0] = 0;
+	newR->nborn[0] = 0;
 	newR->ntot[0] = 0;
 	newR->ncogseed[0] = 0;
 	newR->ncog[0] = 0;
@@ -1116,22 +1119,28 @@ void MainWindow::errorPopup(QString errmsg)
 //--------------------------------------------------------------------------------------------------------
 void MainWindow::initializeGraphs(RESULT_SET *R)
 {
-	mdiArea->closeAllSubWindows();
-	mdiArea->show();
+	mdiArea_plots->closeAllSubWindows();
+	mdiArea_plots->show();
 	clearAllGraphs();
-	graph_act = new Plot("act",R->casename);
-    graph_act->setTitle("Total DC Antigen Activity");
-//    graph_act.setAxisTitle(Qwt.QwtPlot.yLeft, 'No. of Cells ')
 
-    graph_ntot = new Plot("ntot",R->casename);
-    graph_ntot->setTitle("Total T Cell Population");
+	graph_ntot = new Plot("ntot",R->casename);
+	graph_ntot->setTitle("Total Monocyte Population");
 	graph_ntot->setAxisTitle(QwtPlot::yLeft, "No. of Cells");
-//    graph_ntot.addCurve('Total DC antigen activity level')
-    
+	mdiArea_plots->addSubWindow(graph_ntot);
+	graph_ntot->show();
+	graph_ntot->setAxisScale(QwtPlot::xBottom, 0, R->nsteps, 0);
+
+	graph_nborn = new Plot("nborn",R->casename);
+	graph_nborn->setTitle("Total Monocytes Created");
+	graph_nborn->setAxisTitle(QwtPlot::yLeft, "No. of Cells");
+	mdiArea_plots->addSubWindow(graph_nborn);
+	graph_nborn->show();
+	graph_nborn->setAxisScale(QwtPlot::xBottom, 0, R->nsteps, 0);
+
+	/*
     graph_ncog = new Plot("ncog",R->casename);
     graph_ncog->setTitle("Cognate T Cells");
 	graph_ncog->setAxisTitle(QwtPlot::yLeft, "No. of Cells");
-//    graph_ncog->addCurve(1,"Total cells");
 
 	if (!show_outputdata) {
 		graph_ncogseed = new Plot("ncogseed",R->casename);
@@ -1149,35 +1158,29 @@ void MainWindow::initializeGraphs(RESULT_SET *R)
 	nGraphCases = 1;
 	graphResultSet[0] = R;
 
-    mdiArea->addSubWindow(graph_ncog);
-    mdiArea->addSubWindow(graph_act);
-    mdiArea->addSubWindow(graph_ntot);
-    mdiArea->addSubWindow(graph_nDC);
-    mdiArea->addSubWindow(graph_teffgen);
+	mdiArea_plots->addSubWindow(graph_ncog);
+	mdiArea_plots->addSubWindow(graph_nDC);
+	mdiArea_plots->addSubWindow(graph_teffgen);
     if (show_outputdata) 
-		mdiArea->addSubWindow(box_outputData);
+		mdiArea_plots->addSubWindow(box_outputData);
 	else
-		mdiArea->addSubWindow(graph_ncogseed);
+		mdiArea_plots->addSubWindow(graph_ncogseed);
 
     graph_ncog->show();
     graph_nDC->show();
-    graph_act->show();
-    graph_ntot->show();
     graph_teffgen->show();
     if (show_outputdata) 
 	    box_outputData->show();
 	else
 		graph_ncogseed->show();
 
-    mdiArea->tileSubWindows();
-
-	graph_act->setAxisScale(QwtPlot::xBottom, 0, R->nsteps, 0);
-    graph_ntot->setAxisScale(QwtPlot::xBottom, 0, R->nsteps, 0);
     graph_ncog->setAxisScale(QwtPlot::xBottom, 0, R->nsteps, 0);
     graph_nDC->setAxisScale(QwtPlot::xBottom, 0, R->nsteps, 0);
     graph_teffgen->setAxisScale(QwtPlot::xBottom, 0, R->nsteps, 0);
 	if (!show_outputdata)
 	    graph_ncogseed->setAxisScale(QwtPlot::xBottom, 0, R->nsteps, 0);
+	*/
+	mdiArea_plots->tileSubWindows();
 }
 
 //--------------------------------------------------------------------------------------------------------
@@ -1185,42 +1188,44 @@ void MainWindow::initializeGraphs(RESULT_SET *R)
 void MainWindow::drawGraphs()
 {
 	RESULT_SET *R;
-	double act_max = 0, ntot_max = 0, nDC_max = 0, teffgen_max = 0, ncog_max = 0, ncogseed_max = 0;
+	double nborn_max = 0, ntot_max = 0, nDC_max = 0, teffgen_max = 0, ncog_max = 0, ncogseed_max = 0;
 	for (int k=0; k<Plot::ncmax; k++) {
 		R = graphResultSet[k];
 		if (R != 0) {
-			graph_act->redraw(R->tnow, R->act, R->nsteps, R->casename);
 			graph_ntot->redraw(R->tnow, R->ntot, R->nsteps, R->casename);
+			ntot_max = max(ntot_max,R->max_ntot);
+			nborn_max = max(nborn_max,R->max_nborn);
+			/*
+			graph_act->redraw(R->tnow, R->act, R->nsteps, R->casename);
 			graph_nDC->redraw(R->tnow, R->nDC, R->nsteps, R->casename);
 			graph_teffgen->redraw(R->tnow, R->teffgen, R->nsteps, R->casename);
-//			graph_ncog->redraw2(tnow, ncogseed, ncog, step+1);	
-//			graph_ncog->redraw2(newR->tnow, newR->ncogseed, newR->tnow, newR->ncog, step+1, step+1);	
 			graph_ncog->redraw(R->tnow, R->ncog, R->nsteps, R->casename);
 			if (!show_outputdata)
 				graph_ncogseed->redraw(R->tnow, R->ncogseed, R->nsteps, R->casename);
 
-			act_max = max(act_max,R->max_act);
-			ntot_max = max(ntot_max,R->max_ntot);
 			nDC_max = max(nDC_max,R->max_nDC);
 			teffgen_max = max(teffgen_max,R->max_teffgen);
 			ncog_max = max(ncog_max,R->max_ncog);
 			ncogseed_max = max(ncogseed_max,R->max_ncogseed);
+			*/
 		}
 	}
-	graph_act->setYScale(act_max);
 	graph_ntot->setYScale(ntot_max);
+	graph_ntot->replot();
+	graph_nborn->setYScale(nborn_max);
+	graph_nborn->replot();
+	/*
 	graph_ncog->setYScale(ncog_max);
 	graph_nDC->setYScale(nDC_max);
 	graph_teffgen->setYScale(teffgen_max);
 	if (!show_outputdata)
 		graph_ncogseed->setYScale(ncogseed_max);
-	graph_act->replot();
-	graph_ntot->replot();
 	graph_ncog->replot();
 	graph_nDC->replot();
 	graph_teffgen->replot();
 	if (!show_outputdata)
 		graph_ncogseed->replot();
+	*/
 }
 
 //--------------------------------------------------------------------------------------------------------
@@ -1251,35 +1256,45 @@ void MainWindow::outputData(QString qdata)
 		if (qdata.length() == 0)
 			return;
 	}
-//	if (qdata.contains("__EXIT__",Qt::CaseSensitive) || qdata.contains("Fortran") ) {
 	if (quitMessage(qdata) || qdata.contains("Fortran") ) {
 		return;
 	}
 	if (show_outputdata)
 	    box_outputData->append(qdata);
 
-	
     QStringList dataList = qdata.split(" ",QString::SkipEmptyParts);
-	double data[9];
-	for (int k=0; k<9; k++) 
-		data[k] = dataList[k].toDouble();
+	int data[4];
+	for (int k=0; k<4; k++)
+		data[k] = dataList[k].toInt();
 	step++;
 	if (step >= newR->nsteps) {
 		LOG_MSG("ERROR: step >= nsteps");
 		return;
 	}
+	hour = data[0]*DELTA_T/60;
+	progress = int(100.*hour/hours);
+	progressBar->setValue(progress);
+
+// lcdNumber didn't work very well - too faint
+//	lcdNumber_hour->display(int(hour));
+//	lcdNumber_hour->show();
+	QString hourstr = QString::number(int(hour));
+	hour_display->setText(hourstr);
+
 	QString casename = newR->casename;
     newR->tnow[step] = step;		//data[1];
-    newR->nDC[step] = data[2];
-    newR->act[step] = data[3];
-    newR->ntot[step] = data[4];
+	newR->ntot[step] = data[1];
+	graph_ntot->redraw(newR->tnow, newR->ntot, step+1, casename);
+	newR->nborn[step] = data[2];
+	graph_nborn->redraw(newR->tnow, newR->nborn, step+1, casename);
+
+	/*
+	newR->nDC[step] = data[2];
     newR->ncogseed[step] = data[5];
     newR->ncog[step] = data[6];
     newR->ndead[step] = data[7];
     newR->teffgen[step] = data[8];
 	
-    graph_act->redraw(newR->tnow, newR->act, step+1, casename);
-    graph_ntot->redraw(newR->tnow, newR->ntot, step+1, casename);
     graph_nDC->redraw(newR->tnow, newR->nDC, step+1, casename);
     graph_teffgen->redraw(newR->tnow, newR->teffgen, step+1, casename);
 //    graph_ncog->redraw2(tnow, ncogseed, ncog, step+1);	
@@ -1287,6 +1302,7 @@ void MainWindow::outputData(QString qdata)
     graph_ncog->redraw(newR->tnow, newR->ncog, step+1, casename);	
 	if (!show_outputdata)
 		graph_ncogseed->redraw(newR->tnow, newR->ncogseed, step+1, casename);	
+	*/
 }
 
 //--------------------------------------------------------------------------------------------------------
@@ -1331,17 +1347,6 @@ void MainWindow::postConnection()
 			result_list.removeAt(i);
 		}
 	}
-	/*
-	// Compute the maxima
-	newR->max_act = getMaximum(newR,newR->act);
-	newR->max_ncog = getMaximum(newR,newR->ncog);
-	newR->max_ncogseed = getMaximum(newR,newR->ncogseed);
-	newR->max_nDC = getMaximum(newR,newR->nDC);
-	newR->max_teffgen = getMaximum(newR,newR->teffgen);
-	newR->max_ntot = getMaximum(newR,newR->ntot);
-	// Add the new result set to the list
-	result_list.append(newR);
-	*/
 	vtk->renderCells(true,true);		// for the case that the VTK page is viewed only after the execution is complete
     posdata = false;
 	LOG_MSG("completed postConnection");
@@ -1408,7 +1413,7 @@ void MainWindow::stopServer()
 void MainWindow::clearAllGraphs()
 {
 	if (nGraphCases > 0) {
-		graph_act->removeAllCurves();
+		graph_nborn->removeAllCurves();
 		graph_ntot->removeAllCurves();
 		graph_nDC->removeAllCurves();
 		graph_teffgen->removeAllCurves();
@@ -1483,7 +1488,7 @@ void MainWindow::addGraph()
 	graphResultSet[nGraphCases] = R;
 	nGraphCases++;
 	// First add the curves
-	graph_act->addCurve(R->casename);
+	graph_nborn->addCurve(R->casename);
 	graph_ntot->addCurve(R->casename);
 	graph_nDC->addCurve(R->casename);
 	graph_teffgen->addCurve(R->casename);
@@ -1491,7 +1496,7 @@ void MainWindow::addGraph()
 	if (!show_outputdata)
 		graph_ncogseed->addCurve(R->casename);
 	// Adjust the x axis scale
-	graph_act->setAxisAutoScale(QwtPlot::xBottom);
+	graph_nborn->setAxisAutoScale(QwtPlot::xBottom);
     graph_ntot->setAxisAutoScale(QwtPlot::xBottom);
     graph_ncog->setAxisAutoScale(QwtPlot::xBottom);
     graph_nDC->setAxisAutoScale(QwtPlot::xBottom);
@@ -1539,7 +1544,7 @@ void MainWindow::removeGraph()
 	if (i == -1) return;
 	RESULT_SET *R = graphResultSet[i];
 	// First remove the curves
-	graph_act->removeCurve(R->casename);
+	graph_nborn->removeCurve(R->casename);
 	graph_ntot->removeCurve(R->casename);
 	graph_nDC->removeCurve(R->casename);
 	graph_teffgen->removeCurve(R->casename);

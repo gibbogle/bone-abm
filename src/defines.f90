@@ -40,16 +40,17 @@ integer, parameter :: MAX_CLAST = 100
 integer, parameter :: NSTEM = 150
 integer, parameter :: MAX_SIGNAL = MAX_CLAST
 real, parameter :: MONOCYTE_DIAMETER = 7	! um
-real, parameter :: SIG_RADIUS = 4
+real, parameter :: SIG_RADIUS = 6
 real, parameter :: FTHRESHOLD = 0.14
 real, parameter :: AFACTOR = 0.2	! field amplification factor
+integer, parameter :: MTHRESHOLD = 20
 real, parameter :: MAX_RESORPTION_RATE = 0.002
 real, parameter :: MAX_RESORPTION_D = 10
 integer, parameter :: MAX_RESORPTION_N = 25
 real, parameter :: MEAN_CLAST_LIFETIME = 48*60
 real, parameter :: CROSSING_TIME = 2*60
 real, parameter :: FUSING_TIME = 2*60
-integer, parameter :: cap(2,2) = reshape((/30,30,30,30/),(/2,2/))	! cap(side,coord), side(x=1,x=NX), coord(z,y)
+!integer, parameter :: cap(2,2) = reshape((/30,30,30,30/),(/2,2/))	! cap(side,coord), side(x=1,x=NX), coord(z,y)
 
 real, parameter :: DELTA_T = 0.25		! minutes
 
@@ -143,6 +144,12 @@ type signal_type
 	logical :: active
 	integer :: site(3)
 	real :: normal(3)
+end type
+
+type capillary_type
+	real :: pos1(3)
+	real :: pos2(3)
+	real :: radius
 end type
 
 end module

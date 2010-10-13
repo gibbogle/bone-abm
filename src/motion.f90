@@ -11,6 +11,7 @@ real, parameter :: Kchemo = 1.0
 integer :: njumpdirs, nreldir
 integer :: jumpvec(3,MAXRELDIR+1)
 real :: dirprob(0:MAXRELDIR)
+logical :: vn_adjacent(MAXRELDIR+1)
 
 
 contains
@@ -107,7 +108,7 @@ do irel = 1,nreldir
 		jmpdir(irel) = dir1
 		psum = psum + p(irel)
 		savesite2(:,irel) = site2
-	elseif (region == BLOOD) then
+	elseif (region == BLOOD .and. vn_adjacent(dir1)) then
 		if (CrossToBlood(kcell,site1)) then
 			return
 		endif
@@ -561,7 +562,25 @@ qsum = 0
 do i = 0,nreldir
     qsum = qsum + dirprob(i)
 enddo
+call make_vn_adjacent
 !write(*,*) 'sum: ',qsum
+end subroutine
+
+!--------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------
+subroutine make_vn_adjacent
+integer :: dir, v(3)
+
+do dir = 1,njumpdirs
+	v = jumpvec(:,dir)
+	if ((v(1) == 0 .and. v(2) == 0 .and. v(3) /= 0) .or. &
+	    (v(1) == 0 .and. v(2) /= 0 .and. v(3) == 0) .or. &
+	    (v(1) /= 0 .and. v(2) == 0 .and. v(3) == 0)) then
+	   vn_adjacent(dir) = .true.
+	else
+		vn_adjacent(dir) = .false.
+	endif
+enddo
 end subroutine
 
 !--------------------------------------------------------------------------------

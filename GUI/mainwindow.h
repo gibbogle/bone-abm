@@ -216,16 +216,20 @@ private:
 	QTimer *timer;
 //	ExecThread *exthread;
 
+	static const double DELTA_T = 0.25;
 	int step;
 	int ntimes;
 	int savepos_start;
 	int ncpu;
+	double hours;
+	double hour;
+	int progress;
 
 	bool DISABLE_TABS;
 
 	RESULT_SET *newR;
 
-	Plot *graph_act;
+	Plot *graph_nborn;
 	Plot *graph_ntot;
 	Plot *graph_ncog;
 	Plot *graph_ncogseed;

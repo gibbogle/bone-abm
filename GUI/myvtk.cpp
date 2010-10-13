@@ -100,6 +100,18 @@ MyVTK::MyVTK(QWidget *page)
 	tileMapper->SetInput(polygonPolyData);
 	tileMapper->ScalarVisibilityOff();
 
+	vtkSmartPointer<vtkTextSource> textSource = vtkSmartPointer<vtkTextSource>::New();
+	textSource->SetText("Hello");
+	textSource->SetForegroundColor(1.0, 1.0, 1.0);
+	textSource->BackingOff();
+	textSource->Update();
+
+	// Create a mapper and actor
+	textMapper = vtkPolyDataMapper::New();
+	textMapper->SetInputConnection(textSource->GetOutputPort());
+
+	//legendScaleActor = vtkSmartPointer<vtkLegendScaleActor>::New();
+
 	// Create image filter for save Snapshot()
 	w2img = vtkWindowToImageFilter::New();
 //	pngwriter = vtkSmartPointer<vtkPNGWriter>::New();
@@ -178,14 +190,16 @@ void MyVTK::read_cell_positions(QString infileName, QString outfileName, bool sa
 					cp.DCtag = s[2].toInt();
 					bondpos_list.append(cp);
 				} else if (s[0].compare("C") == 0) {	// Capillary
+					LOG_QMSG(line);
 					CAPILLARY_SEGMENT cs;
-					cs.pos1[0] = s[1].toInt();
-					cs.pos1[1] = s[2].toInt();
-					cs.pos1[2] = s[3].toInt();
-					cs.pos2[0] = s[4].toInt();
-					cs.pos2[1] = s[5].toInt();
-					cs.pos2[2] = s[6].toInt();
-					cs.radius  = s[7].toDouble();
+					cs.tag = s[1].toInt();
+					cs.pos1[0] = s[2].toDouble();
+					cs.pos1[1] = s[3].toDouble();
+					cs.pos1[2] = s[4].toDouble();
+					cs.pos2[0] = s[5].toDouble();
+					cs.pos2[1] = s[6].toDouble();
+					cs.pos2[2] = s[7].toDouble();
+					cs.radius  = s[8].toDouble();
 					capillary_list.append(cs);
 				} else if (s[0].compare("P") == 0) {
 					PIT_POS pp;
@@ -251,6 +265,7 @@ void MyVTK::createTileList()
 			tile.pos[1] = y;
 			tile.pos[2] = z;
 			tile.axis = 'Y';
+			tile.pit = false;
 			tile_list.append(tile);
 		}
 	}
@@ -263,15 +278,17 @@ void MyVTK::createTileList()
 		tile.axis = 'Y';
 		tile.pos[1] = NBY;
 		j = inTileList(&tile);
-		if (j >= 0)
+		if (j >= 0) {
 			tile_list[j].pos[1] = ypit-1;
-		else {
+			tile_list[j].pit = true;
+		} else {
 			sprintf(msg,"Error: createTileList: tile not found: pos: %d %d %d axis: %c\n",tile.pos[0],tile.pos[1],tile.pos[2],tile.axis);
 			LOG_MSG(msg);
 			exit(1);
 		}
 		// Now either add or remove tiles at each vertical face
 		for (y=ypit; y<=NBY; y++) {
+			tile.pit = true;
 			tile.pos[1] = y;
 			tile.axis = 'X';
 			j = inTileList(&tile);
@@ -361,6 +378,14 @@ void MyVTK::renderCells(bool redo, bool last)
     process_bonds();
 	process_capillaries();
 	process_tiles();
+
+//	vtkActor *actor = vtkActor::New();
+//	actor->SetMapper(textMapper);
+//	ren->AddActor(actor);
+
+	// Add the scale actor to the scene
+	//ren->AddActor(legendScaleActor);
+
 	if (first_VTK) {
 		LOG_MSG("Initializing the renderer");
 //		ren->RemoveAllViewProps();
@@ -679,7 +704,8 @@ void MyVTK::process_tiles()
 	SURFACE_TILE tile;
 	vtkActor *actor;
 	double pos[3], v[3];
-	double tileColor[] = {0.9,0.9,0.5};
+	double boneColor[] = {0.9,0.9,0.5};
+	double pitColor[] = {0.9,0.4,0.2};
 	char msg[256];
 	createTileList();
 
@@ -699,7 +725,16 @@ void MyVTK::process_tiles()
 		tile = tile_list[i];
 		actor = vtkActor::New();
 		actor->SetMapper(tileMapper);
-		actor->GetProperty()->SetColor(tileColor);
+		if (tile.pit)
+			actor->GetProperty()->SetColor(pitColor);
+		else
+			actor->GetProperty()->SetColor(boneColor);
+
+		// experimenting ...
+		actor->GetProperty()->SetAmbient(0.5);
+		actor->GetProperty()->SetDiffuse(0.2);
+		actor->GetProperty()->SetSpecular(0.5);
+
 		pos[0] = tile.pos[0];
 		pos[1] = tile.pos[1];
 		pos[2] = tile.pos[2];

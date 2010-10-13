@@ -5,23 +5,23 @@ Params::Params()
 {
 	PARAM_SET params[] = {
 {"TC_AVIDITY_MEDIAN", 1.0, 0.1, 10.0,
-"TCR avidity median parameter",
+"Receptor avidity median parameter",
 "TCR avidity has a lognormal distribution, described by the median and shape parameters.\n\
 (TCR stimulation rate is proportional to the product of TC avidity and DC antigen density.)"},
 
 {"TC_AVIDITY_SHAPE", 1.1, 1.01, 3.0,
-"TCR avidity shape parameter",
+"Receptor avidity shape parameter",
 "TCR avidity has a lognormal distribution, described by the median and shape parameters.\n\
 The shape value must be greater than 1, and values close to 1 give distributions that are close to normal."},
 
 {"TC_STIM_RATE_CONSTANT", 1, 0.0, 0.0,
-"TCR stimulation rate constant",
+"Stimulation rate constant",
 "Rate constant Ks for TCR stimulation, where:\n\
 rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 [molecules/min]"},
 	
 {"TC_STIM_HALFLIFE", 24.0, 0.0, 100.0,
-"TCR stimulation halflife",
+"Stimulation halflife",
 "Integrated TCR stimulation decays with a specified halflife. \n\
 [hours]"},
 
@@ -43,12 +43,12 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 "T cell motility is described by speed and persistence parameters, each in the range 0 - 1. MOTILITY_RHO determines the extent to which motion is in the same direction from one time step to the next."},
 
 {"DC_LIFETIME_MEDIAN", 3.0, 1.0, 20.0,
-"DC lifetime median parameter",
+"Lifetime median parameter",
 "DC lifetime has a lognormal distribution, described by the median and shape parameters.\n\
 [days]"},
 
 {"DC_LIFETIME_SHAPE", 1.2, 1.01, 3.0,
-"DC lifetime shape parameter",
+"Lifetime shape parameter",
 "DC lifetime has a lognormal distribution, described by the median and shape parameters."},
 
 {"IL2_THRESHOLD", 150, 10.0, 500.0,
@@ -87,7 +87,7 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 "Exit region",
 "Determines blob region for cell exits: 1 = everywhere, 2 = lower half of blob, 3 = by chemotaxis, via discrete exits."},
 
-{"CROSS_PROB", 0.002, 0.0, 1.0,
+{"CROSS_PROB", 0.02, 0.0, 1.0,
 "Capillary egress probability",
 "The probability (per time step) of a monocyte beginning to cross the endothelium into the capillary, while next to a capillary site\n\
 [0-1]"},
@@ -105,7 +105,7 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 "DC chemotaxis influence parameter",
 "Strength of chemotactic influence on T cell motion towards DCs."},
 
-{"NDAYS", 10.0, 0.0, 30.0,
+{"NDAYS", 4.0, 0.0, 30.0,
 "Number of days",
 "Length of the simulation.\n\
 [days]"},
