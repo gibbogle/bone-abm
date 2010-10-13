@@ -21,7 +21,8 @@
 				<Tool Name="VFCustomBuildTool"/>
 				<Tool Name="VFPreLinkEventTool"/>
 				<Tool Name="VFPreBuildEventTool"/>
-				<Tool Name="VFPostBuildEventTool" CommandLine="copy release\bone.dll c:\windows\system"/>
+				<Tool Name="VFPostBuildEventTool" CommandLine="copy release\bone.dll c:\windows\system
+copy release\bone.lib c:\windows\system"/>
 				<Tool Name="VFManifestTool" SuppressStartupBanner="true"/></Configuration></Configurations>
 	<Files>
 		<Filter Name="Header Files" Filter="fi;fd"/>
