@@ -216,7 +216,6 @@ private:
 	QTimer *timer;
 //	ExecThread *exthread;
 
-	static const double DELTA_T = 0.25;
 	int step;
 	int ntimes;
 	int savepos_start;
@@ -247,6 +246,8 @@ private:
 
 	MyVTK *vtk;
 };
+
+static const double DELTA_T = 0.25;
 
 class MyDoubleValidator : public QDoubleValidator
 {
