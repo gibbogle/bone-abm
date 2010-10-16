@@ -1,1 +1,3 @@
 glob:ifort/bone.suo
+glob:ifort/bone_main.u2d
+glob:GUI/bone_GUI.pro
