@@ -11,7 +11,7 @@ contains
 !-----------------------------------------------------------------------------------------
 !-----------------------------------------------------------------------------------------
 subroutine rng_initialisation()
-integer, allocatable :: zig_seed(:) 
+integer, allocatable :: zig_seed(:)
 integer :: i
 integer :: npar, grainsize = 32
 
@@ -61,7 +61,7 @@ capillary(1)%pos2 = (/ NX+0.5, NY/2., NZ/2. /)
 
 ! Set up capillary sites - this is currently VERY CRUDE
 ! If the centre of a site (cube) falls inside the capillary tube,
-! the site is tagged BLOOD.  
+! the site is tagged BLOOD.
 ! Note that (xc,yc,zc), which lies on the capillary centreline,
 ! is in (x,y,z) coord values, offset from site index values by 0.5
 ! E.g. if site(:) = (/2, 3, 4/), corresponding (x,y,z) = (/1.5, 2.5, 3.5/)
@@ -75,7 +75,7 @@ do icap = 1,ncap
 		alfa = (k-1.0)/(ndiv-1.0)
 		xc = (1-alfa)*capillary(icap)%pos1(1) + alfa*capillary(icap)%pos2(1)
 		yc = (1-alfa)*capillary(icap)%pos1(2) + alfa*capillary(icap)%pos2(2)
-		zc = (1-alfa)*capillary(icap)%pos1(3) + alfa*capillary(icap)%pos2(3)		
+		zc = (1-alfa)*capillary(icap)%pos1(3) + alfa*capillary(icap)%pos2(3)
 		do dx = -del,del
 			x = xc + dx
 			if (x < 1 .or. x > NX) cycle
@@ -139,7 +139,7 @@ enddo
 nsignal = 1
 signal(1)%site = (/ NX/2,NBY,NZ/2 /)
 call setSignal(1,ON,ok)
-if (ok == .false.) return
+if (.not.ok) return
 
 if (S1P_chemotaxis) then
 	call init_fields
@@ -305,7 +305,7 @@ end subroutine
 !------------------------------------------------------------------------------------------------
 ! Each osteocyte(?) signal is checked to see if the number of monocytes that have gathered is
 ! sufficient to initiate osteoclastogenesis.  Currently only the number of monocytes within
-! a specified volume is used to determine the initiation.  It would be 
+! a specified volume is used to determine the initiation.  It would be
 !------------------------------------------------------------------------------------------------
 subroutine checkSignals(ok)
 logical :: ok
@@ -352,9 +352,9 @@ do isig = 1,nsignal
 		write(logmsg,*) 'fusing monocytes: ',n,nt
 		call logger(logmsg)
 		call startFusing(isig,n,ok)
-		if (ok == .false.) return
+		if (.not.ok) return
 		call setSignal(isig,OFF,ok)
-		if (ok == .false.) return
+		if (.not.ok) return
 		signal(isig)%active = .false.
 	endif
 enddo
@@ -636,7 +636,7 @@ enddo
 ! Pit section
 do x = 1,NX
 	do z = 1,NZ
-		do y = 1,NBY 
+		do y = 1,NBY
 			if (occupancy(x,y,z)%region == PIT) then
 				write(nfpos,'(a,3i4)') 'P ',x,y,z
 				exit
@@ -911,7 +911,7 @@ do istep = 1,nsteps
 		call logger(logmsg)
 		return
 	endif
-	call check_pause	
+	call check_pause
 	if (mod(istep,240) == 0) then
 		call snapshot
 !		write(logmsg,'(a,4i6)') 'istep: ',istep,mono_cnt,nmono,nleft
