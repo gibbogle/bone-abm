@@ -1,10 +1,16 @@
 
 module bone_mod
+!DEC$ ATTRIBUTES DLLEXPORT :: BONE_MOD
+use ISO_C_binding
 use global
 use fields
 use motion
 
-implicit none
+implicit none 
+save
+
+integer(c_int),BIND(C) :: success = 12345
+!DEC$ ATTRIBUTES DLLEXPORT :: success
 
 contains
 
@@ -29,16 +35,19 @@ end subroutine
 subroutine setup(infile,ok)
 logical :: ok
 character*(*) :: infile
-integer :: x, y, z, del, dx, dy, dz, ix, i, site(3), ndiv, icap, k
-real :: xc, yc, zc, fac, x2, y2, z2
+integer :: x, y, z, del, dx, dy, dz, ix, i, site(3), ndiv, icap, k, na, nbr(3)
+integer, allocatable :: templist(:,:)
+real :: xc, yc, zc, fac, x2, y2, z2, v(3)
 integer :: kpar = 0
-real :: R, alfa
+real(8) :: R
+real :: alfa
 
 ok = .true.
 inputfile = infile
 call read_inputfile(ok)
 if (.not.ok) return
 call rng_initialisation
+PI = 4*atan(1.0)
 call make_reldir
 
 write(logmsg,*) 'NX,NY,NZ: ',NX,NY,NZ
@@ -48,16 +57,21 @@ occupancy%region = MARROW
 occupancy%indx = 0
 occupancy%signal = 0
 occupancy%intensity = 0
+occupancy%bone_fraction = 0
 do y = 1,NBY
 	occupancy(:,y,:)%region = BONE
+	occupancy(:,y,:)%bone_fraction = 1.0
 enddo
 
 ! Create a test capillary
 ncap = 1
 allocate(capillary(ncap))
-capillary(1)%radius = capR
+capillary(1)%radius = CAPILLARY_DIAMETER/2
 capillary(1)%pos1 = (/ 0.5, NY/2., NZ/2. /)
 capillary(1)%pos2 = (/ NX+0.5, NY/2., NZ/2. /)
+v = capillary(1)%pos2 - capillary(1)%pos1
+capillary(1)%length = rnorm(v)
+capillary(1)%surface_area = PI*capillary(1)%radius**2*capillary(1)%length
 
 ! Set up capillary sites - this is currently VERY CRUDE
 ! If the centre of a site (cube) falls inside the capillary tube,
@@ -104,7 +118,34 @@ do icap = 1,ncap
 		enddo
 	enddo
 enddo
-NMONO_INITIAL = (NX*(NY-NBY)*NZ)/40
+! Now set up a list of all marrow sites that are adjacent to a blood site
+allocate(templist(3,NX*NZ*10))
+na = 0
+do x = 2,NX-1
+	do y = NBY+1,NY-1
+		do z = 2,NZ-1
+			if (occupancy(x,y,z)%region /= MARROW) cycle
+			site = (/x,y,z/)
+			do k = 1,6
+				nbr = site + neumann(:,k)
+				if (occupancy(nbr(1),nbr(2),nbr(3))%region == BLOOD) then
+					na = na + 1
+					templist(:,na) = site
+					exit
+				endif
+			enddo
+		enddo
+	enddo
+enddo
+allocate(entrysite(3,na))
+entrysite(:,1:na) = templist(:,1:na)
+deallocate(templist)
+nentrysites = na
+
+NMONO_INITIAL = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*MONO_PER_MM3	! domain as fraction of 1 mm3 x rate of monocytes
+NSTEM = (PI*NX*CAPILLARY_DIAMETER*DELTA_X**2/1.0e6)*STEM_PER_MM2	! capillary surface area as fraction of 1 mm2 x rate of stem cells
+write(logmsg,*) 'NSTEM, NMONO_INITIAL: ',NSTEM,NMONO_INITIAL
+call logger(logmsg)
 nclast = 0
 nmono = 0
 nborn = 0
@@ -118,7 +159,7 @@ do while (nmono < NMONO_INITIAL)
 	z = random_int(1,NZ,kpar)
 	if (occupancy(x,y,z)%region /= MARROW) cycle
 	site = (/x,y,z/)
-	call addMono(site)
+	call addMono('initial',site)
 enddo
 
 allocate(stem(NSTEM))
@@ -131,7 +172,8 @@ do while (i < NSTEM)
 	i = i + 1
 	stem(i)%ID = i
 	stem(i)%site = (/x,y,z/)
-	call random_number(R)
+!	call random_number(R)
+	R = par_uni(kpar)
 	stem(i)%dividetime = R*STEM_CYCLETIME	! stem cells are due to divide at random times
 	occupancy(x,y,z)%species = STEMCELL
 enddo
@@ -144,17 +186,95 @@ if (.not.ok) return
 if (S1P_chemotaxis) then
 	call init_fields
 endif
+
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+subroutine pitrates(pclast)
+type(osteoclast_type), pointer :: pclast
+integer :: ipit
+real :: d, v(3)
+
+do ipit = 1,pclast%npit
+	v = pclast%pit(ipit)%site - pclast%site
+	d = sqrt(dot_product(v,v))
+	pclast%pit(ipit)%rate = resorptionRate(pclast%count,d)
+enddo
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+! For now the rate of entry of osteoclast-precursor monocytes is an input variable, i.e. constant.
+! In future it should be dependent on the level of osteoblast signalling, i.e. on work required.
+! The inflow rate is specified as cells/hour, in_per_hour
+!------------------------------------------------------------------------------------------------
+subroutine influx
+real :: rate, dr
+real(8) :: R
+integer :: i, n, kpar = 0
+
+rate = in_per_hour*DELTA_T/60 
+n = rate
+dr = rate - n
+do i = 1,n
+	call mono_entry
+enddo
+if (dr > 0) then
+!	call random_number(R)
+	R = par_uni(kpar)
+	if (R < dr) then
+		call mono_entry
+	endif
+endif
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+! Choose a random location on the side of a capillary for monocyte initial location
+!------------------------------------------------------------------------------------------------
+subroutine old_mono_entry
+integer :: icap, kpar=0
+real(8) :: p(MAX_CAP), R
+real :: d, v(3), alfa
+
+do icap = 1,ncap
+	p(icap) = capillary(icap)%surface_area
+enddo
+p(1:ncap) = p(1:ncap)/sum(p(1:ncap))
+
+icap = random_selection(p,ncap)
+R = par_uni(kpar)
+d = 4 + R*(capillary(icap)%length - 8)		! leave out the ends
+alfa = d/capillary(icap)%length
+v = (1-alfa)*capillary(icap)%pos1 + alfa*capillary(icap)%pos2
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+! Choose a random location on the side of a capillary for monocyte initial location
+!------------------------------------------------------------------------------------------------
+subroutine mono_entry
+integer :: i, site(3), kpar=0
+
+do
+	i = random_int(1,nentrysites,kpar)
+	site = entrysite(:,i)
+	if (occupancy(site(1),site(2),site(3))%indx == 0) exit
+enddo
+call addMono('blood',site)
 end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
 subroutine updater
 real :: S
-integer :: i, k, iclast, irel, dir, region, kcell, site(3)
-real :: tnow, R
+integer :: i, k, iclast, irel, dir, region, kcell, site(3), kpar=0
+real :: tnow
+real(8) :: R
 type(osteoclast_type), pointer :: pclast
+type(occupancy_type), pointer :: pbone
 
 tnow = istep*DELTA_T
+! Monocytes enter from the blood
+call influx
 ! Monocyte S1P1 level grows
 do i = 1,nmono
 	if (mono(i)%region /= MARROW) cycle
@@ -165,7 +285,8 @@ enddo
 ! Stem cells divide
 do i = 1,NSTEM
 	if (tnow > stem(i)%dividetime) then
-		call random_number(R)
+!		call random_number(R)
+		R = par_uni(kpar)
 		irel = nreldir*R
 		do k = 1,nreldir
 			irel = irel + 1
@@ -173,8 +294,7 @@ do i = 1,NSTEM
 			dir = reldir(1,irel)
 			site = stem(i)%site + jumpvec(:,dir)
 			if (free_site(site,region,kcell)) then
-				call addMono(site)
-!				write(*,*) 'added monocyte: ',i,site
+				call addMono('stem',site)
 				stem(i)%dividetime = tnow + STEM_CYCLETIME
 				nborn = nborn + 1
 				exit
@@ -182,7 +302,7 @@ do i = 1,NSTEM
 		enddo
 	endif
 enddo
-! Osteoclasts complete fusing, dissolve bone, or die.
+! Osteoclasts complete fusing, dissolve bone, move, or die.
 do iclast = 1,nclast
 	pclast => clast(iclast)
 	if (pclast%status == DEAD) cycle
@@ -196,20 +316,31 @@ do iclast = 1,nclast
 			cycle
 		endif
 	endif
+	if (tnow > pclast%movetime) then
+		call moveclast(pclast)
+		call pitrates(pclast)
+		pclast%movetime = tnow + CLAST_DWELL_TIME
+	endif
 	do k = 1,pclast%npit
-		if (pclast%pit(k)%fraction > 0) then
-			pclast%pit(k)%fraction = pclast%pit(k)%fraction - pclast%pit(k)%rate*DELTA_T
-			if (pclast%pit(k)%fraction <= 0) then
-				site = pclast%pit(k)%site
-				occupancy(site(1),site(2),site(3))%region = PIT
-				occupancy(site(1),site(2),site(3))%indx = 0
+		site = pclast%pit(k)%site
+		pbone => occupancy(site(1),site(2),site(3))
+		if (pbone%bone_fraction > 0) then
+			pbone%bone_fraction = pbone%bone_fraction - pclast%pit(k)%rate*DELTA_T
+!			if (k == pclast%npit) then
+!				write(*,*) 'bone_fraction: ',k,site,pbone%bone_fraction
+!			endif
+			if (pbone%bone_fraction <= 0) then
+				pbone%bone_fraction = 0
+				pbone%region = PIT
+				pbone%indx = 0
 				if (site(2) > 1) then
-					write(logmsg,*) 'Created pit site: ',site
-					call logger(logmsg)
+!					write(logmsg,*) 'Created pit site: ',site
+!					call logger(logmsg)
+!					write(*,*) 'Created pit site: ',site,'  bf: ',pbone%bone_fraction
 					pclast%pit(k)%site(2) = site(2) - 1
-					pclast%pit(k)%fraction = 1
-				else
-					pclast%pit(k)%fraction = 0
+!					pclast%pit(k)%fraction = 1
+!				else
+!					pclast%pit(k)%fraction = 0
 				endif
 			endif
 		endif
@@ -219,7 +350,8 @@ end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
-subroutine addMono(site)
+subroutine addMono(source,site)
+character*(*) :: source
 integer :: site(3)
 integer :: kpar = 0
 
@@ -236,6 +368,11 @@ mono(nmono)%status = MOTILE
 mono(nmono)%lastdir = random_int(1,6,kpar)
 mono(nmono)%S1P1 = 0
 occupancy(site(1),site(2),site(3))%species = MONOCYTE
+if (.not.use_TCP) then
+	write(*,*) 'added monocyte: ',nmono,site,'  ',source
+else
+	call logger('added monocyte  '//source)
+endif
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -247,7 +384,7 @@ end function
 
 !------------------------------------------------------------------------------------------------
 ! To avoid problems with wrapping, no signal site is allowed to occur near the boundary.
-! The bone normal is used to give higher preference to sites near the bone.
+! The bone normal is used to give higher preference to sites near the bone. 
 !------------------------------------------------------------------------------------------------
 subroutine setSignal(isig,onoff,ok)
 logical :: ok
@@ -259,15 +396,15 @@ real :: R2, d2, vn(3), v(3)
 
 ok = .true.
 site = signal(isig)%site
-x1 = site(1) - (SIG_RADIUS+1)
-x2 = site(1) + (SIG_RADIUS+1)
-y1 = site(2) - (SIG_RADIUS+1)
-y2 = site(2) + (SIG_RADIUS+1)
-z1 = site(3) - (SIG_RADIUS+1)
-z2 = site(3) + (SIG_RADIUS+1)
-R2 = SIG_RADIUS**2
+x1 = site(1) - (SIGNAL_RADIUS+1)
+x2 = site(1) + (SIGNAL_RADIUS+1)
+y1 = site(2) - (SIGNAL_RADIUS+1)
+y2 = site(2) + (SIGNAL_RADIUS+1)
+z1 = site(3) - (SIGNAL_RADIUS+1)
+z2 = site(3) + (SIGNAL_RADIUS+1)
+R2 = SIGNAL_RADIUS**2
 if (onoff == ON) then
-	if (x1 < 1 .or. x2 > NX .or. y1 < 1 .or. y2 > NY .or. z1 < 1 .or. z2 > NZ) then
+	if (x1 < 1 .or. x2 > NX .or. z1 < 1 .or. z2 > NZ) then
 		write(logmsg,*) 'Error: setSignal: signal site too close to boundary: ',site
 		call logger(logmsg)
 		ok = .false.
@@ -305,7 +442,10 @@ end subroutine
 !------------------------------------------------------------------------------------------------
 ! Each osteocyte(?) signal is checked to see if the number of monocytes that have gathered is
 ! sufficient to initiate osteoclastogenesis.  Currently only the number of monocytes within
-! a specified volume is used to determine the initiation.  It would be
+! a specified volume is used to determine the initiation.  It would be better to employ some
+! idea of stickiness.
+! When the number of monocytes within the region defined by (signal intensity > SIGNAL_THRESHOLD)
+! exceeds MTHRESHOLD, monocyte fusing is initiated.
 !------------------------------------------------------------------------------------------------
 subroutine checkSignals(ok)
 logical :: ok
@@ -313,20 +453,20 @@ integer :: isig
 integer :: site(3)
 integer :: x1, x2, y1, y2, z1, z2
 integer :: x, y, z, n, nt
-real :: R2, d2
+!real :: R2, d2
 type(occupancy_type), pointer :: p
 
 ok = .true.
-R2 = 0.33*(SIG_RADIUS)**2
+!R2 = 0.33*(SIGNAL_RADIUS)**2
 do isig = 1,nsignal
 	if (.not.signal(isig)%active) cycle
 	site = signal(isig)%site
-	x1 = site(1) - (SIG_RADIUS+1)
-	x2 = site(1) + (SIG_RADIUS+1)
-	y1 = site(2) - (SIG_RADIUS+1)
-	y2 = site(2) + (SIG_RADIUS+1)
-	z1 = site(3) - (SIG_RADIUS+1)
-	z2 = site(3) + (SIG_RADIUS+1)
+	x1 = site(1) - (SIGNAL_RADIUS+1)
+	x2 = site(1) + (SIGNAL_RADIUS+1)
+	y1 = site(2) - (SIGNAL_RADIUS+1)
+	y2 = site(2) + (SIGNAL_RADIUS+1)
+	z1 = site(3) - (SIGNAL_RADIUS+1)
+	z2 = site(3) + (SIGNAL_RADIUS+1)
 	n = 0
 	nt = 0
 	do x = x1,x2
@@ -335,7 +475,7 @@ do isig = 1,nsignal
 				p => occupancy(x,y,z)
 !				d2 = (x-site(1))**2 + (y-site(2))**2 + (z-site(3))**2
 !				if (d2 <= R2) then
-				if (p%signal == isig .and. p%intensity >= FTHRESHOLD) then
+				if (p%signal == isig .and. p%intensity >= SIGNAL_THRESHOLD) then
 					if (p%region == MARROW) then
 						nt = nt + 1
 						if (p%indx /= 0) then
@@ -364,6 +504,9 @@ end subroutine
 ! For now it is assumed, for simplicity, that the bone surface lies in an X-Z plane,
 ! i.e. that it is normal to the Y axis.  This makes it easy to determine which
 ! bone sites are subject to resorption.
+! All monocytes within the high-signal zone (signal intensity >= SIGNAL_THRESHOLD) are joined
+! to make an osteoclast.  The list of grid sites below the monocytes is created, and used
+! to make the list of pits associated with the osteoclast.
 !------------------------------------------------------------------------------------------------
 subroutine startFusing(isig,n,ok)
 integer :: isig,n
@@ -372,39 +515,43 @@ integer :: site(3)
 integer :: x1, x2, y1, y2, z1, z2
 integer :: x, y, z, cnt, imin, npit, i, yb
 real :: tnow, d
-integer :: bonesite(3,50)
+integer :: bonesite(3,100)
 logical :: inlist
 type(occupancy_type), pointer :: p
+type(osteoclast_type), pointer :: pclast
 
 ok = .true.
 tnow = istep*DELTA_T
 site = signal(isig)%site
 nclast = nclast + 1
-clast(nclast)%ID = nclast
-clast(nclast)%site = site
-clast(nclast)%normal = signal(isig)%normal
-clast(nclast)%status = FUSING
-clast(nclast)%fusetime = tnow
-clast(nclast)%entrytime = tnow + FUSING_TIME
-x1 = site(1) - (SIG_RADIUS+1)
-x2 = site(1) + (SIG_RADIUS+1)
-y1 = site(2) - (SIG_RADIUS+1)
-y2 = site(2) + (SIG_RADIUS+1)
-z1 = site(3) - (SIG_RADIUS+1)
-z2 = site(3) + (SIG_RADIUS+1)
+pclast => clast(nclast)
+pclast%ID = nclast
+pclast%site = site
+pclast%normal = signal(isig)%normal
+pclast%status = FUSING
+pclast%fusetime = tnow
+pclast%entrytime = tnow + FUSING_TIME
+pclast%movetime = BIGTIME
+x1 = site(1) - (SIGNAL_RADIUS+1)
+x2 = site(1) + (SIGNAL_RADIUS+1)
+y1 = site(2) - (SIGNAL_RADIUS+1)
+y2 = site(2) + (SIGNAL_RADIUS+1)
+z1 = site(3) - (SIGNAL_RADIUS+1)
+z2 = site(3) + (SIGNAL_RADIUS+1)
 cnt = 0
 npit = 0
 do x = x1,x2
 	do y = y1, y2
 		do z = z1,z2
 			p => occupancy(x,y,z)
-			if (p%signal == isig .and. p%intensity >= FTHRESHOLD &
+			if (p%signal == isig .and. p%intensity >= SIGNAL_THRESHOLD &
 				.and. p%region == MARROW .and. p%indx /= 0) then
 				cnt = cnt+1
-				clast(nclast)%mono(cnt) = p%indx
+				pclast%mono(cnt) = p%indx
 				mono(p%indx)%iclast = nclast
 				mono(p%indx)%status = FUSING
-				mono(p%indx)%exittime = clast(nclast)%entrytime
+				mono(p%indx)%exittime = pclast%entrytime
+				
 				yb = y
 				do
 					yb = yb - 1
@@ -414,7 +561,7 @@ do x = x1,x2
 						ok = .false.
 						return
 					endif
-					if (occupancy(x,yb,z)%region == BONE) then
+					if (occupancy(x,yb,z)%region == BONE .and. occupancy(x,yb,z)%bone_fraction > 0) then
 						inlist = .false.
 						do i = 1,npit
 							if (bonesite(1,i) == x .and. bonesite(3,i) == z) then
@@ -429,6 +576,7 @@ do x = x1,x2
 						exit
 					endif
 				enddo
+				
 				write(logmsg,'(5i6)') cnt,p%indx,x,y,z
 				call logger(logmsg)
 			endif
@@ -436,15 +584,17 @@ do x = x1,x2
 	enddo
 enddo
 
-clast(nclast)%count = cnt
-clast(nclast)%npit = npit
-allocate(clast(nclast)%pit(npit))
+pclast%count = cnt
+pclast%npit = npit
+allocate(pclast%pit(npit))
 do i = 1,npit
-	clast(nclast)%pit(i)%site = bonesite(:,i)
-	clast(nclast)%pit(i)%fraction = 1.0
-	d = sqrt(real((bonesite(1,i)-site(1))**2 + (bonesite(2,i)-site(2))**2 + (bonesite(3,i)-site(3))**2))
-	clast(nclast)%pit(i)%rate = resorptionRate(cnt,d)
+	pclast%pit(i)%site = bonesite(:,i)
 enddo
+call pitrates(pclast)
+!	clast(nclast)%pit(i)%fraction = 1.0
+!	d = sqrt(real((bonesite(1,i)-site(1))**2 + (bonesite(2,i)-site(2))**2 + (bonesite(3,i)-site(3))**2))
+!	clast(nclast)%pit(i)%rate = resorptionRate(cnt,d)
+!enddo
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -455,7 +605,10 @@ integer :: i
 real :: tnow
 
 tnow = istep*DELTA_T
+write(logmsg,*) 'completed fusing: ',iclast,tnow
+call logger(logmsg)
 clast(iclast)%status = ALIVE
+clast(iclast)%movetime = tnow + CLAST_DWELL_TIME 
 clast(iclast)%dietime = tnow + clastLifetime()
 do i = 1,clast(iclast)%count
 	mono(clast(iclast)%mono(i))%status = FUSED
@@ -463,18 +616,25 @@ enddo
 end subroutine
 
 !------------------------------------------------------------------------------------------------
+! The bone resorption rate at a given (x,z) depends on:
+!	n = the number of monocytes that fused to make the osteoclast
+!	d = the distance of the target bone site from the osteoclast centre
+! The depth factor df decreases linearly to zero as d goes from 0 to MAX_RESORPTION_D
+! The nominal maximum rate, MAX_RESORPTION_RATE, is scaled by the depth factor and
+! by the monocyte count (relative to a nominal max MAX_RESORPTION_N).
+! MAX_RESORPTION_RATE is in um/min, it is converted into grids/min by /DELTA_X
 !------------------------------------------------------------------------------------------------
 real function resorptionRate(n,d)
 integer :: n
 real :: d
-real :: f
+real :: df
 
 if (d >= MAX_RESORPTION_D) then
-	f = 0
+	df = 0
 else
-	f = 1 - d/MAX_RESORPTION_D
+	df = 1 - d/MAX_RESORPTION_D
 endif
-resorptionRate = MAX_RESORPTION_RATE*(real(n)/MAX_RESORPTION_N)*f
+resorptionRate = MAX_RESORPTION_RATE*(real(n)/MAX_RESORPTION_N)*df
 end function
 
 !------------------------------------------------------------------------------------------------
@@ -483,13 +643,13 @@ subroutine clastDeath(i)
 integer :: i
 integer :: k, site(3), kcell
 
-do k = 1,clast(i)%npit
-	if (clast(i)%pit(k)%fraction > 0 .and. clast(i)%pit(k)%fraction < 0.5) then
-		site = clast(i)%pit(k)%site
-		occupancy(site(1),site(2),site(3))%region = PIT
-		occupancy(site(1),site(2),site(3))%indx = 0
-	endif
-enddo
+!do k = 1,clast(i)%npit
+!	if (clast(i)%pit(k)%fraction > 0 .and. clast(i)%pit(k)%fraction < 0.5) then
+!		site = clast(i)%pit(k)%site
+!		occupancy(site(1),site(2),site(3))%region = PIT
+!		occupancy(site(1),site(2),site(3))%indx = 0
+!	endif
+!enddo
 clast(i)%status = DEAD
 deallocate(clast(i)%pit)
 do k = 1,clast(i)%count
@@ -506,7 +666,7 @@ end subroutine
 !------------------------------------------------------------------------------------------------
 real function clastLifetime()
 
-clastLifetime = MEAN_CLAST_LIFETIME
+clastLifetime = CLAST_LIFETIME
 end function
 
 !------------------------------------------------------------------------------------------------
@@ -555,7 +715,7 @@ end subroutine
 subroutine save_cell_positions
 !!!use ifport
 integer :: k, kcell, iclast, site(3), j, nfused, x, y, z, status, mono_state, icap
-real :: tnow, t1, t2, fraction
+real :: tnow, t1, t2, fraction, ypit
 !integer :: itcstate, stype, ctype
 real :: clast_diam = 0.9
 real :: mono_diam = 0.5
@@ -576,25 +736,9 @@ if (simulation_start) then
 endif
 simulation_start = .false.
 
-if (.not.clear_to_send) then
-	! wait until the file called removefile exists, then remove it
-	inquire(file=removefile,exist=ex)
-	if (.not.ex) then
-!		call logger('wait')
-		do
-			inquire(file=removefile,exist=ex)
-			if (.not.ex) then
-!				call millisleep(10) ! no good at all
-			else
-				exit
-			endif
-		enddo
-	endif
-	call unlink(removefile)
-	clear_to_send = .true.
-endif
-
 open(nfpos,file=fname,status='new')
+! Bone section
+write(nfpos,'(a2,4i6)') 'B ',NX,NY,NZ,NBY
 ! Monocyte section
 if (nmono > 0) then
 	nfused = 0
@@ -617,10 +761,12 @@ if (nmono > 0) then
             mono_state = 0
 		endif
         site = mono(kcell)%site
-        write(nfpos,'(a2,i6,4i4)') 'M ',kcell-1, site, mono_state
-        if (status == FUSING .or. status == FUSED) then
-			write(nflog,*) istep, kcell, site, mono_state
-		endif
+        if (.not.FAST_DISPLAY .or. mono_state /= 0) then
+	        write(nfpos,'(a2,i6,4i4)') 'M ',kcell-1, site, mono_state
+	    endif
+!        if (status == FUSING .or. status == FUSED) then
+!			write(nflog,*) istep, kcell, site, mono_state
+!		endif
     enddo
 !    if (nfused > 0) then
 !	    write(logmsg,*) 'nfused: ',nfused
@@ -630,15 +776,17 @@ endif
 
 ! Capillary section
 do icap = 1,ncap
-	write(nfpos,'(a,i4,6f6.1,f5.2)') 'C ',icap,capillary(icap)%pos1,capillary(icap)%pos2,capillary(icap)%radius + 0.25
+	write(nfpos,'(a,6f6.1,f5.2)') 'C ',capillary(icap)%pos1,capillary(icap)%pos2,capillary(icap)%radius + 0.25
 enddo
 
 ! Pit section
 do x = 1,NX
 	do z = 1,NZ
 		do y = 1,NBY
-			if (occupancy(x,y,z)%region == PIT) then
-				write(nfpos,'(a,3i4)') 'P ',x,y,z
+			if (occupancy(x,y,z)%region == PIT .or. &
+			   (occupancy(x,y,z)%region == BONE .and. occupancy(x,y,z)%bone_fraction < 1.0)) then
+			   ypit = y - 0.5 + occupancy(x,y,z)%bone_fraction
+				write(nfpos,'(a,3i4,f7.3)') 'P ',x,y,z,ypit
 				exit
 			endif
 		enddo
@@ -687,6 +835,131 @@ enddo
 write(nfpos,'(a2,i6)') 'E ',istep
 close(nfpos)
 
+if (.not.clear_to_send) then
+	! wait until the file called removefile exists, then remove it
+	inquire(file=removefile,exist=ex)
+	if (.not.ex) then
+		call logger('wait')
+		do
+!			call logger('wait')
+			inquire(file=removefile,exist=ex)
+			if (.not.ex) then
+!				call sleeper(1)
+!				call millisleep(10) ! no good at all
+			else
+				exit
+			endif
+		enddo
+	endif
+	call unlink(removefile)
+	clear_to_send = .true.
+endif
+end subroutine
+
+!--------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------
+subroutine get_dimensions(NX_dim,NY_dim,NZ_dim,NBY_dim) BIND(C)
+!DEC$ ATTRIBUTES DLLEXPORT :: get_dimensions
+use, intrinsic :: iso_c_binding
+integer(c_int) :: NX_dim,NY_dim,NZ_dim,NBY_dim
+
+NX_dim = NX
+NY_dim = NY
+NZ_dim = NZ
+NBY_dim = NBY
+end subroutine
+
+!--------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------
+subroutine get_summary(summaryData) BIND(C)
+!DEC$ ATTRIBUTES DLLEXPORT :: get_summary
+use, intrinsic :: iso_c_binding
+integer(c_int) :: summaryData(*)
+
+summaryData(1:4) = (/istep,mono_cnt,nborn,nleft/)
+end subroutine
+
+!--------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------
+subroutine get_scene(ncap_list,cap_list,nmono_list,mono_list,npit_list,pit_list) BIND(C)
+!DEC$ ATTRIBUTES DLLEXPORT :: get_scene
+use, intrinsic :: iso_c_binding
+integer(c_int) :: nmono_list, mono_list(*), ncap_list, npit_list
+real(c_float) :: cap_list(*), pit_list(*)
+integer :: k, j, kcell, iclast, site(3), nfused, x, y, z, status, mono_state, icap
+real :: tnow, t1, t2, fraction, ypit
+!integer :: itcstate, stype, ctype
+real :: clast_diam = 0.9
+real :: mono_diam = 0.5
+
+tnow = istep*DELTA_T
+! Monocyte section
+if (nmono > 0) then
+	nfused = 0
+	k = 0
+    do kcell = 1,nmono
+		status = mono(kcell)%status
+		if (status == DEAD) cycle
+		if (mono(kcell)%region /= MARROW) cycle
+		if (status == CROSSING) then
+			mono_state = 1
+		elseif (status == FUSING) then
+			iclast = mono(kcell)%iclast
+			t1 = clast(iclast)%fusetime
+			t2 = clast(iclast)%entrytime
+			fraction = min(1.0,(tnow-t1)/(t2-t1))
+			mono_state = 2 + fraction*99
+		elseif (status == FUSED) then
+			mono_state = 101
+			nfused = nfused + 1
+		else
+            mono_state = 0
+		endif
+        site = mono(kcell)%site
+        if (.not.FAST_DISPLAY .or. mono_state /= 0) then
+			k = k+1
+			j = 5*(k-1)
+			mono_list(j+1) = kcell-1
+			mono_list(j+2:j+4) = site
+			mono_list(j+5) = mono_state
+!	        write(nfpos,'(a2,i6,4i4)') 'M ',kcell-1, site, mono_state
+	    endif
+    enddo
+endif
+nmono_list = k
+
+! Capillary section
+!do icap = 1,ncap
+!	write(nfpos,'(a,6f6.1,f5.2)') 'C ',capillary(icap)%pos1,capillary(icap)%pos2,capillary(icap)%radius + 0.25
+!enddo
+do icap = 1,ncap
+	j = (icap-1)*7
+	cap_list(j+1:j+3) = capillary(icap)%pos1
+	cap_list(j+4:j+6) = capillary(icap)%pos2
+	cap_list(j+7) = capillary(icap)%radius+0.25
+enddo
+ncap_list = ncap
+
+
+! Pit section
+k = 0
+do x = 1,NX
+	do z = 1,NZ
+		do y = 1,NBY
+			if (occupancy(x,y,z)%region == PIT .or. &
+			   (occupancy(x,y,z)%region == BONE .and. occupancy(x,y,z)%bone_fraction < 1.0)) then
+			   ypit = y - 0.5 + occupancy(x,y,z)%bone_fraction
+			   k = k+1
+			   j = 4*(k-1)
+			   pit_list(j+1:j+3) = (/x,y,z/)
+			   pit_list(j+4) = ypit
+!				write(nfpos,'(a,3i4,f7.3)') 'P ',x,y,z,ypit
+				exit
+			endif
+		enddo
+	enddo
+enddo
+npit_list = k
 end subroutine
 
 !-----------------------------------------------------------------------------------------
@@ -717,26 +990,47 @@ real :: chemo_radius,chemo_K_exit,chemo_K_DC
 ok = .false.
 open(nfinp,file=inputfile,status='old')
 
-read(nfinp,*) TC_AVIDITY_MEAN				! mean of avidity distribution (only if fix_avidity = false)
-read(nfinp,*) TC_AVIDITY_SHAPE			    ! shape -> 1 gives normal dist with small variance
-read(nfinp,*) TC_STIM_RATE_CONSTANT			! rate const for TCR stimulation (-> molecules/min)
-read(nfinp,*) TC_STIM_HALFLIFE				! halflife of T cell stimulation (hours)
-read(nfinp,*) divide_mean1
-read(nfinp,*) divide_shape1
+!read(nfinp,*) TC_AVIDITY_MEAN				! mean of avidity distribution (only if fix_avidity = false)
+!read(nfinp,*) TC_AVIDITY_SHAPE			    ! shape -> 1 gives normal dist with small variance
+!read(nfinp,*) TC_STIM_RATE_CONSTANT			! rate const for TCR stimulation (-> molecules/min)
+!read(nfinp,*) TC_STIM_HALFLIFE				! halflife of T cell stimulation (hours)
+!read(nfinp,*) divide_mean1
+!read(nfinp,*) divide_shape1
 read(nfinp,*) BETA							! speed: 0 < beta < 1		(0.65)
 read(nfinp,*) RHO							! persistence: 0 < rho < 1	(0.95)
 
-read(nfinp,*) DC_LIFETIME_MEAN				! days
-read(nfinp,*) DC_LIFETIME_SHAPE 			! days
+!read(nfinp,*) DC_LIFETIME_MEAN				! days
+!read(nfinp,*) DC_LIFETIME_SHAPE 			! days
 
-read(nfinp,*) IL2_THRESHOLD					! stimulation needed to initiate IL-2/CD25 production
-read(nfinp,*) ACTIVATION_THRESHOLD			! stimulation needed for activation
-read(nfinp,*) FIRST_DIVISION_THRESHOLD		! activation level needed for first division
-read(nfinp,*) DIVISION_THRESHOLD			! activation level needed for subsequent division
-read(nfinp,*) EXIT_THRESHOLD				! activation level below which exit is permitted
-read(nfinp,*) STIMULATION_LIMIT				! maximum activation level
+!read(nfinp,*) IL2_THRESHOLD					! stimulation needed to initiate IL-2/CD25 production
+!read(nfinp,*) ACTIVATION_THRESHOLD			! stimulation needed for activation
+!read(nfinp,*) FIRST_DIVISION_THRESHOLD		! activation level needed for first division
+!read(nfinp,*) DIVISION_THRESHOLD			! activation level needed for subsequent division
+!read(nfinp,*) EXIT_THRESHOLD				! activation level below which exit is permitted
+!read(nfinp,*) STIMULATION_LIMIT				! maximum activation level
 
-read(nfinp,*) NX							! size of cubical region
+read(nfinp,*) X_SIZE						! size of bone region (square)
+read(nfinp,*) Y_SIZE						! thickness of slice
+
+read(nfinp,*) CAPILLARY_DIAMETER			! capillary diameter (um) (= 3)
+read(nfinp,*) MONOCYTE_DIAMETER				! monocyte diameter (um) = 10	! um
+read(nfinp,*) MONO_PER_MM3					! initial (equil) number of monocytes/mm3 (= 2000)
+read(nfinp,*) IN_PER_HOUR					! rate of influx of monocytes from the blood
+read(nfinp,*) STEM_PER_MM2					! number of stem cells/mm3 (=20) (NEEDS to be normalized)
+read(nfinp,*) STEM_CYCLETIME				! stem cell division cycle time (hours) (= 6*60	! 6 hours)
+read(nfinp,*) CROSSING_TIME					! time taken for a monocyte to cross into the capillary (mins)
+
+read(nfinp,*) FUSING_TIME					! time taken by monocytes fusing into an osteoclast	(120) (mins)
+read(nfinp,*) CLAST_LIFETIME				! lifetime of an osteoclast (4) days -> mins
+read(nfinp,*) CLAST_DWELL_TIME				! time an osteoclast spends in one spot (180) (mins)
+read(nfinp,*) MAX_RESORPTION_RATE			! maximum bone removal rate (/grid cell) (0.02) (um/min)
+read(nfinp,*) MAX_RESORPTION_D				! maximum pit depth (for scaling rate) (5) (um)
+read(nfinp,*) MAX_RESORPTION_N				! number of monos in osteoclast corresponding to MAX_RESORPTION_RATE (30)
+
+read(nfinp,*) SIGNAL_RADIUS					! radius of influence of bone signal (um -> grids) (10)
+read(nfinp,*) SIGNAL_THRESHOLD				! defines the high-signal region, near the source (0.14)
+read(nfinp,*) SIGNAL_AFACTOR				! field amplification factor (0.4)
+read(nfinp,*) MTHRESHOLD					! number of monocytes in the high-signal region that triggers fusing (25)
 
 read(nfinp,*) exit_rule						! 1 = no chemotaxis, 2 = chemotaxis
 read(nfinp,*) exit_region					! region for cell exits 1 = capillary, 2 = sinusoid
@@ -754,11 +1048,19 @@ read(nfinp,*) SPECIES						! animal species
 close(nfinp)
 !call logger('Finished reading input file')
 
-if (mod(NX,2) /= 0) NX = NX+1				! ensure that NX is even
-NY = NX
-NZ = NX
 DELTA_X = MONOCYTE_DIAMETER
-chemo_radius = chemo_radius/DELTA_X
+NX = X_SIZE/DELTA_X									! convert um -> grids
+NY = Y_SIZE/DELTA_X	+NBY							! convert um -> grids
+if (mod(NX,2) /= 0) NX = NX+1						! ensure that NX is even (why?)
+NZ = NX
+CAPILLARY_DIAMETER = CAPILLARY_DIAMETER/DELTA_X		! convert um -> grids
+chemo_radius = chemo_radius/DELTA_X					! convert um -> grids
+STEM_CYCLETIME = 60*STEM_CYCLETIME					! convert hours -> minutes
+CLAST_LIFETIME = CLAST_LIFETIME*24*60				! convert days -> minutes
+MAX_RESORPTION_RATE = MAX_RESORPTION_RATE/DELTA_X	! convert um/min -> grids
+MAX_RESORPTION_D = MAX_RESORPTION_D/DELTA_X			! convert um -> grids/min
+SIGNAL_RADIUS = SIGNAL_RADIUS/DELTA_X				! convert um -> grids
+
 !write(*,*) 'DC_RADIUS, chemo_radius: ',DC_RADIUS,chemo_radius
 !chemo_N = max(3,int(chemo_radius + 0.5))	! convert from um to lattice grids
 !write(*,*) 'chemo_N: ',chemo_N
@@ -807,6 +1109,20 @@ Nsteps = days*60*24/DELTA_T
 !write(*,*) 'open resultfile: ',resultfile
 
 ok = .true.
+
+write(logmsg,*) 'FUSING_TIME: ',FUSING_TIME					! time taken by monocytes fusing into an osteoclast	(120) (mins)
+call logger(logmsg)
+write(logmsg,*) 'CLAST_LIFETIME: ',CLAST_LIFETIME				! lifetime of an osteoclast (4) days -> mins
+call logger(logmsg)
+write(logmsg,*) 'CLAST_DWELL_TIME: ',CLAST_DWELL_TIME				! time an osteoclast spends in one spot (180) (mins)
+call logger(logmsg)
+write(logmsg,*) 'MAX_RESORPTION_RATE: ',MAX_RESORPTION_RATE			! maximum bone removal rate (/grid cell) (0.02) (um/min)
+call logger(logmsg)
+write(logmsg,*) 'MAX_RESORPTION_D: ',MAX_RESORPTION_D				! maximum pit depth (for scaling rate) (5) (um)
+call logger(logmsg)
+write(logmsg,*) 'MAX_RESORPTION_N: ',MAX_RESORPTION_N				! number of monos in osteoclast corresponding to MAX_RESORPTION_RATE (30)
+call logger(logmsg)
+
 end subroutine
 
 
@@ -860,21 +1176,23 @@ endif
 write(logmsg,'(a)') 'Connected to TCP_PORT_0  '
 call logger(logmsg)
 
-call connection(awp_1,TCP_PORT_1,error)
-if (awp_1%handle < 0 .or. error /= 0) then
-    write(logmsg,'(a)') 'TCP connection to TCP_PORT_1 failed'
-    call logger(logmsg)
-    ok = .false.
-    return
+if (use_CPORT1) then
+	call connection(awp_1,TCP_PORT_1,error)
+	if (awp_1%handle < 0 .or. error /= 0) then
+		write(logmsg,'(a)') 'TCP connection to TCP_PORT_1 failed'
+		call logger(logmsg)
+		ok = .false.
+		return
+	endif
+	if (.not.awp_1%is_open) then
+		write(logmsg,'(a)') 'No connection to TCP_PORT_1'
+		call logger(logmsg)
+		ok = .false.
+		return
+	endif
+	write(logmsg,'(a)') 'Connected to TCP_PORT_1  '
+	call logger(logmsg)
 endif
-if (.not.awp_1%is_open) then
-	write(logmsg,'(a)') 'No connection to TCP_PORT_1'
-    call logger(logmsg)
-    ok = .false.
-    return
-endif
-write(logmsg,'(a)') 'Connected to TCP_PORT_1  '
-call logger(logmsg)
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -896,15 +1214,38 @@ end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
-subroutine simulate(ok)
+subroutine simulate_step(res) BIND(C)
+!DEC$ ATTRIBUTES DLLEXPORT :: simulate_step
+use, intrinsic :: iso_c_binding
+integer(c_int) :: res
 logical :: ok
 integer :: error
 
-clear_to_send = .true.
-simulation_start = .true.
-
+res = 0
+!call logger("simulate_step")
 ok = .true.
-do istep = 1,nsteps
+istep = istep + 1
+!write(nflog,*) 'call updater'
+call updater
+!write(nflog,*) 'call mover: ',nmono
+call mover
+if (nsignal > 0) then
+	call checkSignals(ok)
+	if (.not.ok) res = 1
+endif
+end subroutine
+
+
+!------------------------------------------------------------------------------------------------
+! This is the original version, using files to communicate signals and data with the Qt main.
+!------------------------------------------------------------------------------------------------
+subroutine simulate(ok)
+logical :: ok
+integer :: it, error, res
+
+istep = 0
+ok = .true.
+do it = 1,nsteps
 	inquire(file=stopfile,exist=stopped)
 	if (stopped) then
 		write(logmsg,'(a)') 'Stop order received'
@@ -921,12 +1262,17 @@ do istep = 1,nsteps
 		call save_pos(ok)
 		if (.not.ok) return
 	endif
-	call updater
-	call mover
-	if (nsignal > 0) then
-		call checkSignals(ok)
-		if (.not.ok) return
+	call simulate_step(res)
+	if (res /= 0) then
+		ok = .false.
+		return
 	endif
+!	call updater
+!	call mover
+!	if (nsignal > 0) then
+!		call checkSignals(ok)
+!		if (.not.ok) return
+!	endif
 enddo
 end subroutine
 
@@ -939,18 +1285,21 @@ if (allocated(mono)) deallocate(mono)
 if (allocated(clast)) deallocate(clast)
 if (allocated(stem)) deallocate(stem)
 if (allocated(capillary)) deallocate(capillary)
+if (allocated(entrysite)) deallocate(entrysite)
 end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
-subroutine terminate(success)
-logical :: success
+subroutine terminate_run(res) BIND(C)
+!DEC$ ATTRIBUTES DLLEXPORT :: terminate_run
+use, intrinsic :: iso_c_binding
+integer(c_int) :: res
 character*(8), parameter :: quit = '__EXIT__'
 integer :: error, i
 
 call wrapup
 
-if (success) then
+if (res == 0) then
 	call logger(' Execution successful')
 else
 	call logger('  === Execution failed ===')
@@ -961,14 +1310,16 @@ close(nflog)
 if (use_TCP) then
 	if (stopped) then
 	    call winsock_close(awp_0)
-	    call winsock_close(awp_1)
+	    if (use_CPORT1) call winsock_close(awp_1)
 	else
 	    call winsock_send(awp_0,quit,8,error)
 	    call winsock_close(awp_0)
 !	    call logger("closed PORT_0")
-	    call winsock_send(awp_1,quit,8,error)
-	    call winsock_close(awp_1)
-!	    call logger("closed PORT_1")
+		if (use_CPORT1) then
+		    call winsock_send(awp_1,quit,8,error)
+		    call winsock_close(awp_1)
+!			call logger("closed PORT_1")
+		endif
 	endif
 endif
 
@@ -981,6 +1332,9 @@ subroutine execute(infile)
 !DEC$ ATTRIBUTES C, REFERENCE, MIXED_STR_LEN_ARG, ALIAS:"EXECUTE" :: execute
 character*(*) :: infile
 logical :: ok
+integer :: res
+
+use_CPORT1 = .false.	! TESTING DIRECT CALLING FROM C++
 
 open(nflog,file='bone.log',status='replace')
 awp_0%is_open = .false.
@@ -1024,14 +1378,27 @@ if (use_tcp) then
 	call logger('did connecter')
 endif
 call setup(infile,ok)
+call logger('did setup')
 if (ok) then
+	call logger('returned OK')
+	clear_to_send = .true.
+	simulation_start = .true.
+	istep = 0
+	
+	return
+	
 	call simulate(ok)
 	call logger('Ended simulation')
 	call logger('Execution successful')
 else
 	call logger('setup failed')
 endif
-call terminate(ok)
+if (ok) then
+	res = 0
+else
+	res = 1
+endif
+call terminate_run(res)
 end subroutine
 
 end module
