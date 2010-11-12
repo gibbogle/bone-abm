@@ -4,6 +4,7 @@
 Params::Params()
 {
 	PARAM_SET params[] = {
+/*
 {"TC_AVIDITY_MEDIAN", 1.0, 0.1, 10.0,
 "Receptor avidity median parameter",
 "TCR avidity has a lognormal distribution, described by the median and shape parameters.\n\
@@ -13,6 +14,7 @@ Params::Params()
 "Receptor avidity shape parameter",
 "TCR avidity has a lognormal distribution, described by the median and shape parameters.\n\
 The shape value must be greater than 1, and values close to 1 give distributions that are close to normal."},
+
 
 {"TC_STIM_RATE_CONSTANT", 1, 0.0, 0.0,
 "Stimulation rate constant",
@@ -33,14 +35,6 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 {"DIVIDE1_SHAPE", 1.1, 1.01, 3.0,
 "1st division time shape parameter",
 "The time taken for the first T cell division, after full activation, has a lognormal distribution, described by the median and shape parameters."},
-
-{"MOTILITY_BETA", 0.35, 0.25, 0.5,
-"Motility speed parameter",
-"T cell motility is described by speed and persistence parameters, each in the range 0 - 1. Median T cell speed is roughly proportional to MOTILITY_BETA."},
-
-{"MOTILITY_RHO", 0.76, 0.5, 0.9,
-"Motility persistence parameter",
-"T cell motility is described by speed and persistence parameters, each in the range 0 - 1. MOTILITY_RHO determines the extent to which motion is in the same direction from one time step to the next."},
 
 {"DC_LIFETIME_MEDIAN", 3.0, 1.0, 20.0,
 "Lifetime median parameter",
@@ -74,10 +68,104 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 {"STIMULATION_LIMIT", 1000, 0.0, 0.0,
 "Maximum stimulation level",
 "Maximum integrated TCR stimulation level (saturation level)."},
+*/
 
-{"NX", 50, 30, 300,
-"Lattice size",
-"Dimension of the lattice (number of sites in X, Y and Z directions).  Typically 4*BLOB_RADIUS is OK."},
+{"MOTILITY_BETA", 0.2, 0.25, 0.5,
+"Motility speed parameter",
+"T cell motility is described by speed and persistence parameters, each in the range 0 - 1. Median T cell speed is roughly proportional to MOTILITY_BETA."},
+
+{"MOTILITY_RHO", 0.76, 0.5, 0.9,
+"Motility persistence parameter",
+"T cell motility is described by speed and persistence parameters, each in the range 0 - 1. MOTILITY_RHO determines the extent to which motion is in the same direction from one time step to the next."},
+
+{"X_SIZE", 1000, 0, 0,
+"Bone patch size",
+"Dimension of the modelled bone region (in X and Z directions).\n\
+[um]"},
+
+{"Y_SIZE", 500, 0, 0,
+"Slice thickness",
+"Dimension of the modelled region in Y direction.\n\
+[um]"},
+
+{"CAPILLARY_DIAMETER", 50.0, 20.0, 200.0,
+"Diameter of a capillary",
+"(Currently we consider only a single capillary with a fixed diameter)\n\
+[um]"},
+
+{"MONOCYTE_DIAMETER", 10.0, 5.0, 25.0,
+"Diameter of a monocyte",
+"Currently osteocyte-precursor monocytes are assumed to be all the same size.\n\
+[um]"},
+
+{"MONO_PER_MM3", 2000, 100, 5000,
+"Monocytes/mm3",
+"Average number of monocytes in 1 cubic mm of marrow."},
+
+{"IN_PER_HOUR", 4, 0, 0,
+"Monocyte influx",
+"Rate of influx pf osteoclast-precursor monocytes from the blood.\n\
+[/hour]"},
+
+{"STEM_PER_MM2", 10, 0, 1000,
+"Stem cells/mm2",
+"Average number of stem cells per square mm of capillary surface."},
+
+{"STEM_CYCLETIME", 6.0, 3.0, 12.0,
+"Stem cell cycle time",
+"Time taken for stem cell division.\n\
+[hours]"},
+
+{"CROSSING_TIME", 100.0, 5.0, 500.0,
+"Capillary crossing time",
+"Time taken for a monocyte the cross into a capillary\n\
+[mins]"},
+
+{"FUSING_TIME", 120.0, 10.0, 500.0,
+"Monocyte -> osteoclast fusing time",
+"Time taken for a group of monocytes to form an osteoclast, after they have aggregated\n\
+[mins]"},
+
+{"CLAST_LIFETIME", 4.0, 1.0, 20.0,
+"Osteoclast lifetime",
+"Length of time that an osteoclast remains active\n\
+[days]"},
+
+{"CLAST_DWELL_TIME", 180.0, 10.0, 500.0,
+"Osteoclast dwell time",
+"Length of time that an osteoclast remains in one spot, before moving one grid\n\
+[days]"},
+
+{"MAX_RESORPTION_RATE", 0.02, 0.0, 0.0,
+"Maximum resorption rate",
+"Maximum rate of bone removal by an osteoclast\n\
+[um/min]"},
+
+{"MAX_RESORPTION_D", 50, 0, 0,
+"Maximum resorption D",
+"Excavation depth at which rate of bone removal goes to zero\n\
+[um]"},
+
+{"MAX_RESORPTION_N", 30, 0, 0,
+"Maximum resorption N",
+"Number of osteoclast monocytes corresponding to maximum resorption rate."},
+
+{"SIGNAL_RADIUS", 50, 0, 0,
+"Signal range",
+"Range of the signal that attracts monocytes to the bone surface (inverse square law applies within this range)\n\
+[um]"},
+
+{"SIGNAL_THRESHOLD", 0.14, 0, 0,
+"Signal threshold",
+"Strength of the signal defining the high-signal region near the source."},
+
+{"SIGNAL_AFACTOR", 0.4, 0, 0,
+"Chemotactic strength factor",
+"Chemotactic influence of the signal is controlled by this parameter."},
+
+{"MTHRESHOLD", 25, 0, 0,
+"Fusing threshold",
+"Number of monocytes in the high-signal region required to trigger fusing."},
 
 {"EXIT_RULE", 1, 1, 2,
 "Exit rule",

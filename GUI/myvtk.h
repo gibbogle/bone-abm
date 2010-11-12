@@ -48,7 +48,6 @@ struct bond_pos {
 typedef bond_pos BOND_POS;
 
 struct capillary_segment {
-	int tag;
 	double pos1[3], pos2[3];
 	double radius;
 };
@@ -56,6 +55,7 @@ typedef capillary_segment CAPILLARY_SEGMENT;
 
 struct pit_pos {
 	int pos[3];
+	double ypit;
 };
 typedef pit_pos PIT_POS;
 
@@ -66,6 +66,20 @@ struct surface_tile {
 };
 typedef surface_tile SURFACE_TILE;
 
+struct bone {
+	double y;
+	vtkActor *actor;
+};
+typedef bone BONE;
+
+struct vert_tile {
+	double pos[3];
+	double height;
+	char axis;
+	vtkActor *actor;
+};
+typedef vert_tile VERT_TILE;
+
 class MyVTK
 {
 public:
@@ -73,15 +87,19 @@ public:
 	~MyVTK();
 
 	void read_cell_positions(QString, QString, bool);
+	void get_cell_positions();
 	void init();
 	void cleanup();
-	void renderCells(bool,bool);
+	void renderCells();
+	void makeBox();
 	void process_Mcells();
 	void process_Tcells();
     void process_Dcells(bool);
     void process_bonds();
 	void process_capillaries();
+	void oldprocess_tiles();
 	void process_tiles();
+	void oldcreateTileList();
 	void createTileList();
 	int inTileList(SURFACE_TILE *tile);
 	bool startPlayer(QString, QTimer *, bool);
@@ -98,12 +116,15 @@ public:
 	QList<CAPILLARY_SEGMENT> capillary_list;
 	QList<PIT_POS > pitpos_list;
 	QList<SURFACE_TILE> tile_list;
+	QList<VERT_TILE> verttile_list;
 	QList<vtkActor *> M_Actor_list;
 	QList<vtkActor *> T_Actor_list;
 	QList<vtkActor *> D_Actor_list;
 	QList<vtkActor *> B_Actor_list;
 	QList<vtkActor *> C_Actor_list;
 	QList<vtkActor *> Tile_Actor_list;
+
+	BONE **bone_array;
 
 	QVTKWidget* qvtkWidget;
 	vtkRenderWindow *renWin;	
@@ -114,6 +135,7 @@ public:
 	vtkPolyDataMapper *DcellMapper;
 	vtkPolyDataMapper *bondMapper;
 	vtkPolyDataMapper *capillaryMapper;
+	vtkPolyDataMapper *cylMapper;
 	vtkPolyDataMapper *tileMapper;
 	vtkPolyDataMapper *textMapper;
 
@@ -132,6 +154,7 @@ public:
 
 	char msg[2048];
 	double zoomlevel;
+	double Pi;
 	bool DCmotion;
 	bool DCfade;
 	bool first_VTK;
@@ -144,6 +167,7 @@ public:
 	QString infile;
 	QFile *playerData;
 	QTextStream *playerStream;
+	vtkActor *boxActor[8];
 
 //	double *TCColor, *DCColor;
 

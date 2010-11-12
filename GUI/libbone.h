@@ -14,6 +14,11 @@ void __bone_mod_MOD_execute(char *, int);
 //void EXECUTE(int *, char *, int, char *, int, char *, int, char *, int);
 //void EXECUTE(int *);
 void EXECUTE(char *, int);
+void simulate_step(int *);
+void terminate_run(int *);
+void get_dimensions(int *,int *,int *,int *);
+void get_scene(int *, float *, int *, int *,  int *, float *);
+void get_summary(int *);
 #endif
 //
 //

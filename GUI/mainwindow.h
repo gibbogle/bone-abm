@@ -62,15 +62,16 @@ public:
     MainWindow(QWidget *parent = 0);
 
 	char msg[2048];
+	int VTKbuffer[100];
 
 protected:
-    void closeEvent(QCloseEvent *event);
+//    void closeEvent(QCloseEvent *event);
 
 private slots:
-    void newFile();
-    void open();
-    void about();
-    void documentWasModified();
+//    void newFile();
+//    void open();
+//    void about();
+//    void documentWasModified();
 
     bool save();
     bool saveAs();
@@ -102,6 +103,8 @@ public slots:
 	void postConnection();
 	void timer_update();
 	void errorPopup(QString);
+	void displayScene();
+	void showSummary();
 	void zzz();
 
 private:
@@ -199,7 +202,6 @@ private:
 	bool first;
 	bool started;
 	bool firstVTK;
-	int showingVTK;
 	bool playingVTK;
 	int tickVTK;
 	int currentDescription;
@@ -239,15 +241,15 @@ private:
 	QString graphCaseName[Plot::ncmax];
 	RESULT_SET *graphResultSet[Plot::ncmax];
 	static const bool show_outputdata = false;
+	static const bool use_CPORT1 = false;
 
 	static const int CPORT0 = 5000;
 	static const int CPORT1 = 5001;
 	static const bool USE_RANGES = false;
 
 	MyVTK *vtk;
+	ExecThread *exthread;
 };
-
-static const double DELTA_T = 0.25;
 
 class MyDoubleValidator : public QDoubleValidator
 {
@@ -273,5 +275,7 @@ public:
 		return Acceptable;
 	}
 };
+
+static const double DELTA_T = 0.25;
 
 #endif
