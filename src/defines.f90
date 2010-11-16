@@ -21,10 +21,13 @@ integer, parameter :: ON = 1
 integer, parameter :: DEAD = -1
 integer, parameter :: MOTILE = 1
 integer, parameter :: ALIVE = 1
-integer, parameter :: FUSING = 2
-integer, parameter :: FUSED = 3
-integer, parameter :: CROSSING = 4
-integer, parameter :: LEFT = 5
+integer, parameter :: CHEMOTACTIC = 2
+integer, parameter :: STICKY = 3
+integer, parameter :: FUSING = 4
+integer, parameter :: FUSED = 5
+integer, parameter :: MATURE = 6
+integer, parameter :: CROSSING = 7
+integer, parameter :: LEFT = 8
 
 integer, parameter :: NEUMANN_MODEL = 1
 integer, parameter :: MOORE18_MODEL = 2
@@ -38,6 +41,8 @@ integer, parameter :: MAX_MONO = 50000
 integer, parameter :: MAX_CLAST = 100
 integer, parameter :: MAX_CAP = 100
 integer, parameter :: MAX_SIGNAL = MAX_CLAST
+integer, parameter :: MAX_CLUMP = 20
+integer, parameter :: MAX_CLUMP_CELLS = 100
 real, parameter :: DELTA_T = 0.25		! minutes
 real, parameter :: BIGTIME = 1.0e10
 logical, parameter :: FAST_DISPLAY = .false.
@@ -69,11 +74,19 @@ character*(13), parameter :: pausefile = 'pause_dll'
 
 
 ! S1P1 parameters
+logical, parameter :: S1P_chemotaxis = .true.
 real, parameter :: S1P1_THRESHOLD = 0.5
 real, parameter :: S1P1_BASERATE = 1.0/(6*60)	! 6 hours
-logical, parameter :: S1P_chemotaxis = .false.
 
+! RANKL parameters
+logical, parameter :: use_RANK = .true.
+real, parameter :: RANKSIGNAL_rateconstant = 4.0
+real, parameter :: RANKSIGNAL_halflife = 12		! hours
+real, parameter :: ST1 = 0.3	! -> CHEMOTACTIC
+real, parameter :: ST2 = 0.5	! -> STICKY
 
+! Clump parameters
+integer, parameter :: CLUMP_THRESHOLD = 25
 
 type pit_type
 !	logical :: active
@@ -84,16 +97,19 @@ end type
 
 type monocyte_type
     integer :: ID
-	integer(2) :: region
-	integer(2) :: iclast
-    integer :: site(3)
-    integer :: step
-    integer(2) :: status
-	integer(2) :: lastdir
-	real :: S1P1
+    integer(2) :: site(3)
+	integer(1) :: region
+	integer(1) :: iclast
+    integer(1) :: status
+	integer(1) :: lastdir
+	integer(1) :: iclump
+	real :: S1P1				! level of S1P1 expression
+	real :: RANKSIGNAL			! integrated RANK signal
+	real :: stickiness
     real :: entrytime			! time that the cell entered the marrow (from blood or stem cell division)
     real :: exittime			! time that the cell left the marrow (for the blood, or to form an osteoclast)
     real :: dietime             ! time cell will die
+!    type(clump_type), pointer :: clump
 !    type(O_type),    pointer :: optr    ! because NULL is used by winsock (from ifwinty).  NULLIFY() instead.
 end type
 
@@ -163,6 +179,13 @@ type capillary_type
 	real :: radius
 	real :: length
 	real :: surface_area
+end type
+
+type clump_type
+	integer :: ncells
+	integer :: list(MAX_CLUMP_CELLS)
+	integer :: status
+	real :: starttime
 end type
 
 end module

@@ -156,7 +156,7 @@ real :: tnow
 
 tnow = istep*DELTA_T
 do kcell = 1,nmono
-	if (mono(kcell)%status == MOTILE) then	! interim criterion
+	if (mono(kcell)%status >= MOTILE .and. mono(kcell)%status < FUSING) then	! interim criterion
 		call mono_jumper(kcell,go,kpar)
 		if (kcell == kdbug) then
 			write(*,'(3i4)') mono(kcell)%site
@@ -171,6 +171,9 @@ do kcell = 1,nmono
 			nleft = nleft + 1
 !			write(*,'(a,2i6,2f6.3,i6)') 'monocyte leaves: ',istep,kcell,cell%S1P1,prob,mono_cnt
 		endif
+	endif
+	if (mono(kcell)%stickiness > 0) then
+		call sticker(kcell)
 	endif
 enddo
 	
@@ -200,10 +203,13 @@ site1 = cell%site
 go = .false.
 field = .false.
 f0 = 0
-if (occupancy(site1(1),site1(2),site1(3))%signal /= 0) then
+if (cell%status >= CHEMOTACTIC .and. occupancy(site1(1),site1(2),site1(3))%signal /= 0) then
 	field = .true.
 	f0 = occupancy(site1(1),site1(2),site1(3))%intensity
 endif
+
+! TESTING!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!field = .false.
 
 R = par_uni(kpar)
 !call random_number(R)
@@ -287,6 +293,167 @@ cell%site = site2
 cell%lastdir = dir1
 occupancy(site2(1),site2(2),site2(3))%indx = kcell
 occupancy(site1(1),site1(2),site1(3))%indx = 0
+end subroutine
+
+!---------------------------------------------------------------------
+!---------------------------------------------------------------------
+logical function canstick(stick1,stick2)
+real :: stick1, stick2
+real :: R
+integer :: kpar = 0
+
+R = par_uni(kpar)
+if (R < stick1*stick2) then
+	canstick = .true.
+else
+	canstick = .false.
+endif
+end function
+
+!---------------------------------------------------------------------
+!---------------------------------------------------------------------
+subroutine sticker(icell1)
+integer :: icell1
+type(monocyte_type), pointer :: cell1, cell2
+!type(clump_type), pointer :: clump1, clump2
+integer :: site1(3), site2(3), i, icell2, iclump1, iclump2
+!logical :: isclump1, isclump2
+
+cell1 => mono(icell1)
+site1 = cell1%site
+iclump1 = cell1%iclump
+do i = 1,27
+	if (i == 14) cycle
+	site2 = site1 + jumpvec(:,i)
+	if (site2(1) < 1 .or. site2(1) > NX) cycle
+	if (site2(2) < NBY+1 .or. site2(2) > NY) cycle
+	if (site2(3) < 1 .or. site2(3) > NZ) cycle
+	icell2 = occupancy(site2(1),site2(2),site2(3))%indx
+	if (icell2 > 0) then
+		cell2 => mono(icell2)
+		if (cell2%stickiness > 0) then
+			iclump2 = cell2%iclump
+			if ((iclump1 > 0) .and. (iclump1 == iclump2)) cycle		! already stuck together
+!			if (cell1%status == FUSING .or. cell1%status == FUSED .or. &						
+!				cell2%status == FUSING .or. cell2%status == FUSED) then
+!				call stick(icell1,icell2)
+			if (canstick(cell1%stickiness,cell2%stickiness)) then
+				call stick(icell1,icell2)
+				iclump1 = cell1%iclump
+			endif
+		endif
+	endif
+enddo
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+! A monocyte integrates RANK receptor signal (which also decays) and when it reaches a threshold level
+! the cell is activated and becomes sticky.  
+! Two threshold approach: 
+! Cell integrates RANK receptor signal (S).
+! When S > ST1 the cell starts to respond to the attracting chemotactic signal from OBs.
+! As S increases the response to chemotactic signal increases, and the S1P1 level declines.
+! When S > ST2 the cell becomes sticky.
+! When two sticky cells meet they stick (with a probability determined by their stickiness levels).
+! While stuck together they lose random motility.
+! The clump of stuck cells grows, and when the number in the clump exceeds another threshold 
+! the cells fuse.
+! The fused cells move towards the bone under the influence of the attracting signal.  
+! Additional sticky monocytes coming into contact with the ball of fused cells will also fuse with it.
+! On reaching the bone surface, the fused cells enter the final stage of differentiation into a mature osteoclast.
+!------------------------------------------------------------------------------------------------
+subroutine stick(icell1,icell2)
+integer :: icell1, icell2
+type(monocyte_type), pointer :: cell1, cell2
+type(clump_type), pointer :: pclump
+real :: tnow
+
+cell1 => mono(icell1)
+cell2 => mono(icell2)
+tnow = istep*DELTA_T
+if (cell1%iclump > 0) then
+	if (cell2%iclump > 0) then
+		! both cell1 and cell2!
+		write(logmsg,*) 'stick: did this really happen? ',icell1,icell2,cell1%iclump,cell2%iclump
+		call logger(logmsg)
+		call joinclumps(icell1,icell2)
+	else
+		! just cell1
+		pclump => clump(cell1%iclump)
+		if (pclump%ncells == MAX_CLUMP_CELLS) then
+			write(logmsg,*) 'Too many cells in clump (1)'
+			call logger(logmsg)
+			stop
+		endif
+		cell2%iclump = cell1%iclump
+		pclump%ncells = pclump%ncells + 1
+		pclump%list(pclump%ncells) = icell2
+		if (pclump%status >= FUSING) then
+			cell2%status = pclump%status
+		endif
+		write(logmsg,*) 'Cell added to clump: status: ',cell1%iclump,pclump%status,pclump%ncells
+		call logger(logmsg)
+	endif
+elseif (cell2%iclump > 0) then
+		! just cell2
+	pclump => clump(cell2%iclump)
+	if (pclump%ncells == MAX_CLUMP_CELLS) then
+		write(logmsg,*) 'Too many cells in clump (2)'
+		call logger(logmsg)
+		stop
+	endif
+	cell1%iclump = cell2%iclump
+	pclump%ncells = pclump%ncells + 1
+	pclump%list(pclump%ncells) = icell1
+	if (pclump%status >= FUSING) then
+		cell1%status = pclump%status
+	endif
+	write(logmsg,*) 'Cell added to clump: status: ',cell2%iclump,pclump%status,pclump%ncells
+	call logger(logmsg)
+else
+		! neither cell is in a clump
+	nclump = nclump + 1
+	pclump => clump(nclump)
+	cell1%iclump = nclump
+	cell2%iclump = nclump
+	pclump%ncells = 2
+	pclump%list(1) = icell1
+	pclump%list(2) = icell2
+	pclump%starttime = tnow
+	pclump%status = ALIVE
+	write(logmsg,*) 'New clump'
+	call logger(logmsg)
+endif
+end subroutine
+
+!---------------------------------------------------------------------
+! Cells icell1 and icell2 are both in separate clumps, which must be 
+! joined.  One clump is extended, the other has status -> -1
+!---------------------------------------------------------------------
+subroutine joinclumps(icell1,icell2)
+integer :: icell1, icell2
+integer :: i, j, kcell
+type(clump_type), pointer :: pclump1, pclump2
+
+pclump1 => clump(mono(icell1)%iclump)
+pclump2 => clump(mono(icell2)%iclump)
+call logger('Joining two clumps')
+do i = 1,pclump2%ncells
+	kcell = pclump2%list(i)
+	! First check that this isn't in pclump1 - that would be an error
+	do j = 1,pclump1%ncells
+		if (pclump1%list(j) == kcell) then
+			write(logmsg,*) 'Error: joinclumps: cell in both clumps: ',kcell
+			call logger(logmsg)
+			stop
+		endif
+	enddo
+	! Now add the cell to pclump1
+	pclump1%ncells = pclump1%ncells + 1
+	pclump1%list(pclump1%ncells) = kcell
+	mono(kcell)%iclump = mono(icell1)%iclump
+enddo
+pclump2%status = -1
 end subroutine
 
 !---------------------------------------------------------------------

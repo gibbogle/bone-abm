@@ -71,8 +71,10 @@ real :: DELTA_X, PI
 integer :: Nsteps
 integer :: NX,NY,NZ						! size of region
 integer :: NMONO_INITIAL, NSTEM
-integer :: nmono, mono_cnt, nsignal, nclast, nborn, nleft, ncap, nentrysites
+integer :: nmono, mono_cnt, nsignal, nclast, nborn, nleft, ncap, nentrysites, nclump
 integer, allocatable :: entrysite(:,:)
+type(clump_type), target :: clump(MAX_CLUMP)
+real :: RANKSIGNAL_decayfactor			! from RANKSIGNAL_halflife
 
 contains
 
@@ -89,7 +91,7 @@ if (use_TCP) then
         call winsock_send(awp_0,trim(msg),len_trim(msg),error)
     endif
 else
-!	write(*,*) trim(msg)
+	write(*,*) trim(msg)
 endif
 inquire(unit=nflog,OPENED=isopen)
 if (isopen) then
