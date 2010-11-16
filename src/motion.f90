@@ -376,14 +376,17 @@ if (cell1%iclump > 0) then
 		! both cell1 and cell2!
 		write(logmsg,*) 'stick: did this really happen? ',icell1,icell2,cell1%iclump,cell2%iclump
 		call logger(logmsg)
-		call joinclumps(icell1,icell2)
+		if (clump(cell1%iclump)%ncells + clump(cell2%iclump)%ncells <= MAX_CLUMP_CELLS) then
+			call joinclumps(icell1,icell2)
+		endif
 	else
 		! just cell1
 		pclump => clump(cell1%iclump)
 		if (pclump%ncells == MAX_CLUMP_CELLS) then
 			write(logmsg,*) 'Too many cells in clump (1)'
 			call logger(logmsg)
-			stop
+			return
+!			stop
 		endif
 		cell2%iclump = cell1%iclump
 		pclump%ncells = pclump%ncells + 1
@@ -400,7 +403,8 @@ elseif (cell2%iclump > 0) then
 	if (pclump%ncells == MAX_CLUMP_CELLS) then
 		write(logmsg,*) 'Too many cells in clump (2)'
 		call logger(logmsg)
-		stop
+		return
+!		stop
 	endif
 	cell1%iclump = cell2%iclump
 	pclump%ncells = pclump%ncells + 1
