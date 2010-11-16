@@ -73,7 +73,7 @@ integer :: NX,NY,NZ						! size of region
 integer :: NMONO_INITIAL, NSTEM
 integer :: nmono, mono_cnt, nsignal, nclast, nborn, nleft, ncap, nentrysites, nclump
 integer, allocatable :: entrysite(:,:)
-type(clump_type), target :: clump(MAX_CLUMP)
+type(clump_type), target :: clump(MAX_NCLUMP)
 real :: RANKSIGNAL_decayfactor			! from RANKSIGNAL_halflife
 
 contains
