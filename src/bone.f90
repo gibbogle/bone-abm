@@ -1,6 +1,6 @@
 
 module bone_mod
-!DEC$ ATTRIBUTES DLLEXPORT :: BONE_MOD
+!!DEC$ ATTRIBUTES DLLEXPORT :: BONE_MOD
 use ISO_C_binding
 use global
 use fields
@@ -142,6 +142,10 @@ entrysite(:,1:na) = templist(:,1:na)
 deallocate(templist)
 nentrysites = na
 
+nsignal = 1
+signal(1)%site = (/ NX/2,NBY,NZ/2 /)
+call init_fields
+
 NMONO_INITIAL = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*MONO_PER_MM3	! domain as fraction of 1 mm3 x rate of monocytes
 NSTEM = (PI*NX*CAPILLARY_DIAMETER*DELTA_X**2/1.0e6)*STEM_PER_MM2	! capillary surface area as fraction of 1 mm2 x rate of stem cells
 write(logmsg,*) 'NSTEM, NMONO_INITIAL: ',NSTEM,NMONO_INITIAL
@@ -178,14 +182,10 @@ do while (i < NSTEM)
 	occupancy(x,y,z)%species = STEMCELL
 enddo
 
-nsignal = 1
-signal(1)%site = (/ NX/2,NBY,NZ/2 /)
+nclump = 0
+
 call setSignal(1,ON,ok)
 if (.not.ok) return
-
-if (S1P_chemotaxis) then
-	call init_fields
-endif
 
 end subroutine
 
@@ -264,24 +264,85 @@ end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
+subroutine update_S1P1(pmono)
+type(monocyte_type), pointer :: pmono
+real :: S
+
+S = pmono%S1P1
+S = S + rate_S1P1(S)*DELTA_T
+pmono%S1P1 = min(S,1.0)
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+subroutine update_RANK(pmono)
+type(monocyte_type), pointer :: pmono
+real :: S, C
+integer :: site(3)
+
+S = pmono%RANKSIGNAL
+site = pmono%site
+C = RANKL_conc(site(1),site(2),site(3))
+S = (1-RANKSIGNAL_decayfactor)*S + rate_RANKSIGNAL(S,C)*DELTA_T
+pmono%RANKSIGNAL = min(S,1.0)
+if (pmono%status == MOTILE .and. pmono%RANKSIGNAL > ST1) then
+	pmono%status = CHEMOTACTIC
+	call logger('CHEMOTACTIC')
+elseif (pmono%status == CHEMOTACTIC .and. pmono%RANKSIGNAL > ST2) then
+	pmono%status = STICKY
+	call logger('STICKY')
+endif
+if (pmono%status == STICKY) then
+	pmono%stickiness = pmono%RANKSIGNAL
+endif
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
 subroutine updater
 real :: S
-integer :: i, k, iclast, irel, dir, region, kcell, site(3), kpar=0
+integer :: i, j, k, iclast, irel, dir, region, kcell, site(3), kpar=0
 real :: tnow
 real(8) :: R
+type(monocyte_type), pointer :: pmono
 type(osteoclast_type), pointer :: pclast
 type(occupancy_type), pointer :: pbone
+type(clump_type), pointer :: pclump
 
 tnow = istep*DELTA_T
 ! Monocytes enter from the blood
 call influx
-! Monocyte S1P1 level grows
+! Monocyte S1P1 level grows, RANKL signal accumulates
 do i = 1,nmono
-	if (mono(i)%region /= MARROW) cycle
-	S = mono(i)%S1P1
-	S = S + DELTA_T*rate_S1P1(S)
-	mono(i)%S1P1 = min(S,1.0)
+	pmono => mono(i)
+	if (pmono%region /= MARROW) cycle
+	if (pmono%status < 1 .or. pmono%status > FUSING) cycle
+	call update_S1P1(pmono)
+	call update_RANK(pmono)
 enddo
+do i = 1,nclump
+	pclump => clump(i)
+	if (pclump%status < 0) cycle
+	if (pclump%status < FUSING) then
+		if (pclump%ncells > CLUMP_THRESHOLD) then
+			pclump%status = FUSING
+			pclump%starttime = tnow
+			do j = 1,pclump%ncells
+				write(logmsg,*) 'clump: ',i,j,pclump%ncells
+				call logger(logmsg)
+				mono(pclump%list(j))%status = FUSING
+			enddo
+		endif
+	elseif (pclump%status == FUSING) then
+		if (tnow >= pclump%starttime + FUSING_TIME) then
+			pclump%status = FUSED
+			do j = 1,pclump%ncells
+				mono(pclump%list(j))%status = FUSED
+			enddo
+		endif
+	endif
+enddo
+
 ! Stem cells divide
 do i = 1,NSTEM
 	if (tnow > stem(i)%dividetime) then
@@ -366,20 +427,34 @@ mono(nmono)%site = site
 mono(nmono)%region = MARROW
 mono(nmono)%status = MOTILE
 mono(nmono)%lastdir = random_int(1,6,kpar)
+mono(nmono)%iclump = 0
 mono(nmono)%S1P1 = 0
+mono(nmono)%RANKSIGNAL = 0
+mono(nmono)%stickiness = 0
+!nullify(mono(nmono)%clump)
 occupancy(site(1),site(2),site(3))%species = MONOCYTE
-if (.not.use_TCP) then
-	write(*,*) 'added monocyte: ',nmono,site,'  ',source
-else
-	call logger('added monocyte  '//source)
-endif
+!if (.not.use_TCP) then
+!	write(*,*) 'added monocyte: ',nmono,site,'  ',source
+!else
+!	call logger('added monocyte  '//source)
+!endif
 end subroutine
 
 !------------------------------------------------------------------------------------------------
+! S1P1 (S1P receptor) expression is currently assumed to grow at a steady rate.
 !------------------------------------------------------------------------------------------------
 real function rate_S1P1(S)
 real :: S
 rate_S1P1 = S1P1_BASERATE
+end function
+
+!------------------------------------------------------------------------------------------------
+! The rate of RANK signalling depends on the RANKL concentration (C) and the current integrated
+! signal level (S).
+!------------------------------------------------------------------------------------------------
+real function rate_RANKSIGNAL(S,C)
+real :: S, C
+rate_RANKSIGNAL = RANKSIGNAL_rateconstant*(1-S)*C
 end function
 
 !------------------------------------------------------------------------------------------------
@@ -446,6 +521,8 @@ end subroutine
 ! idea of stickiness.
 ! When the number of monocytes within the region defined by (signal intensity > SIGNAL_THRESHOLD)
 ! exceeds MTHRESHOLD, monocyte fusing is initiated.
+! NOTE: This was the first crude model for fusing initiation
+! NOT USED
 !------------------------------------------------------------------------------------------------
 subroutine checkSignals(ok)
 logical :: ok
@@ -1225,14 +1302,18 @@ res = 0
 !call logger("simulate_step")
 ok = .true.
 istep = istep + 1
+if (mod(istep,100) == 0) then
+	write(logmsg,*) 'istep: ',istep
+	call logger(logmsg)
+endif
 !write(nflog,*) 'call updater'
 call updater
 !write(nflog,*) 'call mover: ',nmono
 call mover
-if (nsignal > 0) then
-	call checkSignals(ok)
-	if (.not.ok) res = 1
-endif
+!if (nsignal > 0) then
+!	call checkSignals(ok)
+!	if (.not.ok) res = 1
+!endif
 end subroutine
 
 
@@ -1286,6 +1367,10 @@ if (allocated(clast)) deallocate(clast)
 if (allocated(stem)) deallocate(stem)
 if (allocated(capillary)) deallocate(capillary)
 if (allocated(entrysite)) deallocate(entrysite)
+if (allocated(RANKL_conc)) deallocate(RANKL_conc)
+if (allocated(S1P_conc)) deallocate(S1P_conc)
+if (allocated(S1P_grad)) deallocate(S1P_grad)
+
 end subroutine
 
 !------------------------------------------------------------------------------------------------
