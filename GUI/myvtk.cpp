@@ -1,7 +1,11 @@
 // myvtk.cpp
 
+#ifdef _WIN32
+#include "windows.h"
+#endif
 #include "myvtk.h"
 #include "log.h"
+#include "transfer.h"
 
 LOG_USE();
 
@@ -55,12 +59,12 @@ MyVTK::MyVTK(QWidget *page)
 	McellMapper = vtkPolyDataMapper::New();
 	McellMapper->SetInputConnection(Mcell->GetOutputPort());
 
-	vtkCylinderSource *bond = vtkCylinderSource::New();
-    bond->SetResolution(12);
-	bond->SetRadius(0.15);
-    bond->SetHeight(1);
-	bondMapper = vtkPolyDataMapper::New();
-	bondMapper->SetInputConnection(bond->GetOutputPort());
+	vtkCylinderSource *cyl = vtkCylinderSource::New();
+	cyl->SetResolution(12);
+	cyl->SetRadius(0.2);
+	cyl->SetHeight(1);
+	cylMapper = vtkPolyDataMapper::New();
+	cylMapper->SetInputConnection(cyl->GetOutputPort());
 
 	vtkCylinderSource *capillary = vtkCylinderSource::New();
 	capillary->SetResolution(12);
@@ -117,11 +121,13 @@ MyVTK::MyVTK(QWidget *page)
 //	pngwriter = vtkSmartPointer<vtkPNGWriter>::New();
 //	jpgwriter = vtkSmartPointer<vtkJPEGWriter>::New();
 
+	bone_array = 0;
 	first_VTK = true;
 	DCmotion = false;
 	DCfade = true;
 	playing = false;
 	paused = false;
+	Pi = 4*atan(1.0);
 
 	ren->GetActiveCamera()->Zoom(zoomlevel);		// try zooming OUT
 }
@@ -134,12 +140,54 @@ MyVTK::~MyVTK()
 
 //-----------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------
+void MyVTK::get_cell_positions()
+{
+	LOG_MSG("VTK: get_cell_positions");
+	MCpos_list.clear();
+	capillary_list.clear();
+	pitpos_list.clear();
+	for (int i=0; i<nmono_list; i++) {
+		int j = 5*i;
+		CELL_POS cp;
+		cp.tag = mono_list[j];
+		cp.x = mono_list[j+1];
+		cp.y = mono_list[j+2];
+		cp.z = mono_list[j+3];
+		cp.state = mono_list[j+4];
+		MCpos_list.append(cp);
+	}
+	for (int i=0; i<npit_list; i++) {
+		int j = 4*i;
+		PIT_POS pp;
+		pp.pos[0] = pit_list[j];
+		pp.pos[1] = pit_list[j+1];
+		pp.pos[2] = pit_list[j+2];
+		pp.ypit = pit_list[j+3];
+		pitpos_list.append(pp);
+	}
+	for (int i=0; i<ncap_list; i++) {
+		int j = 7*i;
+		CAPILLARY_SEGMENT cs;
+		cs.pos1[0] = cap_list[j];
+		cs.pos1[1] = cap_list[j+1];
+		cs.pos1[2] = cap_list[j+2];
+		cs.pos2[0] = cap_list[j+3];
+		cs.pos2[1] = cap_list[j+4];
+		cs.pos2[2] = cap_list[j+5];
+		cs.radius  = cap_list[j+6];
+		capillary_list.append(cs);
+	}
+//	LOG_MSG("VTK: did get_cell_positions");
+}
+
+//-----------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------
 void MyVTK::read_cell_positions(QString infileName, QString outfileName, bool savepos)
 {	
 //	LOG_MSG("VTK: read_cell_positions");
     TCpos_list.clear();
 	MCpos_list.clear();
-	bondpos_list.clear();
+//	bondpos_list.clear();
 	capillary_list.clear();
 	pitpos_list.clear();
 	QString line, saveline;
@@ -185,27 +233,27 @@ void MyVTK::read_cell_positions(QString infileName, QString outfileName, bool sa
 					cp.state = s[5].toInt();
 					MCpos_list.append(cp);
 				} else if (s[0].compare("B") == 0) {
-					BOND_POS cp;
-					cp.TCtag = s[1].toInt();
-					cp.DCtag = s[2].toInt();
-					bondpos_list.append(cp);
+					NX = s[1].toInt();
+					NY = s[2].toInt();
+					NZ = s[3].toInt();
+					NBY = s[4].toInt();
 				} else if (s[0].compare("C") == 0) {	// Capillary
-					LOG_QMSG(line);
 					CAPILLARY_SEGMENT cs;
-					cs.tag = s[1].toInt();
-					cs.pos1[0] = s[2].toDouble();
-					cs.pos1[1] = s[3].toDouble();
-					cs.pos1[2] = s[4].toDouble();
-					cs.pos2[0] = s[5].toDouble();
-					cs.pos2[1] = s[6].toDouble();
-					cs.pos2[2] = s[7].toDouble();
-					cs.radius  = s[8].toDouble();
+//					cs.tag = s[1].toInt();
+					cs.pos1[0] = s[1].toDouble();
+					cs.pos1[1] = s[2].toDouble();
+					cs.pos1[2] = s[3].toDouble();
+					cs.pos2[0] = s[4].toDouble();
+					cs.pos2[1] = s[5].toDouble();
+					cs.pos2[2] = s[6].toDouble();
+					cs.radius  = s[7].toDouble();
 					capillary_list.append(cs);
 				} else if (s[0].compare("P") == 0) {
 					PIT_POS pp;
 					pp.pos[0] = s[1].toInt();
 					pp.pos[1] = s[2].toInt();
 					pp.pos[2] = s[3].toInt();
+					pp.ypit = s[4].toDouble();
 					pitpos_list.append(pp);
 				} else if (s[0].compare("E") == 0) {
 					break;
@@ -222,11 +270,10 @@ void MyVTK::read_cell_positions(QString infileName, QString outfileName, bool sa
 	}
 
 	if (QFile::exists(infileName)) {
-//		LOG_MSG("try to delete posfile");
 		QFile::rename(infileName,"TO_REMOVE");
 //		QFile::remove("TO_REMOVE");
-//		LOG_MSG("renamed");
 //		QFile::remove(infileName);
+		LOG_MSG("Did rename");
 	}
 }
 
@@ -244,21 +291,246 @@ int MyVTK::inTileList(SURFACE_TILE *tile)
 }
 
 //---------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------
+void MyVTK::makeBox()
+{
+	double pos[3];
+	vtkActor *actor;
+	VERT_TILE tile;
+	double s[3], v[3], cpos[3];
+	int i, i1, i2, j;
+	char msg[256];
+	double boxColor[] = {1,1,1};
+	double cnr[8][3];
+	int side[8][2];
+
+	cnr[0][0] =      0.5; cnr[0][1] = NBY +0.5; cnr[0][2] =      0.5;
+	cnr[1][0] = NX + 0.5; cnr[1][1] = NBY +0.5; cnr[1][2] =      0.5;
+	cnr[2][0] = NX + 0.5; cnr[2][1] = NBY +0.5; cnr[2][2] = NZ + 0.5;
+	cnr[3][0] =      0.5; cnr[3][1] = NBY +0.5; cnr[3][2] = NZ + 0.5;
+	cnr[4][0] =      0.5; cnr[4][1] = NY + 0.5; cnr[4][2] =      0.5;
+	cnr[5][0] = NX + 0.5; cnr[5][1] = NY + 0.5; cnr[5][2] =      0.5;
+	cnr[6][0] = NX + 0.5; cnr[6][1] = NY + 0.5; cnr[6][2] = NZ + 0.5;
+	cnr[7][0] =      0.5; cnr[7][1] = NY + 0.5; cnr[7][2] = NZ + 0.5;
+	side[0][0] = 0; side[0][1] = 4;
+	side[1][0] = 1; side[1][1] = 5;
+	side[2][0] = 2; side[2][1] = 6;
+	side[3][0] = 3; side[3][1] = 7;
+	side[4][0] = 4; side[4][1] = 5;
+	side[5][0] = 5; side[5][1] = 6;
+	side[6][0] = 6; side[6][1] = 7;
+	side[7][0] = 7; side[7][1] = 4;
+
+	for (i=0; i<8; i++) {
+		cnr[i][0] -= 0;
+		cnr[i][2] -= 0;
+	}
+
+	for(i=0; i<8; i++) {
+		i1 = side[i][0];
+		i2 = side[i][1];
+		actor = vtkActor::New();
+		actor->SetMapper(cylMapper);
+		actor->GetProperty()->SetColor(boxColor);
+		for (j=0; j<3; j++) {
+			cpos[j] = (cnr[i1][j] + cnr[i2][j])/2;
+			v[j] = cnr[i1][j] - cnr[i2][j];
+		}
+		double v_mod = sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+		double s[] = {1.0, v_mod, 1.0};
+		actor->SetScale(s);
+		for (j=0; j<3; j++)
+			v[j] = v[j]/v_mod;
+
+		double sina = sqrt(v[0]*v[0] + v[2]*v[2]);
+		double cosa = v[1];
+		double theta = asin(sina)*(180.0/Pi);
+		if (cosa < 0)
+			theta = 180 - theta;
+
+		actor->SetPosition(cpos);
+		actor->RotateWXYZ(theta,v[2],0,-v[0]);
+		actor->GetProperty()->SetAmbient(0.5);
+		actor->GetProperty()->SetDiffuse(0.2);
+		actor->GetProperty()->SetSpecular(0.5);
+		ren->AddActor(actor);
+		boxActor[i] = actor;
+	}
+}
+
+//---------------------------------------------------------------------------------------------
 // From the list of pits, create a list of bone surface tiles.
 // It would really make a lot more sense to start with the full pit depth at each (x,z)
 // In this case pos[1] is the last site removed (pit bottom is at pos[1]-1).
 //---------------------------------------------------------------------------------------------
-void MyVTK::createTileList()
+void MyVTK::process_tiles()
+{
+	double pos[3];
+	vtkActor *actor;
+	VERT_TILE tile;
+	double s[3], v[3];
+	char msg[256];
+	double boneColor[] = {0.9,0.9,0.5};
+	double pitColor[] = {0.9,0.4,0.2};
+	double xColor[] = {0.0,1.0,0.0};
+	double zColor[] = {0.0,0.0,1.0};
+
+	// Set up bone surface tile actors.  These are unchanging, except when a new pit is
+	// initiated, in which case the position (y) is modified.  This is separate from
+	// Tile_Actor_list, which holds all tiles that are not parallel to X-Z.
+	// Note that integer site coords (x,y,z) are passed as in (1,NX) etc.
+	// The origin of the coord system is actually 0.5 beyond the edge of the lattice boxes.
+	// A cell at lattice position (1,1,1) is at the centre of a cube which extends
+	// x:0.5-1.5, y:0.5-1.5, z:0.5-1.5.
+	if (bone_array == 0) {
+		LOG_MSG("allocate new bone_array");
+		bone_array = new BONE*[NX+1];
+		for (int x = 0; x < NX+1; x++) {
+			bone_array[x] = new BONE[NZ+1];
+			for (int z = 0; z < NZ+1; z++) {
+				if (x == 0 || z == 0) {
+					bone_array[x][z].actor = 0;
+					continue;
+				}
+				actor = vtkActor::New();
+				actor->SetMapper(tileMapper);
+				actor->GetProperty()->SetColor(boneColor);
+				actor->GetProperty()->SetAmbient(0.5);
+				actor->GetProperty()->SetDiffuse(0.2);
+				actor->GetProperty()->SetSpecular(0.5);
+				pos[0] = x;
+				pos[1] = NBY + 0.5;
+				pos[2] = z;
+				actor->SetPosition(pos);
+				ren->AddActor(actor);
+				bone_array[x][z].y = pos[1];
+				bone_array[x][z].actor = actor;
+			}
+		}
+		makeBox();
+	}
+	// tile_list is now used to hold all the vertical faces of the pits.
+	// The pitpos_list contains the (x,y,z) of the centre of the bottom of each pit.
+	// This is used to modify the y field of each corresponding entry in bone_array[][].
+	// When bone_array[][] has been updated to the new geometry, the vertical faces
+	// are generated thus:
+	// Each (x,z) in pitpos_list is processed in turn.  For each of the 4 neighbour squares,
+	// if the neighbour y exceeds the current square's y, a face is created to span the gap,
+	// and added to tile_list.  The face actor is made from the basic tile by scaling (in the y
+	// direction) and rotation.
+
+	// First need to remove all vertical tile actors and clear the verttile_list
+	// (If we are not planning to reuse list entries ...)
+	for (int i=0; i<verttile_list.length(); i++) {
+		actor = verttile_list[i].actor;
+		if (actor != 0) {
+			ren->RemoveActor(actor);
+			actor->Delete();
+		}
+	}
+	verttile_list.clear();
+
+	for (int i=0; i<pitpos_list.length(); i++) {
+		int x = pitpos_list[i].pos[0];
+		int y = pitpos_list[i].pos[1];
+		int z = pitpos_list[i].pos[2];
+		double ypit = pitpos_list[i].ypit;
+		bone_array[x][z].y = ypit;
+		pos[0] = x;
+		pos[1] = ypit;
+		pos[2] = z;
+		bone_array[x][z].actor->SetPosition(pos);
+		bone_array[x][z].actor->GetProperty()->SetColor(pitColor);
+	}
+	for (int i=0; i<pitpos_list.length(); i++) {
+		double height;
+		int x = pitpos_list[i].pos[0];
+		int ypit = pitpos_list[i].ypit;
+		int z = pitpos_list[i].pos[2];
+		if (x == 1 || x == NX) continue;
+		if (z == 1 || z == NZ) continue;
+		height = bone_array[x-1][z].y - bone_array[x][z].y;
+		if (height > 0) {
+			tile.axis = 'X';
+			tile.height = height;
+			tile.pos[0] = x - 0.5;
+			tile.pos[2] = z;
+			tile.pos[1] =(bone_array[x-1][z].y + bone_array[x][z].y)/2;
+			tile.actor = vtkActor::New();
+			tile.actor->SetMapper(tileMapper);
+			verttile_list.append(tile);
+		}
+		height = bone_array[x+1][z].y - bone_array[x][z].y;
+		if (height > 0) {
+			tile.axis = 'X';
+			tile.height = height;
+			tile.pos[0] = x + 0.5;
+			tile.pos[2] = z;
+			tile.pos[1] =(bone_array[x+1][z].y + bone_array[x][z].y)/2;
+			tile.actor = vtkActor::New();
+			tile.actor->SetMapper(tileMapper);
+			verttile_list.append(tile);
+		}
+		height = bone_array[x][z-1].y - bone_array[x][z].y;
+		if (height > 0) {
+			tile.axis = 'Z';
+			tile.height = height;
+			tile.pos[0] = x;
+			tile.pos[2] = z - 0.5;
+			tile.pos[1] =(bone_array[x][z-1].y + bone_array[x][z].y)/2;
+			tile.actor = vtkActor::New();
+			tile.actor->SetMapper(tileMapper);
+			verttile_list.append(tile);
+		}
+		height = bone_array[x][z+1].y - bone_array[x][z].y;
+		if (height > 0) {
+			tile.axis = 'Z';
+			tile.height = height;
+			tile.pos[0] = x;
+			tile.pos[2] = z + 0.5;
+			tile.pos[1] =(bone_array[x][z+1].y + bone_array[x][z].y)/2;
+			tile.actor = vtkActor::New();
+			tile.actor->SetMapper(tileMapper);
+			verttile_list.append(tile);
+		}
+	}
+
+	for (int i=0; i<verttile_list.length(); i++) {
+		double s[] = {1, 1, 1};
+		tile = verttile_list[i];
+		if (tile.axis == 'X') {
+			s[0] = tile.height;
+			v[0] = 0; v[1] = 0; v[2] = 1;
+			tile.actor->GetProperty()->SetColor(pitColor);
+		} else {
+			s[2] = tile.height;
+			v[0] = 1; v[1] = 0; v[2] = 0;
+			tile.actor->GetProperty()->SetColor(pitColor);
+		}
+		tile.actor->SetScale(s);
+		tile.actor->SetPosition(tile.pos);
+		tile.actor->RotateWXYZ(90.0,v[0],v[1],v[2]);
+		tile.actor->GetProperty()->SetAmbient(0.5);
+		tile.actor->GetProperty()->SetDiffuse(0.2);
+		tile.actor->GetProperty()->SetSpecular(0.5);
+		ren->AddActor(tile.actor);
+	}
+}
+
+//---------------------------------------------------------------------------------------------
+// From the list of pits, create a list of bone surface tiles.
+// It would really make a lot more sense to start with the full pit depth at each (x,z)
+// In this case pos[1] is the last site removed (pit bottom is at pos[1]-1).
+//---------------------------------------------------------------------------------------------
+void MyVTK::oldcreateTileList()
 {
 	int j, y, ypit;
-	int NBY = 8;
-	int NX = 50;
-	int NZ = 50;
 	SURFACE_TILE tile;
 	char msg[256];
 
 	tile_list.clear();
 	y = NBY;
+
 	for (int x=1; x<=NX; x++) {
 		for (int z=1; z<=NZ; z++) {
 			tile.pos[0] = x;
@@ -269,6 +541,7 @@ void MyVTK::createTileList()
 			tile_list.append(tile);
 		}
 	}
+
 	for (int i=0; i<pitpos_list.length(); i++) {
 		for (j=0; j<3; j++)
 			tile.pos[j] = pitpos_list[i].pos[j];
@@ -360,6 +633,32 @@ void MyVTK::cleanup()
 			actor->Delete();
 		}
 	}
+	if (bone_array != 0) {
+		for (int x=0; x<NX+1; x++) {
+			for (int z=0; z<NZ+1; z++) {
+				actor = bone_array[x][z].actor;
+				if (actor != 0) {
+					ren->RemoveActor(actor);
+					actor->Delete();
+				}
+			}
+			delete bone_array[x];
+		}
+		delete bone_array;
+		bone_array = 0;
+		for (i=0; i<8; i++) {
+			actor = boxActor[i];
+			ren->RemoveActor(actor);
+			actor->Delete();
+			boxActor[i] = 0;
+		}
+	}
+	for (i=0; i<verttile_list.length(); i++) {
+		actor = verttile_list[i].actor;
+		ren->RemoveActor(actor);
+		actor->Delete();
+	}
+	verttile_list.clear();
 	T_Actor_list.clear();
 	M_Actor_list.clear();
     B_Actor_list.clear();
@@ -370,35 +669,22 @@ void MyVTK::cleanup()
 
 //---------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------
-void MyVTK::renderCells(bool redo, bool last)
+void MyVTK::renderCells()
 {
 //	LOG_MSG("VTK: renderCells");
-	process_Tcells();
+
 	process_Mcells();
-    process_bonds();
 	process_capillaries();
 	process_tiles();
 
-//	vtkActor *actor = vtkActor::New();
-//	actor->SetMapper(textMapper);
-//	ren->AddActor(actor);
-
-	// Add the scale actor to the scene
-	//ren->AddActor(legendScaleActor);
-
 	if (first_VTK) {
 		LOG_MSG("Initializing the renderer");
-//		ren->RemoveAllViewProps();
 		ren->ResetCamera();
-//		ren->GetActiveCamera()->Zoom(zoomlevel);		// try zooming OUT
-//		iren->Initialize();
 	}
-	iren->Render();
-//	if (last)
-//		LOG_MSG("last");
-//		cleanup();
-//	LOG_MSG("VTK: did render");
-	first_VTK = false;	
+	for(int i=0; i<1; i++) {
+		iren->Render();
+	}
+	first_VTK = false;
 }
 
 //---------------------------------------------------------------------------------------------
@@ -538,11 +824,14 @@ void MyVTK::process_Mcells()
 				nf++;
 				r = 1; g = 1; b = 0;
 			}
+			if (tag%100 == 0) {				// stain some cells to observe motility
+				r = 1; g = 1; b = 1;
+			}
 			actor->GetProperty()->SetColor(r, g, b);
 		} else {
-			sprintf(msg,"M_actor = 0: %d",tag);
-			LOG_MSG(msg);
-			exit(1);
+//			sprintf(msg,"M_actor = 0: %d  %d",tag,cp.state);
+//			LOG_MSG(msg);
+//			exit(1);
 		}
 	}
 
@@ -556,7 +845,7 @@ void MyVTK::process_Mcells()
 	}
 }
 
-
+/*
 //---------------------------------------------------------------------------------------------
 // A cylinder is created orientated along the y-axis, i.e. along b = (0,1,0)
 // To change the orientation to the vector v, we first create a vector r
@@ -635,6 +924,7 @@ void MyVTK::process_bonds()
         B_Actor_list.append(actor);
 	}
 }
+*/
 
 //---------------------------------------------------------------------------------------------
 // A cylinder is created orientated along the y-axis, i.e. along b = (0,1,0)
@@ -652,7 +942,6 @@ void MyVTK::process_capillaries()
 	CAPILLARY_SEGMENT cs;
 	vtkActor *actor;
 	double cpos[3], v[3];
-	double Pi = 3.15159;
 	double capillaryColor[] = {0.5,0.0,0.0};
 
 	int na = C_Actor_list.length();
@@ -698,7 +987,7 @@ void MyVTK::process_capillaries()
 }
 
 //---------------------------------------------------------------------------------------------
-void MyVTK::process_tiles()
+void MyVTK::oldprocess_tiles()
 {
 	int i;
 	SURFACE_TILE tile;
@@ -707,10 +996,13 @@ void MyVTK::process_tiles()
 	double boneColor[] = {0.9,0.9,0.5};
 	double pitColor[] = {0.9,0.4,0.2};
 	char msg[256];
-	createTileList();
 
+	oldcreateTileList();
 	int na = Tile_Actor_list.length();
 	int np = tile_list.length();
+
+	sprintf(msg,"na, np: %d %d",na,np);
+	LOG_MSG(msg);
 
 	// First remove all old tiles
 	for (int k=0; k<na; k++) {
@@ -813,7 +1105,7 @@ bool MyVTK::nextFrame()
 	}
 	TCpos_list.clear();
 	MCpos_list.clear();
-	bondpos_list.clear();
+//	bondpos_list.clear();
 	capillary_list.clear();
 	tile_list.clear();
 	int k = 0;
@@ -856,7 +1148,8 @@ bool MyVTK::nextFrame()
 	if (first_VTK) {
 		redo = true;
 	}
-    renderCells(redo,false);
+//    renderCells(redo,false);
+	renderCells();
 	char numstr[5];
 	sprintf(numstr,"%04d",framenum);
 	if (save_image) {

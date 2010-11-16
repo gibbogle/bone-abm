@@ -14,11 +14,13 @@ public:
     SocketHandler(int newport, QObject *parent = 0);
     ~SocketHandler();
     void run();
+	void stop();
 	void end();
 
 	QTcpServer *tcpServer;
 	int port;
 	bool exiting;
+	bool stopped;
 	quint16 blockSize;
 	QTcpSocket *socket;
 	char msg[2048];
@@ -41,9 +43,19 @@ class ExecThread: public QThread
 	QString dll_path;
 public:
 //	ExecThread::ExecThread(QString, QString);
-        ExecThread(QString, QString);
-        void run();
+	ExecThread(QString, QString);
+	void run();
+	void snapshot();
+	void pause();
+	void unpause();
+	void stop();
 	int ncpu;
+	int nsteps;
+	bool paused;
+	bool stopped;
+signals:
+	 void display();
+	 void summary();
 };
 
 bool quitMessage(QString);

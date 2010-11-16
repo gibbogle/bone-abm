@@ -11,10 +11,12 @@
 
 #include "misc.h"
 #include "log.h"
+#include "transfer.h"
 
 #include "libbone.h"
 
 LOG_USE();
+char msg[2048];
 
 //-----------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------
@@ -22,6 +24,7 @@ SocketHandler::SocketHandler(int newport, QObject *parent)
 	: QThread(parent)
 {
     exiting = false;
+	stopped = false;
     port = newport;
 	sprintf(msg,"SocketHandler: port: %d",port);
 	LOG_MSG(msg);
@@ -33,6 +36,13 @@ SocketHandler::~SocketHandler() // make sure the worker object is destroyed
 {
     exiting = true;
     wait();
+}
+
+//-----------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------
+void SocketHandler::stop()
+{
+	stopped = true;
 }
 
 //-----------------------------------------------------------------------------------------
@@ -72,17 +82,16 @@ void SocketHandler::processor()
 	LOG_MSG(msg);
     emit sh_connected();
 	QString qdata;
-//	QString mess = QString("A message");
-//	LOG_QMSG(mess);
 	QByteArray ba;
 	ba.resize(1024);
 	while (true) {
+		if (stopped) break;
 //		if (port == CPORT0) {
 //			LOG_MSG("CPORT0 waiting for ReadyRead");
 //		} else {
 //			LOG_MSG("CPORT1 waiting for ReadyRead");
 //		}
-		socket->waitForReadyRead(-1);
+		socket->waitForReadyRead(100);
 //		if (port == CPORT0) {
 //			LOG_MSG("CPORT0 is ReadyRead");
 //		} else {
@@ -92,15 +101,10 @@ void SocketHandler::processor()
 		if (nb > 0) {
 			ba = socket->readLine(1024);
 			qdata = QString(ba);
-//			LOG_MSG("got data");
 		    emit sh_output(qdata); // Emit signal to update GUI
 			if (port == CPORT0) {
 				LOG_QMSG(qdata);
-			} else {
-//				LOG_QMSG(qdata);
 			}
-//			if (qdata.compare("q") == 0) {
-//			if (qdata.contains("z",Qt::CaseSensitive)) {
 			if (quitMessage(qdata)) {
 				sprintf(msg,"Closing connection: port: %d", port);
 				LOG_MSG(msg);
@@ -112,21 +116,12 @@ void SocketHandler::processor()
 	}
 	socket->close();
 	tcpServer->close();
-//	if (port == CPORT1) {
+	if (port == CPORT0) {
 		emit sh_disconnected();		// Is it right that both threads emit this?
 		LOG_MSG("emitted sh_disconnected");
-//	}
-//	quit();
+	}
 }
 
-//-----------------------------------------------------------------------------------------
-//-----------------------------------------------------------------------------------------
-void SocketHandler::end()
-{
-    socket->close();
-    LOG_MSG("Connection closed in end code");
-    emit sh_disconnected();
-}	
 
 //-----------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------
@@ -140,9 +135,6 @@ ExecThread::ExecThread(QString infile, QString dllfile)
 //-----------------------------------------------------------------------------------------
 void ExecThread::run()
 {
-	char msg[2048];
-	int nsteps=30000;
-
 	LOG_MSG("Invoking DLL...");
 	const char *infile, *outfile, *resfile, *runfile;
 	QString infile_path = inputFile;
@@ -179,13 +171,47 @@ void ExecThread::run()
 //					len_resfile, \
 //					len_runfile);
 #else
-//	EXECUTE(&nsteps);
+	paused = false;
 	EXECUTE(const_cast<char *>(infile),len_infile);
+	get_dimensions(&NX,&NY,&NZ,&NBY);
+	sprintf(msg,"exthread: nsteps: %d",nsteps);
+	LOG_MSG(msg);
+	for (int i=1; i<= nsteps; i++) {
+		bool updated = false;
+		if (paused && !updated) {
+			snapshot();
+			updated = true;
+		}
+		while(paused) {
+			Sleep(100);
+		}
+		if (stopped) break;
+		int res=0;
+		simulate_step(&res);
+		if (stopped) break;
+		if (i%240 == 0) {
+			mutex1.lock();
+			get_summary(summaryData);
+			mutex1.unlock();
+			emit summary();		// Emit signal to update summary plots, at hourly intervals
+		}
+		if (stopped) break;
+		if (i%nt_vtk == 0) {
+			if (showingVTK != 0) {
+				snapshot();
+				Sleep(20);
+			}
+		}
+		if (stopped) break;
+	}
+	snapshot();
+	Sleep(10);
+	int result = 0;
+	terminate_run(&result);
 #endif
-	LOG_MSG("Returned from execute");
-
-//	sleep(1);	// can Qt-sleep here (in a thread) but is it necessary?
+	LOG_MSG("Returning from exthread");
 	return;
+
 #else
 
 //	sprintf(msg,"inputFile: %p  %p",(const char *)((infile_path.toStdString()).data()), infile);
@@ -248,6 +274,40 @@ void ExecThread::run()
 
 //	done = true;
 #endif
+}
+
+//-----------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------
+void ExecThread::snapshot()
+{
+	LOG_MSG("snapshot");
+	mutex2.lock();
+	get_scene(&ncap_list,cap_list,&nmono_list,mono_list,&npit_list,pit_list);
+	sprintf(msg,"got: %d %d %d",ncap_list,nmono_list,npit_list);
+	LOG_MSG(msg);
+	mutex2.unlock();
+	emit display(); // Emit signal to update VTK display
+}
+
+//-----------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------
+void ExecThread::stop()
+{
+	stopped = true;
+}
+
+	//-----------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------
+void ExecThread::pause()
+{
+	paused = true;
+}
+
+//-----------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------
+void ExecThread::unpause()
+{
+	paused = false;
 }
 
 //-----------------------------------------------------------------------------------------
