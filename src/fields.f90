@@ -5,6 +5,7 @@ use global
 implicit none
 
 real, allocatable :: S1P_conc(:,:,:), S1P_grad(:,:,:,:)
+real, allocatable :: RANKL_conc(:,:,:), RANKL_grad(:,:,:,:)
 
 contains
 
@@ -33,27 +34,42 @@ end function
 ! by random motion.
 !----------------------------------------------------------------------------------------
 subroutine init_fields
-integer, allocatable :: influx(:,:,:)
-real, allocatable :: dCdt(:,:,:),Ctemp(:,:,:)
-integer :: x, y, z, xx, yy, zz, nb, i, k, nc, it, nt = 10000
-integer :: x1, x2, y1, y2, z1, z2
-real :: C, dC, sum, dx2diff, g(3), maxchange, total
+
+if (S1P_chemotaxis) then
+	call init_S1P
+endif
+if (use_RANK) then
+	call init_RANKL
+endif
+end subroutine
+
+!----------------------------------------------------------------------------------------
+! The flux of S1P into the gridcell (x,y,z) is proportional to influx(x,y,z)
+! The first task is to determine the equilibrium S1P concentration field.
+! One way is to solve the diffusion equation over a time long enough to reach steady-state.
+! S1P both diffuses and decays.
+! Treat the grid spacing as the unit of distance, therefore gridcell volume = 1.
+! The flux at the endothelial boundary is a proportionality constant (permeability) Kperm
+! times the area (which is influx(x,y,z)) times the concentration drop across the
+! endothelium.  Normalize blood concentration to 1.  Decay rate is Kdecay.
+! Note that with gridcell volume = 1 the mass of S1P = concentration.
+! Note that influx(x,y,z) also flags the region of diffusion of S1P, since 
+! influx(x,y,z) >= 0 for gridcells within the region.
+!----------------------------------------------------------------------------------------
+subroutine init_S1P
+integer :: x, y, z, xx, yy, zz, k, nb
+real, allocatable :: influx(:,:,:)
+real, allocatable :: dCdt(:,:,:)
 real, parameter :: dt = 1.0
 real, parameter :: Kperm = 0.05, Kdecay = 0.00001, Kdiffusion = 0.001
-real, parameter :: alpha = 0.99
-real, parameter :: tol = 1.0e-6		! max change in C at any site as fraction of average C
-logical :: missed
 logical :: steady = .true.
 
+write(logmsg,*) 'Initializing S1P'
+call logger(logmsg)
 allocate(S1P_conc(NX,NY,NZ))
 allocate(S1P_grad(3,NX,NY,NZ))
-allocate(Ctemp(NX,NY,NZ))
 allocate(influx(NX,NY,NZ))
-allocate(dCdt(NX,NY,NZ))
 
-S1P_conc = 0
-S1P_grad = 0
-dCdt = 0
 influx = -1
 
 do x = 1,NX
@@ -70,97 +86,164 @@ do x = 1,NX
 					nb = nb + 1
 				endif
 			enddo
-			influx(x,y,z) = nb
-			if (nb > 0) write(*,*) x,y,z,nb
+			influx(x,y,z) = Kperm*nb
 		enddo
 	enddo
 enddo
-! The flux of S1P into the gridcell (x,y,z) is proportional to influx(x,y,z)
-! The first task is to determine the equilibrium S1P concentration field.
-! One way is to solve the diffusion equation over a time long enough to reach steady-state.
-! S1P both diffuses and decays.
-! Treat the grid spacing as the unit of distance, therefore gridcell volume = 1.
-! The flux at the endothelial boundary is a proportionality constant (permeability) Kperm
-! times the area (which is influx(x,y,z)) times the concentration drop across the
-! endothelium.  Normalize blood concentration to 1.  Decay rate is Kdecay.
-! Note that with gridcell volume = 1 the mass of S1P = concentration.
-! Note that influx(x,y,z) also flags the region of diffusion of S1P, since 
-! influx(x,y,z) >= 0 for gridcells within the region.
 
 if (steady) then
-	dx2diff = DELTA_X**2/Kdiffusion
-	do it = 1,nt
-		if (mod(it,100) == 0) write(*,*) 'it: ',it,S1P_conc(25,25,25),maxchange,total/nc
-		if (maxchange < tol*total/nc) exit
-		maxchange = 0
-		total = 0
-		nc = 0
-		do z = 1,NZ
-			do y = 1,NY
-				do x = 1,NX
-					if (influx(x,y,z) < 0) cycle
-					if (influx(x,y,z) > 0) then
-						dC = Kperm*influx(x,y,z)*dx2diff
-					else
-						dC = 0
-					endif
-					sum = 0
-					nb = 0
-					do k = 1,6
-						xx = x + neumann(1,k)
-						yy = y + neumann(2,k)
-						zz = z + neumann(3,k)
-						if (outside(xx,yy,zz)) cycle
-						if (influx(xx,yy,zz) < 0) cycle
-						nb = nb + 1
-						sum = sum + S1P_conc(xx,yy,zz)
-					enddo
-					Ctemp(x,y,z) = alpha*(sum + dC)/(Kdecay*dx2diff + dC + nb) + (1-alpha)*S1P_conc(x,y,z)
-					dC = abs(Ctemp(x,y,z) - S1P_conc(x,y,z))
-					maxchange = max(dC,maxchange)
-					nc = nc + 1
-					total = total + Ctemp(x,y,z)
-				enddo
-			enddo
-		enddo
-		S1P_conc = Ctemp
-	enddo
+	call steadystate(influx,Kdiffusion,Kdecay,S1P_conc)
 else
-	do it = 1,nt
-		if (mod(it,100) == 0) write(*,*) 'it: ',it,S1P_conc(25,25,25)
+!	allocate(dCdt(NX,NY,NZ))
+!	dCdt = 0
+!	do it = 1,nt
+!		if (mod(it,100) == 0) write(*,*) 'it: ',it,S1P_conc(25,25,25)
+!		do z = 1,NZ
+!			do y = 1,NY
+!				do x = 1,NX
+!					dC = 0
+!					if (influx(x,y,z) < 0) cycle
+!					C = S1P_conc(x,y,z)
+!					dC = -Kdecay*C
+!					if (influx(x,y,z) > 0) then
+!						dC = dC + influx(x,y,z)*(1 - C)
+!					endif
+!					sum = 0
+!					nb = 0
+!					do k = 1,6
+!						xx = x + neumann(1,k)
+!						yy = y + neumann(2,k)
+!						zz = z + neumann(3,k)
+!						if (outside(xx,yy,zz)) cycle
+!						if (influx(xx,yy,zz) < 0) cycle
+!						nb = nb + 1
+!						sum = sum + S1P_conc(xx,yy,zz)
+!					enddo
+!					sum = sum - nb*C
+!					dC = dC + Kdiffusion*sum
+!					dCdt(x,y,z) = dC
+!				enddo
+!			enddo
+!		enddo
+!		S1P_conc = S1P_conc + dt*dCdt
+!	enddo
+!	deallocate(dCdt)
+endif
+! Now compute the gradient field.
+call gradient(influx,S1P_conc,S1P_grad)
+!write(*,*) 'S1P gradient: ',S1P_grad(:,25,25,25)
+deallocate(influx)
+end subroutine
+
+!----------------------------------------------------------------------------------------
+!----------------------------------------------------------------------------------------
+subroutine init_RANKL
+integer :: isignal, site(3), x, y, z
+real, allocatable :: influx(:,:,:)
+real, parameter :: Kdecay = 0.00001, Kdiffusion = 0.001
+
+write(logmsg,*) 'Initializing RANKL'
+call logger(logmsg)
+allocate(RANKL_conc(NX,NY,NZ))
+!allocate(RANKL_grad(3,NX,NY,NZ))
+allocate(influx(NX,NY,NZ))
+
+write(logmsg,*) 'Allocated RANKL_conc: ',NX,NY,NZ
+call logger(logmsg)
+
+influx = -1
+do x = 1,NX
+	do y = 1,NY
 		do z = 1,NZ
-			do y = 1,NY
-				do x = 1,NX
+			if (occupancy(x,y,z)%region == MARROW) influx(x,y,z) = 0
+		enddo
+	enddo
+enddo
+do isignal = 1,nsignal
+	site = signal(isignal)%site
+	influx(site(1),site(2)+1,site(3)) = 1
+enddo
+call steadystate(influx,Kdiffusion,Kdecay,RANKL_conc)
+!call gradient(influx,RANKL_conc,RANKL_grad)
+!write(*,*) 'RANKL gradient: ',RANKL_grad(:,25,25,25)
+deallocate(influx)
+end subroutine
+
+!----------------------------------------------------------------------------------------
+! Solve for steady-state concentration field for a constituent that is defined by:
+!	influx(:,:,:)	if > 0, the rate of influx into grid cell (x,y,z)
+!					if < 0, (x,y,z) is not MARROW
+!	Kdiffusion		diffusion coefficient
+!----------------------------------------------------------------------------------------
+subroutine steadystate(influx,Kdiffusion,Kdecay,C)
+real :: influx(:,:,:), C(:,:,:)
+real :: Kdiffusion, Kdecay
+real :: dx2diff, total, maxchange, dC, sum
+real, parameter :: alpha = 0.99
+real, parameter :: tol = 1.0e-6		! max change in C at any site as fraction of average C
+integer :: x, y, z, xx, yy, zz, nb, nc, k, it
+integer :: nt = 10000
+real, allocatable :: dCdt(:,:,:),Ctemp(:,:,:)
+
+dx2diff = DELTA_X**2/Kdiffusion
+allocate(Ctemp(NX,NY,NZ))
+allocate(dCdt(NX,NY,NZ))
+C = 0
+do it = 1,nt
+	if (mod(it,10) == 0) then
+		x = NX/2
+		z = NZ/2
+!		write(*,'(i6,20e10.3)') it,(C(x,y,z),y=NBY+1,NY/2-NBY,4),maxchange,total/nc
+	endif
+	if (maxchange < tol*total/nc) exit
+	maxchange = 0
+	total = 0
+	nc = 0
+	do z = 1,NZ
+		do y = 1,NY
+			do x = 1,NX
+				if (influx(x,y,z) < 0) cycle
+				if (influx(x,y,z) > 0) then
+					dC = influx(x,y,z)*dx2diff
+				else
 					dC = 0
-					if (influx(x,y,z) < 0) cycle
-					C = S1P_conc(x,y,z)
-					dC = -Kdecay*C
-					if (influx(x,y,z) > 0) then
-						dC = dC + Kperm*influx(x,y,z)*(1 - C)
-					endif
-					sum = 0
-					nb = 0
-					do k = 1,6
-						xx = x + neumann(1,k)
-						yy = y + neumann(2,k)
-						zz = z + neumann(3,k)
-						if (outside(xx,yy,zz)) cycle
-						if (influx(xx,yy,zz) < 0) cycle
-						nb = nb + 1
-						sum = sum + S1P_conc(xx,yy,zz)
-					enddo
-					sum = sum - nb*C
-					dC = dC + Kdiffusion*sum
-					dCdt(x,y,z) = dC
+				endif
+				sum = 0
+				nb = 0
+				do k = 1,6
+					xx = x + neumann(1,k)
+					yy = y + neumann(2,k)
+					zz = z + neumann(3,k)
+					if (outside(xx,yy,zz)) cycle
+					if (influx(xx,yy,zz) < 0) cycle
+					nb = nb + 1
+					sum = sum + C(xx,yy,zz)
 				enddo
+				Ctemp(x,y,z) = alpha*(sum + dC)/(Kdecay*dx2diff + dC + nb) + (1-alpha)*C(x,y,z)
+				dC = abs(Ctemp(x,y,z) - C(x,y,z))
+				maxchange = max(dC,maxchange)
+				nc = nc + 1
+				total = total + Ctemp(x,y,z)
 			enddo
 		enddo
-		S1P_conc = S1P_conc + dt*dCdt
 	enddo
-endif
+	C = Ctemp
+enddo
 deallocate(Ctemp)
 deallocate(dCdt)
-! Now compute the gradient field.
+
+end subroutine
+
+!----------------------------------------------------------------------------------------
+!----------------------------------------------------------------------------------------
+subroutine gradient(influx,C,grad)
+real :: influx(:,:,:), C(:,:,:), grad(:,:,:,:)
+integer :: x, y, z, xx, yy, zz, x1, x2, y1, y2, z1, z2, i, k
+real :: g(3)
+logical :: missed
+real, parameter :: MISSING_VAL = 1.0e10
+
+grad = 0
 do z = 1,NZ
 	do y = 1,NY
 		do x = 1,NX
@@ -170,64 +253,60 @@ do z = 1,NZ
 			if (x1 < 1 .or. x2 > NX) then
 				g(1) = 0
 			elseif (influx(x1,y,z) >= 0 .and. influx(x2,y,z) >= 0) then
-				g(1) = (S1P_conc(x2,y,z) - S1P_conc(x1,y,z))/(2*DELTA_X)
+				g(1) = (C(x2,y,z) - C(x1,y,z))/(2*DELTA_X)
 			else
-				g(1) = 1.0e10
+				g(1) = MISSING_VAL
 			endif
 			y1 = y - 1
 			y2 = y + 1
 			if (y1 < NBY .or. y2 > NY) then
 				g(2) = 0
 			elseif (influx(x,y1,z) >= 0 .and. influx(x,y2,z) >= 0) then
-				g(2) = (S1P_conc(x,y2,z) - S1P_conc(x,y1,z))/(2*DELTA_X)
+				g(2) = (C(x,y2,z) - C(x,y1,z))/(2*DELTA_X)
 			else
-				g(2) = 1.0e10
+				g(2) = MISSING_VAL
 			endif
 			z1 = z - 1
 			z2 = z + 1
 			if (z1 < 1 .or. z2 > NZ) then
 				g(3) = 0
 			elseif (influx(x,y,z1) >= 0 .and. influx(x,y,z2) >= 0) then
-				g(3) = (S1P_conc(x,y,z2) - S1P_conc(x,y,z1))/(2*DELTA_X)
+				g(3) = (C(x,y,z2) - C(x,y,z1))/(2*DELTA_X)
 			else
-				g(3) = 1.0e10
+				g(3) = MISSING_VAL
 			endif
-			S1P_grad(:,x,y,z) = g
+			grad(:,x,y,z) = g
 		enddo
 	enddo
 enddo
-! Now fix missing values identified by 1.0e10 by using a neighbour's value
-! If no neighbour's value is available, set gradient = 0
 do z = 1,NZ
 	do y = 1,NY
 		do x = 1,NX
 			if (influx(x,y,z) < 0) cycle
 			do i = 1,3
-				if (S1P_grad(i,x,y,z) == 1.0e10) then
+				if (grad(i,x,y,z) == MISSING_VAL) then
 					missed = .true.
-					S1P_grad(i,x,y,z) = 0
+					grad(i,x,y,z) = 0
 					do k = 1,6
 						xx = x + neumann(1,k)
 						yy = y + neumann(2,k)
 						zz = z + neumann(3,k)
 						if (outside(xx,yy,zz)) cycle
 						if (influx(xx,yy,zz) < 0) cycle
-						if (S1P_grad(i,xx,yy,zz) /= 1.0e10) then
-							S1P_grad(i,x,y,z) = S1P_grad(i,xx,yy,zz)
+						if (grad(i,xx,yy,zz) /= MISSING_VAL) then
+							grad(i,x,y,z) = grad(i,xx,yy,zz)
 							missed = .false.
 							exit
 						endif
 					enddo
 					if (missed) then
-						write(*,*) 'Missing gradient at: ',x,y,z,S1P_grad(:,x,y,z)
+!						write(*,*) 'Missing gradient at: ',x,y,z,grad(:,x,y,z)
 					endif
 				endif
 			enddo
 		enddo
 	enddo
 enddo
-write(*,*) 'gradient: ',S1P_grad(:,25,25,25)
-deallocate(influx)
 end subroutine
 			
 end module

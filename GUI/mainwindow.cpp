@@ -10,6 +10,7 @@
 #include "misc.h"
 #include "plot.h"
 #include "myvtk.h"
+#include "transfer.h"
 #ifdef _WIN32
 #include "windows.h"
 #define sleep(n) Sleep(1000 * n)
@@ -24,6 +25,19 @@
 LOG_USE();
 
 Params *parm;	// I don't believe this is the right way, but it works
+int showingVTK;
+int VTKbuffer[100];
+int mono_list[5*10000];
+int nmono_list;
+float cap_list[7*100];
+int ncap_list;
+float pit_list[4*1000];
+int npit_list;
+QMutex mutex1, mutex2;
+
+int summaryData[100];
+int NX, NY, NZ, NBY;
+int nt_vtk;
 
 QMyLabel::QMyLabel(QWidget *parent) : QLabel(parent)
 {}
@@ -113,9 +127,9 @@ MainWindow::MainWindow(QWidget *parent)
 	vtk->init();
 	tabs->setCurrentIndex(0);
 	if (DISABLE_TABS) {
-		tab_monocyte->setEnabled(false);
-		tab_osteoclast->setEnabled(false);
-		tab_receptor->setEnabled(false);
+//		tab_monocyte->setEnabled(false);
+//		tab_osteoclast->setEnabled(false);
+//		tab_signal->setEnabled(false);
 	}
 	goToInputs();
 }
@@ -831,7 +845,7 @@ void MainWindow::goToInputs()
 {
     stackedWidget->setCurrentIndex(0);
 	showingVTK = 0;
-    action_inputs->setEnabled(false);
+	action_inputs->setEnabled(false);
     action_outputs->setEnabled(true);
     action_VTK->setEnabled(true);
 }
@@ -843,7 +857,7 @@ void MainWindow::goToOutputs()
 {
     stackedWidget->setCurrentIndex(1);    
 	showingVTK = 0;
-    action_outputs->setEnabled(false);
+	action_outputs->setEnabled(false);
     action_inputs->setEnabled(true);
     action_VTK->setEnabled(true);
 }
@@ -855,12 +869,10 @@ void MainWindow::goToVTK()
 {
 	if (started) {
 		stackedWidget->setCurrentIndex(2);
-		if (showingVTK == 0) {
-			showingVTK = 1;
-		}
 		action_outputs->setEnabled(true);
 		action_inputs->setEnabled(true);
 		action_VTK->setEnabled(false);
+		showingVTK = 1;
 	}
 }
 
@@ -966,6 +978,7 @@ void MainWindow::runServer()
 		if (vtk->playing) {
 			vtk->playon();
 		} else {
+			exthread->unpause();
 			if (QFile::exists(pausefile))
 				QFile::remove(pausefile);
 		}
@@ -976,9 +989,6 @@ void MainWindow::runServer()
         paused = false;
         return;
 	}
-	if (!firstVTK)
-		vtk->cleanup();
-
 	if (!paramSaved) {
 		int response = QMessageBox::critical(this, tr("ABM Model GUI"), \
 					tr("The document has been modified.\nPlease save changes before continuing."), \
@@ -1001,8 +1011,12 @@ void MainWindow::runServer()
 	}
 
     // Display the outputs screen
-    stackedWidget->setCurrentIndex(1);
-	showingVTK = 0;
+	if (stackedWidget->currentIndex() == 2) {
+		showingVTK = 1;
+	} else {
+		stackedWidget->setCurrentIndex(1);
+		showingVTK = 0;
+	}
 
     // Disable parts of the GUI        
     action_run->setEnabled(false);
@@ -1013,7 +1027,7 @@ void MainWindow::runServer()
 	action_save_snapshot->setEnabled(false);
 	tab_monocyte->setEnabled(false);
 	tab_osteoclast->setEnabled(false);
-	tab_receptor->setEnabled(false);
+	tab_signal->setEnabled(false);
     tab_run->setEnabled(false);
 
 	if (show_outputdata)
@@ -1021,29 +1035,53 @@ void MainWindow::runServer()
 	else
 		box_outputData = 0;
 
-	if (QFile::exists(cellfile))
-		QFile::remove(cellfile);
-	if (QFile::exists(stopfile))
-		QFile::remove(stopfile);
+	if (use_CPORT1) {
 
-    // Port 5000
-    sthread0 = new SocketHandler(CPORT0);
-    connect(sthread0, SIGNAL(sh_output(QString)), box_outputLog, SLOT(append(QString))); //self.outputLog)
+		if (QFile::exists(cellfile))
+			QFile::remove(cellfile);
+		if (QFile::exists(stopfile))
+			QFile::remove(stopfile);
+
+
+		// Port 5001
+		sthread1 = new SocketHandler(CPORT1);
+		connect(sthread1, SIGNAL(sh_output(QString)), this, SLOT(outputData(QString)));
+//		connect(sthread1, SIGNAL(sh_connected()), this, SLOT(preConnection()));
+//		connect(sthread1, SIGNAL(sh_disconnected()), this, SLOT(postConnection()));
+	//	connect(sthread0, SIGNAL(sh_disconnected()), this, SLOT(postConnection()));
+		sthread1->start();
+	}
+
+	// Port 5000
+	sthread0 = new SocketHandler(CPORT0);
+	connect(sthread0, SIGNAL(sh_output(QString)), box_outputLog, SLOT(append(QString))); //self.outputLog)
+	connect(sthread0, SIGNAL(sh_connected()), this, SLOT(preConnection()));
+	connect(sthread0, SIGNAL(sh_disconnected()), this, SLOT(postConnection()));
 //    connect(sthread0, SIGNAL(sh_error(QString)), this, SLOT(errorPopup(QString)));	// doesn't work
-    sthread0->start();
+	sthread0->start();
+	vtk->cleanup();
+	Sleep(100);
 
-    // Port 5001
-    sthread1 = new SocketHandler(CPORT1);
-    connect(sthread1, SIGNAL(sh_output(QString)), this, SLOT(outputData(QString))); 
-	connect(sthread1, SIGNAL(sh_connected()), this, SLOT(preConnection()));
-	connect(sthread1, SIGNAL(sh_disconnected()), this, SLOT(postConnection()));
-//	connect(sthread0, SIGNAL(sh_disconnected()), this, SLOT(postConnection()));
-	sthread1->start();
-
-	sleep(1);
-
-	ExecThread *exthread = new ExecThread(inputFile,dll_path);
+	hours = 0;
+	nt_vtk = 0;
+	for (int k=0; k<parm->nParams; k++) {
+		PARAM_SET p = parm->get_param(k);
+		if (p.tag.compare("NDAYS") == 0) {
+			hours = p.value*24;
+		}
+		if (p.tag.compare("NT_ANIMATION") == 0) {
+			nt_vtk = p.value;
+		}
+	}
+//	firstVTK = true;
+	started = true;
+	exthread = new ExecThread(inputFile,dll_path);
+	connect(exthread, SIGNAL(display()), this, SLOT(displayScene()));
+	connect(exthread, SIGNAL(summary()), this, SLOT(showSummary()));
 	exthread->ncpu = ncpu;
+	exthread->nsteps = int(hours*60/DELTA_T);
+	exthread->paused = false;
+	exthread->stopped = false;
 	exthread->start();
 }
 
@@ -1057,14 +1095,6 @@ void MainWindow::zzz()
 void MainWindow::preConnection()
 {
 	LOG_MSG("preConnection");
-	hours = 0;
-	for (int k=0; k<parm->nParams; k++) {
-		PARAM_SET p = parm->get_param(k);
-		if (p.tag.compare("NDAYS") == 0) {
-			hours = p.value*24;
-			break;
-		}
-	}
 	// We assume that the model output is at hourly intervals
 	newR = new RESULT_SET;
 	QString casename = QFileInfo(inputFile).baseName();
@@ -1072,6 +1102,8 @@ void MainWindow::preConnection()
 	newR->casename = casename;
 //	LOG_QMSG(newR->casename);
 	int nsteps = int(hours+1.5);
+	sprintf(msg,"preConnection: nsteps: %d",nsteps);
+	LOG_MSG(msg);
 	newR->nsteps = nsteps;
 	newR->tnow = new double[nsteps];
 	newR->nDC = new double[nsteps];
@@ -1230,6 +1262,70 @@ void MainWindow::drawGraphs()
 
 //--------------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------------
+void MainWindow::displayScene()
+{
+//	LOG_MSG("displayScene");
+
+	started = true;
+	mutex2.lock();
+	vtk->get_cell_positions();
+	vtk->renderCells();
+	mutex2.unlock();
+
+	/*
+//	sprintf(msg,"showingVTK: %d",showingVTK);
+//	LOG_MSG(msg);
+	if (showingVTK > 0 || firstVTK) {
+		firstVTK = false;
+		bool redo = false;
+		if (showingVTK == 1) {
+			redo = true;
+			showingVTK = 2;
+		}
+		vtk->renderCells(redo,false);
+//	}
+
+	bool savepos = cbox_savepos->isChecked();
+	if (savepos) {
+		if (step < savepos_start) {
+			savepos = false;
+		}
+	}
+	posdata = true;
+	*/
+}
+
+
+//--------------------------------------------------------------------------------------------------------
+// Currently summaryData[] holds istep,ntot,nborn.  Hourly intervals, i.e. every 240 timesteps
+//--------------------------------------------------------------------------------------------------------
+void MainWindow::showSummary()
+{
+//	LOG_MSG("showSummary");
+	step++;
+	if (step >= newR->nsteps) {
+		LOG_MSG("ERROR: step >= nsteps");
+		return;
+	}
+	mutex1.lock();
+	hour = summaryData[0]*DELTA_T/60;
+	progress = int(100.*hour/hours);
+	progressBar->setValue(progress);
+
+	QString hourstr = QString::number(int(hour));
+	hour_display->setText(hourstr);
+
+	QString casename = newR->casename;
+	newR->tnow[step] = step;
+	newR->ntot[step] = summaryData[1];
+	newR->nborn[step] = summaryData[2];
+	mutex1.unlock();
+	graph_ntot->redraw(newR->tnow, newR->ntot, step+1, casename);
+	graph_nborn->redraw(newR->tnow, newR->nborn, step+1, casename);
+}
+
+//--------------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------------
 void MainWindow::outputData(QString qdata)
 {
 //	if (qdata.compare("VTK") == 0) {
@@ -1250,8 +1346,8 @@ void MainWindow::outputData(QString qdata)
 				redo = true;
 				showingVTK = 2;
 			} 
-	        vtk->renderCells(redo,false);
-		} 
+//			vtk->renderCells(redo,false);
+		}
 	    posdata = true;
 		if (qdata.length() == 0)
 			return;
@@ -1310,13 +1406,17 @@ void MainWindow::outputData(QString qdata)
 void MainWindow::postConnection()
 {
 	LOG_MSG("postConnection");
-	sthread1->socket->close();
-	sthread1->tcpServer->close();
-	sthread1->quit();
-	sthread1->wait(100);
-	if (sthread1->isRunning()) {
-		LOG_MSG("sthread1 did not terminate");
+	if (use_CPORT1) {
+		sthread1->socket->close();
+		sthread1->tcpServer->close();
+		sthread1->quit();
+		sthread1->wait(100);
+		if (sthread1->isRunning()) {
+			LOG_MSG("sthread1 did not terminate");
+		}
 	}
+
+	/*
 	sthread0->socket->close();
 	sthread0->tcpServer->close();
 	sthread0->quit();
@@ -1324,6 +1424,7 @@ void MainWindow::postConnection()
 	if (sthread0->isRunning()) {
 		LOG_MSG("sthread0 did not terminate");
 	}
+	*/
 /*
 	exthread->wait(1000);
 	if (exthread->isRunning()) {
@@ -1335,10 +1436,10 @@ void MainWindow::postConnection()
     action_stop->setEnabled(false);
 	action_save_snapshot->setEnabled(true);
 	if (!DISABLE_TABS) {
-		tab_monocyte->setEnabled(true);
-		tab_osteoclast->setEnabled(true);
-		tab_receptor->setEnabled(true);
 	}
+	tab_monocyte->setEnabled(true);
+	tab_osteoclast->setEnabled(true);
+	tab_signal->setEnabled(true);
 	tab_run->setEnabled(true);
 
 	// Check if a result set of this name is already in the list, if so remove it
@@ -1347,7 +1448,8 @@ void MainWindow::postConnection()
 			result_list.removeAt(i);
 		}
 	}
-	vtk->renderCells(true,true);		// for the case that the VTK page is viewed only after the execution is complete
+//	LOG_MSG("render_cells");
+//	vtk->renderCells(true,true);		// for the case that the VTK page is viewed only after the execution is complete
     posdata = false;
 	LOG_MSG("completed postConnection");
 }
@@ -1369,6 +1471,7 @@ void MainWindow::pauseServer()
 		QFile file(pausefile);
 		file.open(QIODevice::WriteOnly);
 		file.close();
+		exthread->pause();
 		LOG_MSG("Paused the ABM program.");
 	}
 	paused = true;
@@ -1391,15 +1494,27 @@ void MainWindow::stopServer()
 			LOG_MSG("was paused, runServer before stopping");
 			runServer();
 		}
-		QFile file(stopfile);
-		file.open(QIODevice::WriteOnly);
-		file.close();
+		exthread->snapshot();
+		LOG_MSG("exthread->stop");
+		exthread->stop();
+		LOG_MSG("exthread->stop return");
+//		QFile file(stopfile);
+//		file.open(QIODevice::WriteOnly);
+//		file.close();
 		sleep(1);		// delay for Fortran to wrap up (does this help?)
-		sthread1->quit();
-		sthread0->quit();
-		sthread0->terminate();
-		sthread1->terminate(); 
-	    postConnection();
+		if (use_CPORT1) {
+			sthread1->quit();
+			sthread1->terminate();
+		}
+//		LOG_MSG("exthread->quit");
+//		exthread->quit();
+//		LOG_MSG("exthread->terminate");
+//		exthread->terminate();
+
+//		sthread0->quit();
+//		sthread0->terminate();
+//	    postConnection();
+		sthread0->stop();
 		newR->nsteps = step+1;
 	}
     action_run->setEnabled(true); 
@@ -2038,21 +2153,21 @@ int SliderPlus::nTicks() {
 }
 
 
-
+/*
 //==================================================================================================================
 // Code below here is not used
 //----------------------------
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     event->accept();
-	/*
+
     if (maybeSave()) {
         writeSettings();
         event->accept();
     } else {
         event->ignore();
     }
-	*/
+
 }
 
 void MainWindow::newFile()
@@ -2208,7 +2323,7 @@ bool MainWindow::saveFile(const QString &fileName)
 
     return true;
 }
-*/
+
 void MainWindow::setCurrentFile(const QString &fileName)
 {
     curFile = fileName;
@@ -2225,3 +2340,4 @@ QString MainWindow::strippedName(const QString &fullFileName)
 {
     return QFileInfo(fullFileName).fileName();
 }
+*/
