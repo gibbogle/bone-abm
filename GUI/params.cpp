@@ -159,7 +159,7 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 "Signal threshold",
 "Strength of the signal defining the high-signal region near the source."},
 
-{"SIGNAL_AFACTOR", 0.4, 0, 0,
+{"SIGNAL_AFACTOR", 0.2, 0, 0,
 "Chemotactic strength factor",
 "Chemotactic influence of the signal is controlled by this parameter."},
 
