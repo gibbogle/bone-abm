@@ -199,7 +199,7 @@ void ExecThread::run()
 		if (i%nt_vtk == 0) {
 			if (showingVTK != 0) {
 				snapshot();
-				Sleep(20);
+				Sleep(30);
 			}
 		}
 		if (stopped) break;

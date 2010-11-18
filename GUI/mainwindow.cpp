@@ -2295,7 +2295,7 @@ void MainWindow::loadFile(const QString &fileName)
     setCurrentFile(fileName);
     statusBar()->showMessage(tr("File loaded"), 2000);
 }
-/*
+
 bool MainWindow::saveFile(const QString &fileName)
 {
     QFile file(fileName);
