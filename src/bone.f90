@@ -1,7 +1,7 @@
 
 module bone_mod
 !!DEC$ ATTRIBUTES DLLEXPORT :: BONE_MOD
-use ISO_C_binding
+use, intrinsic :: ISO_C_binding
 use global
 use fields
 use motion
@@ -287,10 +287,10 @@ S = (1-RANKSIGNAL_decayfactor)*S + rate_RANKSIGNAL(S,C)*DELTA_T
 pmono%RANKSIGNAL = min(S,1.0)
 if (pmono%status == MOTILE .and. pmono%RANKSIGNAL > ST1) then
 	pmono%status = CHEMOTACTIC
-	call logger('CHEMOTACTIC')
+!	call logger('CHEMOTACTIC')
 elseif (pmono%status == CHEMOTACTIC .and. pmono%RANKSIGNAL > ST2) then
 	pmono%status = STICKY
-	call logger('STICKY')
+!	call logger('STICKY')
 endif
 if (pmono%status == STICKY) then
 	pmono%stickiness = pmono%RANKSIGNAL
@@ -301,7 +301,7 @@ end subroutine
 !------------------------------------------------------------------------------------------------
 subroutine updater
 real :: S
-integer :: i, j, k, iclast, irel, dir, region, kcell, site(3), kpar=0
+integer :: i, j, k, iclump, iclast, irel, dir, region, kcell, site(3), kpar=0
 real :: tnow
 real(8) :: R
 type(monocyte_type), pointer :: pmono
@@ -315,14 +315,19 @@ call influx
 ! Monocyte S1P1 level grows, RANKL signal accumulates
 do i = 1,nmono
 	pmono => mono(i)
+	if (pmono%status == LEFT) cycle
 	if (pmono%region /= MARROW) cycle
 	if (pmono%status < 1 .or. pmono%status > FUSING) cycle
 	call update_S1P1(pmono)
 	call update_RANK(pmono)
 enddo
-do i = 1,nclump
-	pclump => clump(i)
+do iclump = 1,nclump
+	pclump => clump(iclump)
 	if (pclump%status < 0) cycle
+	call consolidate_clump(pclump)
+	if (nclump > 1) then
+		call separate_clump(iclump)
+	endif
 	if (pclump%status < FUSING) then
 		if (pclump%ncells > CLUMP_THRESHOLD) then
 			pclump%status = FUSING
@@ -821,7 +826,7 @@ if (nmono > 0) then
 	nfused = 0
     do kcell = 1,nmono
 		status = mono(kcell)%status
-		if (status == DEAD) cycle
+		if (status == DEAD .or. status == LEFT) cycle
 		if (mono(kcell)%region /= MARROW) cycle
 		if (status == CROSSING) then
 			mono_state = 1
@@ -839,6 +844,7 @@ if (nmono > 0) then
 		endif
         site = mono(kcell)%site
         if (.not.FAST_DISPLAY .or. mono_state /= 0) then
+!		if (status == FUSED) then
 	        write(nfpos,'(a2,i6,4i4)') 'M ',kcell-1, site, mono_state
 	    endif
 !        if (status == FUSING .or. status == FUSED) then
@@ -976,9 +982,9 @@ if (nmono > 0) then
 	k = 0
     do kcell = 1,nmono
 		status = mono(kcell)%status
-		if (status == DEAD) cycle
+		if (status == DEAD .or. status == LEFT) cycle
 		if (mono(kcell)%region /= MARROW) cycle
-		if (status == CROSSING) then
+				if (status == CROSSING) then
 			mono_state = 1
 		elseif (status == FUSING) then
 			iclast = mono(kcell)%iclast
@@ -994,6 +1000,7 @@ if (nmono > 0) then
 		endif
         site = mono(kcell)%site
         if (.not.FAST_DISPLAY .or. mono_state /= 0) then
+!		if (status == FUSED) then
 			k = k+1
 			j = 5*(k-1)
 			mono_list(j+1) = kcell-1
@@ -1302,8 +1309,8 @@ res = 0
 !call logger("simulate_step")
 ok = .true.
 istep = istep + 1
-if (mod(istep,100) == 0) then
-	write(logmsg,*) 'istep: ',istep
+if (mod(istep,1000) == 0) then
+	write(logmsg,*) 'istep: ',istep,mono_cnt,nleft
 	call logger(logmsg)
 endif
 !write(nflog,*) 'call updater'
@@ -1359,6 +1366,35 @@ end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
+subroutine report
+integer :: i, k, indx, status
+
+write(logmsg,*) 'nclump: ',nclump
+call logger(logmsg)
+do i = 1,nclump
+	if (clump(i)%status < 0) cycle
+	write(logmsg,*) 'clump: ',i,'  status: ',clump(i)%status,'  ncells: ',clump(i)%ncells
+	call logger(logmsg)
+	do k = 1,clump(i)%ncells
+		indx = clump(i)%list(k)
+		write(logmsg,*) indx,mono(indx)%site
+		call logger(logmsg)
+	enddo
+enddo
+write(logmsg,*) 'Clumped monocytes  '
+call logger(logmsg)
+!do i = 1,nmono
+!	status = mono(i)%status
+!	if (status == LEFT .or. status == DEAD) cycle
+!	if (mono(i)%iclump > 0) then
+!		write(logmsg,*) i,mono(i)%iclump,mono(i)%site
+!		call logger(logmsg)
+!	endif
+!enddo
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
 subroutine wrapup
 call par_zigfree
 if (allocated(occupancy)) deallocate(occupancy)
@@ -1382,6 +1418,7 @@ integer(c_int) :: res
 character*(8), parameter :: quit = '__EXIT__'
 integer :: error, i
 
+call report
 call wrapup
 
 if (res == 0) then

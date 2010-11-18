@@ -62,6 +62,7 @@ real, allocatable :: influx(:,:,:)
 real, allocatable :: dCdt(:,:,:)
 real, parameter :: dt = 1.0
 real, parameter :: Kperm = 0.05, Kdecay = 0.00001, Kdiffusion = 0.001
+real :: g(3), gamp, gmax
 logical :: steady = .true.
 
 write(logmsg,*) 'Initializing S1P'
@@ -133,6 +134,18 @@ endif
 call gradient(influx,S1P_conc,S1P_grad)
 !write(*,*) 'S1P gradient: ',S1P_grad(:,25,25,25)
 deallocate(influx)
+gmax = 0
+do x = 1,NX
+	do y = NBY+1,NY
+		do z = 1,NZ
+			g = S1P_grad(:,x,y,z)
+			gamp = sqrt(dot_product(g,g))
+			gmax = max(gamp,gmax)
+		enddo
+	enddo
+enddo
+write(logmsg,*) 'Max S1P gradient: ',gmax
+call logger(logmsg)
 end subroutine
 
 !----------------------------------------------------------------------------------------
@@ -147,9 +160,6 @@ call logger(logmsg)
 allocate(RANKL_conc(NX,NY,NZ))
 !allocate(RANKL_grad(3,NX,NY,NZ))
 allocate(influx(NX,NY,NZ))
-
-write(logmsg,*) 'Allocated RANKL_conc: ',NX,NY,NZ
-call logger(logmsg)
 
 influx = -1
 do x = 1,NX
@@ -188,6 +198,9 @@ real, allocatable :: dCdt(:,:,:),Ctemp(:,:,:)
 dx2diff = DELTA_X**2/Kdiffusion
 allocate(Ctemp(NX,NY,NZ))
 allocate(dCdt(NX,NY,NZ))
+maxchange = 1.0e10
+total = 0
+nc = 1
 C = 0
 do it = 1,nt
 	if (mod(it,10) == 0) then

@@ -102,7 +102,7 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 "Monocytes/mm3",
 "Average number of monocytes in 1 cubic mm of marrow."},
 
-{"IN_PER_HOUR", 4, 0, 0,
+{"IN_PER_HOUR", 10, 0, 0,
 "Monocyte influx",
 "Rate of influx pf osteoclast-precursor monocytes from the blood.\n\
 [/hour]"},

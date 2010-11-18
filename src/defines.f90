@@ -78,16 +78,19 @@ character*(13), parameter :: pausefile = 'pause_dll'
 logical, parameter :: S1P_chemotaxis = .true.
 real, parameter :: S1P1_THRESHOLD = 0.5
 real, parameter :: S1P1_BASERATE = 1.0/(6*60)	! 6 hours
+real, parameter :: S1P_GRADLIM = 0.02
+real, parameter :: S1P_CHEMOLEVEL = 0.1		! 0 -> 1
 
 ! RANKL parameters
 logical, parameter :: use_RANK = .true.
-real, parameter :: RANKSIGNAL_rateconstant = 4.0
+real, parameter :: RANKSIGNAL_rateconstant = 10.5
 real, parameter :: RANKSIGNAL_halflife = 12		! hours
 real, parameter :: ST1 = 0.3	! -> CHEMOTACTIC
 real, parameter :: ST2 = 0.5	! -> STICKY
 
 ! Clump parameters
 integer, parameter :: CLUMP_THRESHOLD = 25
+real, parameter :: CLUMP_SEPARATION = 8
 
 type pit_type
 !	logical :: active
@@ -187,6 +190,7 @@ type clump_type
 	integer :: list(MAX_CLUMP_CELLS)
 	integer :: status
 	real :: starttime
+	real :: cm(3)
 end type
 
 end module

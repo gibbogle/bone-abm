@@ -10,6 +10,7 @@ real, parameter :: Kchemo = 1.0
 
 integer :: njumpdirs, nreldir
 integer :: jumpvec(3,MAXRELDIR+1)
+real :: unitjump(3,MAXRELDIR+1)
 real :: dirprob(0:MAXRELDIR)
 logical :: vn_adjacent(MAXRELDIR+1)
 
@@ -147,7 +148,7 @@ end subroutine
 ! into the blood, effectively removed from further consideration.
 !---------------------------------------------------------------------
 subroutine mover
-integer :: kcell
+integer :: kcell, status
 logical :: go
 integer :: kpar = 0
 integer :: kdbug = -1
@@ -156,12 +157,9 @@ real :: tnow
 
 tnow = istep*DELTA_T
 do kcell = 1,nmono
-	if (mono(kcell)%status >= MOTILE .and. mono(kcell)%status < FUSING) then	! interim criterion
-		call mono_jumper(kcell,go,kpar)
-		if (kcell == kdbug) then
-			write(*,'(3i4)') mono(kcell)%site
-		endif
-	elseif (mono(kcell)%status == CROSSING) then
+	status = mono(kcell)%status
+	if (status == LEFT .or. status == DEAD) cycle
+	if (status == CROSSING) then
 		if (tnow >= mono(kcell)%exittime) then
 			mono(kcell)%status = LEFT
 			mono(kcell)%region = BLOOD
@@ -169,10 +167,15 @@ do kcell = 1,nmono
 			occupancy(site(1),site(2),site(3))%indx = 0
 			mono_cnt = mono_cnt - 1
 			nleft = nleft + 1
-!			write(*,'(a,2i6,2f6.3,i6)') 'monocyte leaves: ',istep,kcell,cell%S1P1,prob,mono_cnt
+!			write(*,'(a,2i6,2f6.3,i6)') 'monocyte leaves: ',istep,kcell,mono(kcell)%S1P1,mono_cnt
+		endif
+	elseif (status >= MOTILE .and. mono(kcell)%iclump == 0) then	! interim criterion
+		call mono_jumper(kcell,go,kpar)
+		if (kcell == kdbug) then
+			write(*,'(3i4)') mono(kcell)%site
 		endif
 	endif
-	if (mono(kcell)%stickiness > 0) then
+	if (mono(kcell)%stickiness > 0 .and. mono(kcell)%status < FUSED) then
 		call sticker(kcell)
 	endif
 enddo
@@ -194,7 +197,7 @@ integer :: site1(3),site2(3)
 integer :: region, kcell2
 integer :: irel,dir1,lastdir1
 integer :: savesite2(3,26), jmpdir(26)
-real(8) :: psum, p(26), R
+real(8) :: psum, p(26), R, w(27), g(3), gamp, S1Pfactor
 real :: f0, f
 logical :: free, cross, field
 
@@ -209,7 +212,7 @@ if (cell%status >= CHEMOTACTIC .and. occupancy(site1(1),site1(2),site1(3))%signa
 endif
 
 ! TESTING!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!field = .false.
+field = .false.
 
 R = par_uni(kpar)
 !call random_number(R)
@@ -218,6 +221,15 @@ if (R <= dirprob(0)) then    ! case of no jump
 endif
 
 ! Now we must jump (if possible)
+
+! Set up weights in the 6 principal axis directions corresponding to S1P_grad(:,:,:,:)
+if (S1P_chemotaxis) then
+	g = S1P_grad(:,site1(1),site1(2),site1(3))
+	gamp = sqrt(dot_product(g,g))	! Magnitude of S1P gradient
+	g = g/gamp
+	call S1P_chemo_weights(g,w)		! w(:) now holds the normalized gradient vector components
+	S1Pfactor = S1P_CHEMOLEVEL*min(1.0,gamp/S1P_GRADLIM)
+endif
 
 lastdir1 = cell%lastdir
 p = 0
@@ -240,6 +252,10 @@ do irel = 1,nreldir
 			else
 				p(irel) = max(0.0,p(irel) + SIGNAL_AFACTOR*(f-f0))
 			endif
+		endif
+		if (S1P_chemotaxis) then
+			! the increment to the probability depends on S1Pfactor and w(dir1)
+			p(irel) = p(irel) + S1Pfactor*w(dir1)
 		endif
 		jmpdir(irel) = dir1
 		psum = psum + p(irel)
@@ -280,7 +296,8 @@ site2 = savesite2(:,irel)
 if (irel <= nreldir) then
 	dir1 = reldir(lastdir1,irel)
 	if (dir1 == 0) then
-		write(*,*) 'dir1 = 0: ',kcell,lastdir1,irel,dir1
+		write(logmsg,*) 'dir1 = 0: ',kcell,lastdir1,irel,dir1
+		call logger(logmsg)
 	endif
 endif
 if (diagonal_jumps) then
@@ -293,6 +310,29 @@ cell%site = site2
 cell%lastdir = dir1
 occupancy(site2(1),site2(2),site2(3))%indx = kcell
 occupancy(site1(1),site1(2),site1(3))%indx = 0
+end subroutine
+
+!---------------------------------------------------------------------
+!---------------------------------------------------------------------
+subroutine S1P_chemo_weights(g,w)
+real(8) :: g(3), w(27)
+
+w = 0
+if (g(1) < 0) then		! -x
+	w(5) = -g(1)		! reldir26(1,1)
+else					! +x
+	w(23) = g(1)		! reldir26(2,1)
+endif
+if (g(2) < 0) then		! -y
+	w(11) = -g(2)		! reldir26(3,1)
+else					! +y
+	w(17) = g(2)		! reldir26(4,1)
+endif
+if (g(3) < 0) then		! -z
+	w(13) = -g(3)		! reldir26(5,1)
+else					! +z
+	w(15) = g(3)		! reldir26(6,1)
+endif
 end subroutine
 
 !---------------------------------------------------------------------
@@ -331,12 +371,9 @@ do i = 1,27
 	icell2 = occupancy(site2(1),site2(2),site2(3))%indx
 	if (icell2 > 0) then
 		cell2 => mono(icell2)
-		if (cell2%stickiness > 0) then
+		if (cell2%stickiness > 0 .and. cell2%status < FUSED) then
 			iclump2 = cell2%iclump
 			if ((iclump1 > 0) .and. (iclump1 == iclump2)) cycle		! already stuck together
-!			if (cell1%status == FUSING .or. cell1%status == FUSED .or. &						
-!				cell2%status == FUSING .or. cell2%status == FUSED) then
-!				call stick(icell1,icell2)
 			if (canstick(cell1%stickiness,cell2%stickiness)) then
 				call stick(icell1,icell2)
 				iclump1 = cell1%iclump
@@ -374,8 +411,8 @@ tnow = istep*DELTA_T
 if (cell1%iclump > 0) then
 	if (cell2%iclump > 0) then
 		! both cell1 and cell2!
-		write(logmsg,*) 'stick: did this really happen? ',icell1,icell2,cell1%iclump,cell2%iclump
-		call logger(logmsg)
+!		write(logmsg,*) 'stick: did this really happen? ',icell1,icell2,cell1%iclump,cell2%iclump
+!		call logger(logmsg)
 		if (clump(cell1%iclump)%ncells + clump(cell2%iclump)%ncells <= MAX_CLUMP_CELLS) then
 			call joinclumps(icell1,icell2)
 		endif
@@ -383,14 +420,15 @@ if (cell1%iclump > 0) then
 		! just cell1
 		pclump => clump(cell1%iclump)
 		if (pclump%ncells == MAX_CLUMP_CELLS) then
-			write(logmsg,*) 'Too many cells in clump (1)'
-			call logger(logmsg)
+!			write(logmsg,*) 'Too many cells in clump (1)'
+!			call logger(logmsg)
 			return
 !			stop
 		endif
 		cell2%iclump = cell1%iclump
 		pclump%ncells = pclump%ncells + 1
 		pclump%list(pclump%ncells) = icell2
+		call centre_of_mass(pclump)
 		if (pclump%status >= FUSING) then
 			cell2%status = pclump%status
 		endif
@@ -401,14 +439,15 @@ elseif (cell2%iclump > 0) then
 		! just cell2
 	pclump => clump(cell2%iclump)
 	if (pclump%ncells == MAX_CLUMP_CELLS) then
-		write(logmsg,*) 'Too many cells in clump (2)'
-		call logger(logmsg)
+!		write(logmsg,*) 'Too many cells in clump (2)'
+!		call logger(logmsg)
 		return
 !		stop
 	endif
 	cell1%iclump = cell2%iclump
 	pclump%ncells = pclump%ncells + 1
 	pclump%list(pclump%ncells) = icell1
+	call centre_of_mass(pclump)
 	if (pclump%status >= FUSING) then
 		cell1%status = pclump%status
 	endif
@@ -423,6 +462,7 @@ else
 	pclump%ncells = 2
 	pclump%list(1) = icell1
 	pclump%list(2) = icell2
+	call centre_of_mass(pclump)
 	pclump%starttime = tnow
 	pclump%status = ALIVE
 	write(logmsg,*) 'New clump'
@@ -457,7 +497,151 @@ do i = 1,pclump2%ncells
 	pclump1%list(pclump1%ncells) = kcell
 	mono(kcell)%iclump = mono(icell1)%iclump
 enddo
+call centre_of_mass(pclump1)
 pclump2%status = -1
+end subroutine
+
+!---------------------------------------------------------------------
+! The cells in a clump are encouraged to aggregate more closely together.
+!---------------------------------------------------------------------
+subroutine consolidate_clump(pclump)
+type(clump_type), pointer :: pclump
+real :: cm(3), dist2(MAX_CLUMP_CELLS), r(3), d2, d2min
+integer :: i, k, kmin, site1(3), site2(3)
+type(monocyte_type), pointer :: pmono
+
+!cm = 0
+!do i = 1,pclump%ncells
+!	cm = cm + mono(pclump%list(i))%site
+!enddo
+!cm = cm/pclump%ncells
+cm = pclump%cm
+do i = 1,pclump%ncells
+	r = cm - mono(pclump%list(i))%site
+	dist2(i) = dot_product(r,r)
+enddo
+do i = 1,pclump%ncells
+	site1 = mono(pclump%list(i))%site
+	d2min = dist2(i)
+	kmin = 0
+	do k = 1,27
+		if (k == 14) cycle
+		site2 = site1 + jumpvec(:,k)
+		if (site2(1) < 1 .or. site2(1) > NX) cycle
+		if (site2(2) < NBY+1 .or. site2(2) > NY) cycle
+		if (site2(3) < 1 .or. site2(3) > NZ) cycle
+		if (occupancy(site2(1),site2(2),site2(3))%indx == 0) then	! this site is available
+			r = cm - site2
+			d2 = dot_product(r,r)
+			if (d2 < d2min) then
+				d2min = d2
+				kmin = k
+			endif
+		endif
+	enddo
+	if (kmin /= 0) then		! move the cell to this site
+		site2 = site1 + jumpvec(:,kmin)
+!		if (pclump%list(i) == 138) then
+!			write(*,'(a,7i5)') 'consolidate mono(138): ',i,site1,site2
+!		endif
+		mono(pclump%list(i))%site = site2
+		occupancy(site1(1),site1(2),site1(3))%indx = 0
+		occupancy(site2(1),site2(2),site2(3))%indx = pclump%list(i)
+	endif
+enddo
+call centre_of_mass(pclump)
+			
+end subroutine
+
+!---------------------------------------------------------------------
+! Move a clump (ncells = n0) if it is too close to another (big) clump.
+! Move away from another clump (ncells = n) if:
+!	n0 + n > MAX_CLUMP_CELLS
+!---------------------------------------------------------------------
+subroutine separate_clump(iclump0)
+integer :: iclump0
+integer :: iclump, i, imax, jump(3), site2(3), site0(3), indx
+type(clump_type), pointer :: pclump0, pclump
+real :: r(3), d, rsum(3), proj, pmax
+logical :: ok
+
+pclump0 => clump(iclump0)
+rsum = 0
+do iclump = 1,nclump
+	if (iclump == iclump0) cycle
+	pclump => clump(iclump)
+	if (pclump0%ncells + pclump%ncells <= MAX_CLUMP_CELLS) cycle	! the clumps can join
+	r = pclump0%cm - pclump%cm
+	r(2) = 0
+	d = sqrt(dot_product(r,r))
+	if (d > CLUMP_SEPARATION) cycle
+	rsum = rsum + r
+enddo
+if (rsum(1) == 0 .and. rsum(2) == 0 .and. rsum(3) == 0) return
+! Need to try to move pclump0.  Get unit vector in the direction to move
+r = rsum/sqrt(dot_product(rsum,rsum))
+! Choose jump direction (parallel to bone surface, i.e. dy = 0) closest to r
+pmax = 0
+imax = 0
+do i = 1,27
+	if (i == 14) cycle
+	if (unitjump(2,i) /= 0) cycle	! consider only jumps with dy = 0
+	proj = dot_product(r,unitjump(:,i))
+	if (proj > pmax) then
+		pmax = proj
+		imax = i
+	endif
+enddo
+if (imax == 0) return
+jump = jumpvec(:,imax)
+! Now see if it will be possible to move all cells in the clump by this jump
+do i = 1,pclump0%ncells
+	site2 = mono(pclump0%list(i))%site + jump
+	ok = .false.
+	if (site2(1) < 1 .or. site2(1) > NX) exit
+	if (site2(2) < NBY+1 .or. site2(2) > NY) exit
+	if (site2(3) < 1 .or. site2(3) > NZ) exit
+	if (occupancy(site2(1),site2(2),site2(3))%region /= MARROW) exit
+	ok = .true.
+	indx = occupancy(site2(1),site2(2),site2(3))%indx
+	if (indx == 0) cycle	! this site is available
+	if (indx > 0) then
+		if (mono(indx)%iclump == iclump0) then	! cell in this clump
+			cycle
+		else									! another cell in the way
+			ok = .false.
+			exit
+		endif
+	endif
+enddo
+if (.not.ok) return
+! We can move all the cells by jump
+do i = 1,pclump0%ncells
+	site0 = mono(pclump0%list(i))%site
+	occupancy(site0(1),site0(2),site0(3))%indx = 0
+	mono(pclump0%list(i))%site = site0 + jump
+!	if (pclump0%list(i) == 138) then
+!		write(*,'(a,7i5)') 'separate mono(138): ',i,site0,site0 + jump
+!	endif
+enddo
+do i = 1,pclump0%ncells
+	site0 = mono(pclump0%list(i))%site
+	occupancy(site0(1),site0(2),site0(3))%indx = pclump0%list(i)
+enddo
+end subroutine
+
+!---------------------------------------------------------------------
+!---------------------------------------------------------------------
+subroutine centre_of_mass(pclump)
+type(clump_type), pointer :: pclump
+real :: cm(3)
+integer :: i
+
+cm = 0
+do i = 1,pclump%ncells
+	cm = cm + mono(pclump%list(i))%site
+enddo
+pclump%cm = cm/pclump%ncells
 end subroutine
 
 !---------------------------------------------------------------------
@@ -649,13 +833,14 @@ cell => mono(kcell)
 crossToBlood = .false.
 if (cell%S1P1 > S1P1_THRESHOLD) then
 	prob = CROSS_PROB*(cell%S1P1 - S1P1_THRESHOLD)/(1 - S1P1_THRESHOLD)
-!	call random_number(R)
 	R = par_uni(kpar)
 	if (R < prob) then
 		tnow = istep*DELTA_T
 		crossToBlood = .true.
 		cell%status = CROSSING
 		cell%exittime = tnow + CROSSING_TIME
+!		write(logmsg,*) 'S1P1, prob, R: ',cell%S1P1,prob,R,cell%exittime
+!		call logger(logmsg)
 	endif
 endif
 end function
@@ -788,7 +973,7 @@ end function
 subroutine make_reldir
 integer :: lastdir,irel,k,ix,iy,iz,i,site(3)
 integer :: reldir18(6,18),reldir26(6,26)
-real :: Q(3),L2,L3,p0,p1,q320,q321,q32,qsum,a,b,c,d(MAXRELDIR),R(MAXRELDIR),E, theta, p(8), psum, dd
+real :: Q(3),L2,L3,p0,p1,q320,q321,q32,qsum,a,b,c,d(MAXRELDIR),R(MAXRELDIR),E, theta, p(8), psum, u2, u(3)
 
 if (MODEL == NEUMANN_MODEL) then
 	diagonal_jumps = .false.
@@ -830,6 +1015,13 @@ else
 			do iz = -1,1
 				k = k+1
 				jumpvec(:,k) = (/ix,iy,iz/)
+				u = jumpvec(:,k)
+				u2 = dot_product(u,u)
+				if (u2 > 0) then
+					unitjump(:,k) = u/sqrt(u2)
+				else
+					unitjump(:,k) = 0
+				endif
 			enddo
 		enddo
 	enddo
@@ -838,11 +1030,11 @@ else
 	reldir18(1,:) = (/  5,  2, 4, 6, 8, 11,13,15,17, 10,12,16,18, 22,24,26,20, 23 /)	! -x
 	reldir18(2,:) = (/ 23, 20,22,24,26, 11,13,15,17, 10,12,16,18,  2, 4, 6, 8,  5 /)	! +x
 	reldir18(3,:) = (/ 11,  2,10,12,20,  5,13,15,23,  4, 6,22,24,  8,16,18,26, 17 /)	! -y
-	reldir18(4,:) = (/ 17,  8,16,18,26,  5,13,15,23,  4, 6,22,24,  2,10,12,20, 11/)	! +y
+	reldir18(4,:) = (/ 17,  8,16,18,26,  5,13,15,23,  4, 6,22,24,  2,10,12,20, 11 /)	! +y
 	reldir18(5,:) = (/ 13,  4,10,16,22,  5,11,17,23,  2, 8,20,26,  6,12,18,24, 15 /)	! -z
 	reldir18(6,:) = (/ 15,  6,12,18,24,  5,11,17,23,  2, 8,20,26,  4,10,16,22, 13 /)	! +z
 
-! Data for revised Moore26 model.  D3 jumps are excluded, but reverse directions are allowed.
+! Data for revised Moore26 model.  D3 jumps are included, but reverse directions are allowed.
 	reldir26(1,:) = (/  5,  2, 4, 6, 8,  1, 3, 7, 9, 11,13,15,17, 10,12,16,18, 19,21,27,25, 20,22,24,26, 23 /)	! -x
 	reldir26(2,:) = (/ 23, 20,22,24,26, 19,21,27,25, 11,13,15,17, 10,12,16,18,  1, 3, 7, 9,  2, 4, 6, 8,  5 /)	! +x
 	reldir26(3,:) = (/ 11,  2,10,12,20,  1, 3,19,21,  5,13,15,23,  4, 6,22,24,  7, 9,25,27,  8,16,18,26, 17 /)	! -y

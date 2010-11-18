@@ -251,7 +251,6 @@ private:
 	ExecThread *exthread;
 };
 
-static const double DELTA_T = 0.25;
 
 class MyDoubleValidator : public QDoubleValidator
 {
