@@ -1449,14 +1449,22 @@ end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
-subroutine execute(infile)
-!DEC$ ATTRIBUTES DLLEXPORT :: EXECUTE
-!DEC$ ATTRIBUTES C, REFERENCE, MIXED_STR_LEN_ARG, ALIAS:"EXECUTE" :: execute
-character*(*) :: infile
+subroutine execute(infile_array,buflen) BIND(C)
+!!DEC$ ATTRIBUTES DLLEXPORT :: EXECUTE
+!!DEC$ ATTRIBUTES C, REFERENCE, MIXED_STR_LEN_ARG, ALIAS:"execute" :: execute
+!DEC$ ATTRIBUTES DLLEXPORT :: execute
+use, intrinsic :: iso_c_binding
+character(c_char) :: infile_array(128)
+integer(c_int) :: buflen
+character*(128) :: infile
 logical :: ok
-integer :: res
+integer :: i, res
 
 use_CPORT1 = .false.	! TESTING DIRECT CALLING FROM C++
+infile = ''
+do i = 1,buflen
+	infile(i:i) = infile_array(i)
+enddo
 
 open(nflog,file='bone.log',status='replace')
 awp_0%is_open = .false.

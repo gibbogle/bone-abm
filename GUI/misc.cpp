@@ -1,7 +1,8 @@
 #include <string>
 #include <fstream>
-#ifdef __WIN32
+#ifdef _WIN32
 #include <windows.h>
+//#define sleep(n) Sleep(1000 * n)
 #endif
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -172,7 +173,8 @@ void ExecThread::run()
 //					len_runfile);
 #else
 	paused = false;
-	EXECUTE(const_cast<char *>(infile),len_infile);
+	execute(const_cast<char *>(infile),&len_infile);
+	LOG_MSG("execute returned");
 	get_dimensions(&NX,&NY,&NZ,&NBY);
 	sprintf(msg,"exthread: nsteps: %d",nsteps);
 	LOG_MSG(msg);

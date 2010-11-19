@@ -13,7 +13,7 @@ void __bone_mod_MOD_execute(char *, int);
 #else
 //void EXECUTE(int *, char *, int, char *, int, char *, int, char *, int);
 //void EXECUTE(int *);
-void EXECUTE(char *, int);
+void execute(char *, int *);
 void simulate_step(int *);
 void terminate_run(int *);
 void get_dimensions(int *,int *,int *,int *);

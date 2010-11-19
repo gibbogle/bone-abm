@@ -1,6 +1,8 @@
 #ifndef MISC_H
 #define MISC_H
 
+#define __COMPILETIME_LOADING__
+
 #include <QThread>
 #include <QTcpServer>
 
