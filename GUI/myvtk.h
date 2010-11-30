@@ -27,6 +27,14 @@
 #include <vtkCellArray.h>
 #include <vtkCellData.h>
 #include <vtkTextSource.h>
+#include <vtkGlyph3D.h>
+#include <vtkPointData.h>
+#include <vtkPolyData.h>
+#include <vtkPoints.h>
+#include <vtkPolyDataMapper.h>
+#include <vtkUnsignedCharArray.h>
+#include <vtkDoubleArray.h>
+
 //#include <vtkLegendScaleActor.h>
 
 //#include <vtkConfigure.h>
@@ -80,6 +88,13 @@ struct vert_tile {
 };
 typedef vert_tile VERT_TILE;
 
+struct clast_pos {
+	double pos[3];
+	double dir[3];
+	double size;
+};
+typedef clast_pos CLAST_POS;
+
 class MyVTK
 {
 public:
@@ -87,7 +102,7 @@ public:
 	~MyVTK();
 
 	void read_cell_positions(QString, QString, bool);
-	void get_cell_positions();
+	void get_cell_positions(bool fast);
 	void init();
 	void cleanup();
 	void renderCells();
@@ -101,6 +116,7 @@ public:
 	void process_tiles();
 	void oldcreateTileList();
 	void createTileList();
+	void process_osteoclasts();
 	int inTileList(SURFACE_TILE *tile);
 	bool startPlayer(QString, QTimer *, bool);
 	bool nextFrame();
@@ -108,6 +124,7 @@ public:
 	void playon();
 	void saveSnapshot(QString, QString);
 	void stop();
+	void makeEllipsoid();
 
 	QList<CELL_POS > MCpos_list;
 	QList<CELL_POS > TCpos_list;
@@ -115,6 +132,7 @@ public:
 	QList<BOND_POS > bondpos_list;
 	QList<CAPILLARY_SEGMENT> capillary_list;
 	QList<PIT_POS > pitpos_list;
+	QList<CLAST_POS > clastpos_list;
 	QList<SURFACE_TILE> tile_list;
 	QList<VERT_TILE> verttile_list;
 	QList<vtkActor *> M_Actor_list;
@@ -122,6 +140,7 @@ public:
 	QList<vtkActor *> D_Actor_list;
 	QList<vtkActor *> B_Actor_list;
 	QList<vtkActor *> C_Actor_list;
+	QList<vtkActor *> OC_Actor_list;
 	QList<vtkActor *> Tile_Actor_list;
 
 	BONE **bone_array;
@@ -137,9 +156,16 @@ public:
 	vtkPolyDataMapper *capillaryMapper;
 	vtkPolyDataMapper *cylMapper;
 	vtkPolyDataMapper *tileMapper;
+	vtkPolyDataMapper *clastMapper;
 	vtkPolyDataMapper *textMapper;
 
-//	vtkSmartPointer<vtkLegendScaleActor> legendScaleActor;
+	vtkSmartPointer<vtkPolyData> polygonPolyData;
+	vtkSmartPointer<vtkPoints> points;
+	vtkSmartPointer<vtkUnsignedCharArray> colors;
+	vtkSmartPointer<vtkPolyData> ginput;
+	vtkPolyDataMapper *squareMapper;
+	vtkSmartPointer<vtkGlyph3D> glypher;
+	vtkActor *glactor;
 
 	vtkMPEG2Writer *mpg;
 //	vtkSmartPointer<vtkPNGWriter> writer;

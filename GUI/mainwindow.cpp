@@ -27,12 +27,14 @@ LOG_USE();
 Params *parm;	// I don't believe this is the right way, but it works
 int showingVTK;
 int VTKbuffer[100];
-int mono_list[5*10000];
+int mono_list[5*MAX_MONO];
 int nmono_list;
-float cap_list[7*100];
+float cap_list[7*MAX_CAP];
 int ncap_list;
-float pit_list[4*1000];
+float pit_list[4*MAX_PIT];
 int npit_list;
+float clast_list[MAX_CLAST];
+int nclast_list;
 QMutex mutex1, mutex2;
 
 int summaryData[100];
@@ -1268,7 +1270,8 @@ void MainWindow::displayScene()
 
 	started = true;
 	mutex2.lock();
-	vtk->get_cell_positions();
+	bool fast = cbox_fastdisplay->isChecked();
+	vtk->get_cell_positions(fast);
 	vtk->renderCells();
 	mutex2.unlock();
 

@@ -2,6 +2,7 @@ module motion
 use global
 use fields
 implicit none
+save
 
 integer :: reldir(6,26)
 
@@ -13,6 +14,7 @@ integer :: jumpvec(3,MAXRELDIR+1)
 real :: unitjump(3,MAXRELDIR+1)
 real :: dirprob(0:MAXRELDIR)
 logical :: vn_adjacent(MAXRELDIR+1)
+integer :: dir2D(3,8) = reshape((/ -1,0,-1, -1,0,0, -1,0,1, 0,0,1, 1,0,1, 1,0,0, 1,0,-1, 0,0,-1/),(/3,8/))
 
 
 contains
@@ -22,39 +24,31 @@ contains
 ! The osteoclast is moved one lattice jump, and the locations of active
 ! pit sites are recomputed, together with their resorption rates.
 !---------------------------------------------------------------------
-subroutine moveclast(pclast)
+subroutine move_clast1(pclast,res)
 type(osteoclast_type), pointer :: pclast
-integer :: ipit, iy, x, y, z, site(3), i, imono, kdir, dx, dz, dirmax
-integer :: dir(3,8) = reshape((/ -1,0,-1, -1,0,0, -1,0,1, 0,0,1, 1,0,1, 1,0,0, 1,0,-1, 0,0,-1/),(/3,8/))
-integer :: jump(3), kpar=0
-real :: d, bf
-real(8) :: psum, pmax, R, dp, p(8)
+integer :: res
+integer :: ipit, iy, x, y, z, site(3), i, imono, kdir, dx, dz, dirmax, iclast, ddir
+real :: prob(0:4) = (/ 0.5, 0.15, 0.07, 0.025, 0.01 /)
+integer :: jump(3), lastjump(3), kpar=0
+real :: d, bf, radius0, radius1, v(3), proj
+real(8) :: psum, pmax, R, dp, p(8), ptemp(8)
 !real :: p(3) = (/0.25,0.5,0.25/)	! arbitrary, interim
-logical :: covered, bdryhit
+logical :: covered, bdryhit, possible(8)
+type(osteoclast_type), pointer :: pclast1
 integer, save :: count = 0
 
-!do kdir = 1,8
-!	jump = dir(:,kdir)
-!	write(*,*) kdir,jump
-!enddo
-!stop
-!if (count == 0) then
-!	write(*,*) 'Initial pit sites:'
-!	do ipit = 1,pclast%npit
-!		write(*,*) ipit,pclast%pit(ipit)%site
-!	enddo
-!endif
+possible = .true.
+res = 0
 ! First choose a direction.  Quantify the new bone available in each direction.
+!lastjump = dir(:,pclast%lastdir)
 pmax = 0
-!kdir = 0
-!do dx = -1,1
-!	do dz = -1,1
-!		if (dx == 0 .and. dz == 0) cycle
-!		kdir = kdir + 1
-!		jump = (/dx,0,dz/)
-!		dir(kdir,:) = jump
 do kdir = 1,8
-	jump = dir(:,kdir)
+	jump = dir2D(:,kdir)
+	ddir = abs(pclast%lastdir - kdir)
+	if (ddir > 4) then
+		ddir = abs(ddir-8)
+	endif
+	p(kdir) = prob(ddir)
 	bdryhit = .false.
 	psum = 0
 	do ipit = 1,pclast%npit
@@ -77,7 +71,10 @@ do kdir = 1,8
 			do y = NBY,1,-1
 				bf = occupancy(site(1),y,site(3))%bone_fraction
 				if (bf > 0) then
-					dp = 1/(NBY - y + 2 - bf)**3
+!					d = NBY - y + 2 - bf
+					d = NBY - y + 1 - bf
+!					dp = 1/d**3
+					dp = 0.2*d
 					exit
 				endif
 			enddo
@@ -87,35 +84,73 @@ do kdir = 1,8
 	enddo
 	if (bdryhit) then
 		p(kdir) = 0
+		possible(kdir) = .false.
 	else
-		p(kdir) = psum
-		if (psum > pmax) then
-			pmax = psum
-			dirmax = kdir
-		endif
+		p(kdir) = max(0.0,p(kdir)-psum)
+!		p(kdir) = min(p(kdir),psum)
+!		if (psum > pmax) then
+!			pmax = psum
+!			dirmax = kdir
+!		endif
 	endif
+	! Check for nearby osteoclasts.
+	! Treat osteoclast footprint as a circle with radius = sqrt(count)
+	do iclast = 1,nclast
+		pclast1 => clast(iclast)
+		if (associated(pclast,pclast1)) cycle
+		if (pclast1%status == DEAD) cycle
+		radius0 = sqrt(real(pclast%count))
+		radius1 = sqrt(real(pclast1%count))
+		v = pclast1%cm - pclast%cm
+		d = sqrt(dot_product(v,v))
+		if (d < 0.9*(radius0 + radius1)) then	! we don't want to move in the direction of v
+			proj = dot_product(v,real(jump))
+			if (proj > 0) then
+!				write(*,*) 'Too close: ', iclast
+				p(kdir) = 0
+				possible(kdir) = .false.
+			endif
+		endif
+	enddo	
 enddo
+
 !write(*,'(9f7.3)') pmax,p
-do kdir = 1,8
-	if (p(kdir) < 0.7*pmax) p(kdir) = 0
-enddo
-p = p/sum(p)
-!write(*,'(9f7.3)') p
-!call random_number(R)
-R = par_uni(kpar)
-psum = 0
-do kdir = 1,8
-	psum = psum + p(kdir)
-	if (psum > R) exit
-enddo
-kdir = min(8,kdir)
-!kdir = dirmax + kdir
-!if (kdir < 1) kdir = 8
-!if (kdir > 8) kdir = 1
-jump = dir(:,kdir)
-!write(logmsg,*) 'dir: ',kdir,jump
-!call logger(logmsg)
-!write(*,*) 'pit sites:'
+if (sum(p) == 0) then	! no good moves, need to find some fresh bone
+	call logger('No good moves for this osteoclast')
+	if (possible(pclast%lastdir)) then	! keep going in the same direction
+		kdir = pclast%lastdir
+		res = 1
+	else								! choose a new direction
+		p = 0
+		do i = 1,8
+			if (possible(i)) p(i) = 1
+		enddo
+		if (sum(p) == 0) then
+			res = 2			! die!
+			return
+		endif
+		res = -1
+	endif
+endif
+if (res /= 1) then
+!	ptemp = p
+	!do kdir = 1,8
+	!	if (p(kdir) < 0.75*pmax) p(kdir) = 0
+	!enddo
+!	if (sum(p) == 0) then	! use probs unchanged
+!		p = ptemp/sum(ptemp)
+!	else
+		p = p/sum(p)
+!	endif
+	R = par_uni(kpar)
+	psum = 0
+	do kdir = 1,8
+		psum = psum + p(kdir)
+		if (psum > R) exit
+	enddo
+	kdir = min(8,kdir)
+endif
+jump = dir2D(:,kdir)
 do ipit = 1,pclast%npit
 	x = pclast%pit(ipit)%site(1) + jump(1)
 	z = pclast%pit(ipit)%site(3) + jump(3)
@@ -132,15 +167,197 @@ do ipit = 1,pclast%npit
 		stop
 	endif
 	pclast%pit(ipit)%site = (/x,y,z/)
-!	write(*,*) ipit,pclast%pit(ipit)%site
 enddo
 pclast%site = pclast%site + jump
+pclast%cm = pclast%cm + jump
+pclast%lastdir = kdir
+!write(*,'(a,7i4)') 'clast: ',pclast%site,jump,kdir
 do i = 1,pclast%count
 	imono = pclast%mono(i)
-	mono(imono)%site = mono(imono)%site + jump
+	site = mono(imono)%site
+	occupancy(site(1),site(2),site(3))%indx = 0
+	site = site + jump
+	mono(imono)%site = site
+	occupancy(site(1),site(2),site(3))%indx = imono
 enddo
-count = count + 1
-!if (count == 20) stop
+res = abs(res)
+end subroutine
+
+!---------------------------------------------------------------------
+! The osteoclast is moved one lattice jump, and the locations of active
+! pit sites are recomputed, together with their resorption rates.
+!---------------------------------------------------------------------
+subroutine move_clast(pclast,res)
+type(osteoclast_type), pointer :: pclast
+integer :: res
+integer :: ipit, iy, x, y, z, site(3), i, imono, kdir, dx, dz, dirmax, iclast, ddir
+real :: prob(0:4) = (/ 0.5, 0.15, 0.07, 0.025, 0.01 /)
+integer :: jump(3), lastjump(3), kpar=0
+real :: d, bf, v(3), proj, size0, size1, djump, dsum, depth
+real(8) :: psum, pmax, R, dp, p(8), ptemp(8)
+!real :: p(3) = (/0.25,0.5,0.25/)	! arbitrary, interim
+logical :: covered, bdryhit, nearclast, freshbone, possible(8)
+type(osteoclast_type), pointer :: pclast1
+integer, save :: count = 0
+logical :: dbug
+
+if (pclast%ID == -1) then
+	dbug = .true.
+else
+	dbug = .false.
+endif
+
+possible = .true.
+freshbone = .false.
+res = 0
+! First choose a direction.  Quantify the new bone available in each direction
+! at a distance approx equal to the long axis dimension of the osteoclast, i.e.
+! sqrt(count).
+
+size0 = clast_size(pclast)
+if (dbug) write(*,'(a,i4,4f8.1)') 'move_clast: ',pclast%ID,pclast%cm,size0
+pmax = 0
+do kdir = 1,8
+	p(kdir) = 0
+	jump = dir2D(:,kdir)
+	djump = sqrt(real(dot_product(jump,jump)))
+	dsum = 0
+	do i = 1,20
+		dsum = dsum + djump
+		if (dsum > size0) exit
+	enddo
+	site = pclast%cm + i*jump + 0.5
+	if (dbug) write(*,*) 'kdir,i,site: ',kdir,i,site
+	bdryhit = .false.
+	if ((site(1) <= 1 .or. site(1) >= NX) .or. (site(3) <= 1 .or. site(3) >= NZ)) then
+		bdryhit = .true.
+		possible(kdir) = .false.
+		cycle
+	endif
+	if (occupancy(site(1),site(2),site(3))%indx /= 0) then
+		possible(kdir) = .false.
+		cycle
+	endif
+	! Check for nearby osteoclasts.
+	! Treat osteoclast footprint as a circle with radius = clast_size
+	nearclast = .false.
+	do iclast = 1,nclast
+		pclast1 => clast(iclast)
+		if (associated(pclast,pclast1)) cycle
+		if (pclast1%status == DEAD) cycle
+		size1 = clast_size(pclast1)
+		v = pclast1%cm - pclast%cm
+		d = sqrt(dot_product(v,v))
+		if (d < (size0 + size1)) then	! we don't want to move in the direction of v
+			proj = dot_product(v,real(jump))
+			if (proj > 0) then
+!				write(*,*) 'Too close: ', iclast
+				nearclast = .true.
+				exit
+!				possible(kdir) = .false.
+			endif
+		endif
+	enddo	
+	if (nearclast) then
+		possible(kdir) = .false.
+		cycle
+	endif
+	x = site(1)
+	z = site(3)
+	do y = NBY,1,-1
+		bf = occupancy(x,y,z)%bone_fraction
+!		if (bf /= 1.0) then
+!			write(*,*) y,bf
+!			stop
+!		endif
+		if (bf > 0) then
+			depth = (NBY + 0.5) - (y - 0.5 + bf)
+!			write(*,*) 'depth: ',depth
+			exit
+		endif
+	enddo
+	p(kdir) = exp(-Kattraction*depth)
+	if (p(kdir) > 0.9) freshbone = .true.
+	! At this stage p(:) contains the relatice attractiveness of this direction,
+	! without accounting for the direction of the previous jump.
+	! Now multiply by the weight that represents persistence of direction
+	ddir = abs(pclast%lastdir - kdir)
+	if (ddir > 4) then
+		ddir = abs(ddir-8)
+	endif
+	if (dbug) write(*,'(5i3,5f8.3)') kdir,ddir,site,depth,p(kdir),prob(ddir)
+	p(kdir) = p(kdir)*prob(ddir)
+	pmax = max(pmax,p(kdir))
+enddo
+if (dbug) write(*,'(a,8f7.4)') 'p: ',p
+! Now filter out direction probs that are too small in comparison with the prob of the most preferred direction
+do kdir = 1,8
+	if (p(kdir) < 0.2*pmax) then
+		p(kdir) = 0
+	endif
+enddo
+p = p/sum(p)
+
+!write(*,'(9f7.3)') pmax,p
+if (.not.freshbone) then	! no good moves, need to find some fresh bone
+	write(logmsg,*) 'No good moves for this osteoclast: ', pclast%ID
+	call logger(logmsg)
+	if (possible(pclast%lastdir)) then	! keep going in the same direction
+		kdir = pclast%lastdir
+		res = 1
+	else								! choose a new direction
+		p = 0
+		do i = 1,8
+			if (possible(i)) p(i) = 1
+		enddo
+		if (sum(p) == 0) then
+			res = 2			! die! (maybe)
+			return
+		endif
+		res = -1
+	endif
+endif
+if (res /= 1) then
+	R = par_uni(kpar)
+	psum = 0
+	do kdir = 1,8
+		psum = psum + p(kdir)
+		if (psum > R) exit
+	enddo
+	kdir = min(8,kdir)
+endif
+jump = dir2D(:,kdir)
+if (dbug) write(*,*) 'kdir: ',kdir,jump
+do ipit = 1,pclast%npit
+	x = pclast%pit(ipit)%site(1) + jump(1)
+	z = pclast%pit(ipit)%site(3) + jump(3)
+	y = 0
+	do iy = NBY,1,-1
+		if (occupancy(x,iy,z)%bone_fraction > 0) then
+			y = iy
+			exit
+		endif
+	enddo
+	if (y == 0) then
+		write(logmsg,*) 'Error: moveclast: y = 0: ',ipit,x,y,z
+		call logger(logmsg)
+		stop
+	endif
+	pclast%pit(ipit)%site = (/x,y,z/)
+enddo
+pclast%site = pclast%site + jump
+pclast%cm = pclast%cm + jump
+pclast%lastdir = kdir
+if (dbug) write(*,'(a,7i4)') 'clast: ',pclast%site,jump,kdir
+do i = 1,pclast%count
+	imono = pclast%mono(i)
+	site = mono(imono)%site
+	occupancy(site(1),site(2),site(3))%indx = 0
+	site = site + jump
+	mono(imono)%site = site
+	occupancy(site(1),site(2),site(3))%indx = imono
+enddo
+res = abs(res)
 end subroutine
 
 !---------------------------------------------------------------------
@@ -351,6 +568,8 @@ endif
 end function
 
 !---------------------------------------------------------------------
+! mono(icell1) is sticky, may stick to an adjacent sticky cell to
+! either join a clump or initiate a new clump.
 !---------------------------------------------------------------------
 subroutine sticker(icell1)
 integer :: icell1
@@ -414,7 +633,7 @@ if (cell1%iclump > 0) then
 !		write(logmsg,*) 'stick: did this really happen? ',icell1,icell2,cell1%iclump,cell2%iclump
 !		call logger(logmsg)
 		if (clump(cell1%iclump)%ncells + clump(cell2%iclump)%ncells <= MAX_CLUMP_CELLS) then
-			call joinclumps(icell1,icell2)
+			call join_clump(icell1,icell2)
 		endif
 	else
 		! just cell1
@@ -425,6 +644,7 @@ if (cell1%iclump > 0) then
 			return
 !			stop
 		endif
+		cell2%status = CLUMPED
 		cell2%iclump = cell1%iclump
 		pclump%ncells = pclump%ncells + 1
 		pclump%list(pclump%ncells) = icell2
@@ -432,8 +652,8 @@ if (cell1%iclump > 0) then
 		if (pclump%status >= FUSING) then
 			cell2%status = pclump%status
 		endif
-		write(logmsg,*) 'Cell added to clump: status: ',cell1%iclump,pclump%status,pclump%ncells
-		call logger(logmsg)
+!		write(logmsg,*) 'Cell added to clump: status: ',cell1%iclump,pclump%status,pclump%ncells
+!		call logger(logmsg)
 	endif
 elseif (cell2%iclump > 0) then
 		! just cell2
@@ -444,6 +664,7 @@ elseif (cell2%iclump > 0) then
 		return
 !		stop
 	endif
+	cell1%status = CLUMPED
 	cell1%iclump = cell2%iclump
 	pclump%ncells = pclump%ncells + 1
 	pclump%list(pclump%ncells) = icell1
@@ -451,12 +672,19 @@ elseif (cell2%iclump > 0) then
 	if (pclump%status >= FUSING) then
 		cell1%status = pclump%status
 	endif
-	write(logmsg,*) 'Cell added to clump: status: ',cell2%iclump,pclump%status,pclump%ncells
-	call logger(logmsg)
+!	write(logmsg,*) 'Cell added to clump: status: ',cell2%iclump,pclump%status,pclump%ncells
+!	call logger(logmsg)
 else
 		! neither cell is in a clump
 	nclump = nclump + 1
+	if (nclump > MAX_NCLUMP) then
+		write(logmsg,*) 'Too many clumps'
+		call logger(logmsg)
+		stop
+	endif
 	pclump => clump(nclump)
+	cell1%status = CLUMPED
+	cell2%status = CLUMPED
 	cell1%iclump = nclump
 	cell2%iclump = nclump
 	pclump%ncells = 2
@@ -474,14 +702,15 @@ end subroutine
 ! Cells icell1 and icell2 are both in separate clumps, which must be 
 ! joined.  One clump is extended, the other has status -> -1
 !---------------------------------------------------------------------
-subroutine joinclumps(icell1,icell2)
+subroutine join_clump(icell1,icell2)
 integer :: icell1, icell2
 integer :: i, j, kcell
 type(clump_type), pointer :: pclump1, pclump2
 
 pclump1 => clump(mono(icell1)%iclump)
 pclump2 => clump(mono(icell2)%iclump)
-call logger('Joining two clumps')
+write(logmsg,'(a,6i6)')'Joining two clumps: ',icell1,icell2,mono(icell1)%iclump,mono(icell2)%iclump,pclump1%ncells,pclump2%ncells
+call logger(logmsg)
 do i = 1,pclump2%ncells
 	kcell = pclump2%list(i)
 	! First check that this isn't in pclump1 - that would be an error
@@ -507,7 +736,7 @@ end subroutine
 subroutine consolidate_clump(pclump)
 type(clump_type), pointer :: pclump
 real :: cm(3), dist2(MAX_CLUMP_CELLS), r(3), d2, d2min
-integer :: i, k, kmin, site1(3), site2(3)
+integer :: i, k, kmin, kcell, site1(3), site2(3)
 type(monocyte_type), pointer :: pmono
 
 !cm = 0
@@ -521,7 +750,8 @@ do i = 1,pclump%ncells
 	dist2(i) = dot_product(r,r)
 enddo
 do i = 1,pclump%ncells
-	site1 = mono(pclump%list(i))%site
+	kcell = pclump%list(i)
+	site1 = mono(kcell)%site
 	d2min = dist2(i)
 	kmin = 0
 	do k = 1,27
@@ -544,9 +774,9 @@ do i = 1,pclump%ncells
 !		if (pclump%list(i) == 138) then
 !			write(*,'(a,7i5)') 'consolidate mono(138): ',i,site1,site2
 !		endif
-		mono(pclump%list(i))%site = site2
+		mono(kcell)%site = site2
 		occupancy(site1(1),site1(2),site1(3))%indx = 0
-		occupancy(site2(1),site2(2),site2(3))%indx = pclump%list(i)
+		occupancy(site2(1),site2(2),site2(3))%indx = kcell
 	endif
 enddo
 call centre_of_mass(pclump)
@@ -560,7 +790,7 @@ end subroutine
 !---------------------------------------------------------------------
 subroutine separate_clump(iclump0)
 integer :: iclump0
-integer :: iclump, i, imax, jump(3), site2(3), site0(3), indx
+integer :: iclump, i, imax, jump(3), site2(3), site0(3), indx, iclast
 type(clump_type), pointer :: pclump0, pclump
 real :: r(3), d, rsum(3), proj, pmax
 logical :: ok
@@ -570,13 +800,26 @@ rsum = 0
 do iclump = 1,nclump
 	if (iclump == iclump0) cycle
 	pclump => clump(iclump)
+	if (pclump%status == DEAD) cycle
 	if (pclump0%ncells + pclump%ncells <= MAX_CLUMP_CELLS) cycle	! the clumps can join
 	r = pclump0%cm - pclump%cm
 	r(2) = 0
 	d = sqrt(dot_product(r,r))
 	if (d > CLUMP_SEPARATION) cycle
+	write(logmsg,'(a,2i4,4f6.1)') 'near clump: ',iclump0,iclump,r,d
+	call logger(logmsg)
 	rsum = rsum + r
 enddo
+! Turn off movement away from clasts
+!do iclast = 1,nclast
+!	if (clast(iclast)%status == DEAD) cycle
+!	r = pclump0%cm - clast(iclast)%cm
+!	r(2) = 0
+!	d = sqrt(dot_product(r,r))
+!	if (d > CLUMP_SEPARATION) cycle
+!	rsum = rsum + r
+!enddo
+	
 if (rsum(1) == 0 .and. rsum(2) == 0 .and. rsum(3) == 0) return
 ! Need to try to move pclump0.  Get unit vector in the direction to move
 r = rsum/sqrt(dot_product(rsum,rsum))
@@ -628,6 +871,174 @@ do i = 1,pclump0%ncells
 	site0 = mono(pclump0%list(i))%site
 	occupancy(site0(1),site0(2),site0(3))%indx = pclump0%list(i)
 enddo
+pclump0%cm = pclump0%cm + jump
+write(logmsg,'(a,i3,3f5.1,3i3)') 'Moved clump: ',iclump0,r,jump
+call logger(logmsg)
+end subroutine
+
+!---------------------------------------------------------------------
+! A clump moves towards the bone surface until it is just touching
+! (least value of a mono(:)%site(2) = NBY+1), then it transforms into
+! an osteoclast
+!---------------------------------------------------------------------
+subroutine lower_clump(pclump,on_surface)
+type(clump_type), pointer :: pclump
+logical :: on_surface
+real :: R
+integer :: i, j, site(3), site2(3), y, ylo, yhi, nhit,hitcell(MAX_CLUMP_CELLS)
+integer :: kpar = 0
+
+R = par_uni(kpar)
+if (R > CLUMP_FALL_PROB) return
+ylo = NY
+yhi = 0
+nhit = 0
+on_surface = .false.
+do i = 1,pclump%ncells
+	j = pclump%list(i)
+	y = mono(j)%site(2)
+	if (y == NBY+1) then
+		nhit = nhit+1
+		hitcell(nhit) = j
+	endif
+	ylo = min(y,ylo)
+	yhi = max(y,yhi)
+enddo
+if (nhit > 0) then			! there are cells sitting on the surface
+	if (yhi > ylo+2) then	! move contacting cells up first before moving clump down
+		do i = 1,nhit
+			j = hitcell(i)
+			site = mono(j)%site
+			occupancy(site(1),site(2),site(3))%indx = 0		! clear the old site
+			! Need to find a suitable site to move the cell to
+			call get_vacant_site(pclump,site(2)+1,site2)
+			mono(j)%site = site2
+			occupancy(site2(1),site2(2),site2(3))%indx = j
+!			write(logmsg,*) 'moved up: ',j,site,' -> ',site2
+!			call logger(logmsg)
+		enddo
+	else					! ready to change to complete transformation into an osteoclast
+!		write(logmsg,*) 'reshape_clump: ylo,yhi: ',ylo,yhi
+!		call logger(logmsg)
+		call reshape_clump(pclump)	! ensure that cells are well placed to make the osteoclast footprint
+		on_surface = .true.
+		return
+	endif
+endif
+! Now move the clump down
+do i = 1,pclump%ncells
+	j = pclump%list(i)
+	site = mono(j)%site
+	occupancy(site(1),site(2),site(3))%indx = 0
+	mono(j)%site(2) = site(2) - 1
+enddo
+do i = 1,pclump%ncells
+	j = pclump%list(i)
+	site = mono(j)%site
+	occupancy(site(1),site(2),site(3))%indx = j
+enddo
+end subroutine
+
+!---------------------------------------------------------------------
+! Need a vacant site in the plane at y near the clump
+!---------------------------------------------------------------------
+subroutine get_vacant_site(pclump,y,site)
+type(clump_type), pointer :: pclump
+integer :: y, site(3)
+integer :: x0, z0, dx, dz, x, z, d2, d2min
+
+x0 = pclump%cm(1)
+z0 = pclump%cm(3)
+d2min = 99999
+do dx = -4,4
+	do dz = -4,4
+		x = x0 + dx
+		z = z0 + dz
+		if (x < 1 .or. x > NX) cycle
+		if (z < 1 .or. z > NZ) cycle
+		if (occupancy(x,y,z)%indx /= 0) cycle
+		d2 = dx*dx + dz*dz
+		if (d2 < d2min) then
+			d2min = d2
+			site = (/ x,y,z /)
+		endif
+	enddo
+enddo
+end subroutine
+
+!---------------------------------------------------------------------
+!---------------------------------------------------------------------
+subroutine reshape_clump(pclump)
+type(clump_type), pointer :: pclump
+integer :: n(2), nt(2), i, j, k, site(3), x0, y0, z0, x, y, z, layer, rng1, rng2
+
+x0 = pclump%cm(1)
+y0 = NBY+1
+z0 = pclump%cm(3)
+n(1) = pclump%ncells/2 + 5
+n(2) = pclump%ncells - n(1)
+nt(1) = n(1)
+nt(2) = n(1) + n(2)
+!write(*,*) 'reshape_clump: ',pclump%ncells,n
+do i = 1,pclump%ncells
+	j = pclump%list(i)
+	site = mono(j)%site
+	occupancy(site(1),site(2),site(3))%indx = 0
+enddo
+do layer = 1,2
+	y = y0 + layer - 1
+	if (n(layer) < 25) then
+		rng1 = 1
+		rng2 = 2
+	else
+		rng1 = 2
+		rng2 = 3
+	endif
+	if (layer == 1) then
+		i = 0
+	else
+		i = n(1)
+	endif
+!	write(*,*) 'layer: ',layer,rng1,rng2
+	! Place the first block of 9 or 25
+	do x = x0-rng1,x0+rng1
+		do z = z0-rng1,z0+rng1
+			if (x < 1 .or. x > NX) cycle
+			if (z < 1 .or. z > NZ) cycle
+			if (occupancy(x,y,z)%indx /= 0) cycle
+			site = (/ x,y,z /)
+			i = i+1
+			j = pclump%list(i)
+!			write(*,*) i,j,pclump%ncells
+			mono(j)%site = site
+			occupancy(site(1),site(2),site(3))%indx = j
+			if (i == nt(layer)) exit
+		enddo
+		if (i == nt(layer)) exit
+	enddo
+	if (i == nt(layer)) cycle
+	! Place the rest of this layer
+	do x = x0-rng2,x0+rng2
+		do z = z0-rng2,z0+rng2
+			if (abs(x-x0) < rng2 .and. abs(z-z0) < rng2) cycle
+			if (x < 1 .or. x > NX) cycle
+			if (z < 1 .or. z > NZ) cycle
+			if (occupancy(x,y,z)%indx /= 0) cycle
+			site = (/ x,y,z /)
+			i = i+1
+			j = pclump%list(i)
+!			write(*,*) i,j,pclump%ncells,nt(layer)
+			mono(j)%site = site
+			occupancy(site(1),site(2),site(3))%indx = j
+			if (i == nt(layer)) exit
+		enddo
+		if (i == nt(layer)) exit
+	enddo
+enddo
+!do i = 1,pclump%ncells
+!	j = pclump%list(i)
+!	write(*,*) i,j,mono(j)%site
+!enddo
 end subroutine
 
 !---------------------------------------------------------------------
@@ -870,6 +1281,14 @@ else
 	pstar(0) = 1 - psum
 endif
 end subroutine
+
+!---------------------------------------------------------------------
+!---------------------------------------------------------------------
+real function clast_size(pclast)
+type(osteoclast_type), pointer :: pclast
+
+clast_size = 0.7*sqrt(real(pclast%count))
+end function
 
 !---------------------------------------------------------------------
 ! Choose one of the 6 axis directions to allocate to the direction of

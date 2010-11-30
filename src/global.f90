@@ -4,6 +4,7 @@ use par_zig_mod
 use winsock
 
 implicit none
+save
 
 type(occupancy_type), allocatable, target :: occupancy(:,:,:)
 type(monocyte_type), allocatable, target :: mono(:)
@@ -84,11 +85,12 @@ subroutine logger(msg)
 character*(*) :: msg
 integer :: error
 logical :: isopen
+character*(1) :: LF = char(94)
 
 error = 0
 if (use_TCP) then
     if (awp_0%is_open) then
-        call winsock_send(awp_0,trim(msg),len_trim(msg),error)
+        call winsock_send(awp_0,trim(msg)//LF,len_trim(msg)+1,error)
     endif
 else
 	write(*,*) trim(msg)
