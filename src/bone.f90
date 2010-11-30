@@ -301,13 +301,14 @@ end subroutine
 !------------------------------------------------------------------------------------------------
 subroutine updater
 real :: S
-integer :: i, j, k, iclump, iclast, irel, dir, region, kcell, site(3), kpar=0
-real :: tnow
+integer :: i, j, k, iclump, iclast, irel, dir, region, kcell, site(3), res, kpar=0
+real :: tnow, stickysum
 real(8) :: R
 type(monocyte_type), pointer :: pmono
 type(osteoclast_type), pointer :: pclast
 type(occupancy_type), pointer :: pbone
 type(clump_type), pointer :: pclump
+logical :: on_surface
 
 tnow = istep*DELTA_T
 ! Monocytes enter from the blood
@@ -324,26 +325,44 @@ enddo
 do iclump = 1,nclump
 	pclump => clump(iclump)
 	if (pclump%status < 0) cycle
-	call consolidate_clump(pclump)
+! TESTING !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	if (pclump%status < FUSED) then
+		call consolidate_clump(pclump)
+	endif
 	if (nclump > 1) then
 		call separate_clump(iclump)
 	endif
 	if (pclump%status < FUSING) then
+		stickysum = 0
+		do i = 1,pclump%ncells
+			stickysum = stickysum + mono(pclump%list(i))%stickiness
+		enddo
+		if (stickysum/pclump%ncells < ST2) then	! clump breaks up
+			write(logmsg,*) 'Clump breaks up: ',iclump
+			do i = 1,pclump%ncells
+				mono(pclump%list(i))%status = CHEMOTACTIC
+			enddo
+			pclump%status = DEAD
+			cycle
+		endif
 		if (pclump%ncells > CLUMP_THRESHOLD) then
 			pclump%status = FUSING
 			pclump%starttime = tnow
-			do j = 1,pclump%ncells
-				write(logmsg,*) 'clump: ',i,j,pclump%ncells
-				call logger(logmsg)
-				mono(pclump%list(j))%status = FUSING
+			pclump%fusetime = tnow + FUSING_TIME
+			do i = 1,pclump%ncells
+				mono(pclump%list(i))%status = FUSING
 			enddo
 		endif
 	elseif (pclump%status == FUSING) then
-		if (tnow >= pclump%starttime + FUSING_TIME) then
-			pclump%status = FUSED
-			do j = 1,pclump%ncells
-				mono(pclump%list(j))%status = FUSED
-			enddo
+		if (tnow >= pclump%fusetime) then
+!			write(logmsg,*) '***fuse clump: ',iclump,pclump%fusetime,tnow
+!			call logger(logmsg)
+			call fuse_clump(pclump)
+		endif
+	elseif (pclump%status == FUSED) then
+		call lower_clump(pclump,on_surface)
+		if (on_surface) then
+			call make_osteoclast(pclump)
 		endif
 	endif
 enddo
@@ -376,16 +395,27 @@ do iclast = 1,nclast
 		call clastDeath(iclast)
 		cycle
 	endif
-	if (pclast%status == FUSING) then
-		if (tnow >= pclast%entrytime) then
-			call completeFusing(iclast)
+!	if (pclast%status == FUSING) then
+!		if (tnow >= pclast%entrytime) then
+!			call completeFusing(iclast)
+!			cycle
+!		endif
+!	endif
+	if (tnow > pclast%movetime) then
+!		write(*,*) 'Move osteoclast: ',tnow,iclast
+		call move_clast(pclast,res)
+		if (res == 0) then
+			pclast%movetime = tnow + CLAST_DWELL_TIME
+		elseif (res == 1) then			! osteoclast needs to move fast to get to fresh bone
+			pclast%movetime = tnow + CLAST_DWELL_TIME/10
+			write(logmsg,*) 'Fast moving osteoclast: ',pclast%movetime,iclast
+			call logger(logmsg)
+		elseif (res == 2) then		! osteoclast can't move, must die
+			call logger('Osteoclast cannot move - dies')
+			call clastDeath(iclast)
 			cycle
 		endif
-	endif
-	if (tnow > pclast%movetime) then
-		call moveclast(pclast)
 		call pitrates(pclast)
-		pclast%movetime = tnow + CLAST_DWELL_TIME
 	endif
 	do k = 1,pclast%npit
 		site = pclast%pit(k)%site
@@ -412,6 +442,23 @@ do iclast = 1,nclast
 		endif
 	enddo
 enddo
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+! After fusing is complete the clump settles down onto the bone surface and becomes an osteoclast.
+! Currently no more monocytes can join a clump after it has fused.
+!------------------------------------------------------------------------------------------------
+subroutine fuse_clump(pclump)
+type(clump_type) :: pclump
+integer :: i, icm(3)
+
+!call logger('fusing') 
+pclump%status = FUSED
+do i = 1,pclump%ncells
+	mono(pclump%list(i))%status = FUSED
+enddo
+!icm = pclump%cm + 0.5
+!pclump%cm = icm
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -659,8 +706,8 @@ do x = x1,x2
 					endif
 				enddo
 				
-				write(logmsg,'(5i6)') cnt,p%indx,x,y,z
-				call logger(logmsg)
+!				write(logmsg,'(5i6)') cnt,p%indx,x,y,z
+!				call logger(logmsg)
 			endif
 		enddo
 	enddo
@@ -698,6 +745,62 @@ enddo
 end subroutine
 
 !------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+subroutine make_osteoclast(pclump)
+type(clump_type), pointer :: pclump
+integer :: bonesite(3,100), i, j, npit
+logical :: inlist
+type(occupancy_type), pointer :: p
+type(osteoclast_type), pointer :: pclast
+real :: tnow
+integer :: kpar = 0
+
+tnow = istep*DELTA_T
+nclast = nclast + 1
+write(logmsg,*) 'make_osteoclast: ',nclast,tnow
+call logger(logmsg)
+pclast => clast(nclast)
+pclast%ID = nclast
+pclast%site = pclump%cm
+!pclast%cm = pclump%cm
+pclast%site(2) = NBY + 1
+!pclast%cm(2) = NBY + 0.5
+pclast%lastdir = random_int(1,8,kpar)
+!pclast%normal = signal(isig)%normal
+!pclast%fusetime = tnow
+pclast%entrytime = tnow
+pclast%status = ALIVE
+pclast%movetime = tnow + CLAST_DWELL_TIME 
+pclast%dietime = tnow + clastLifetime()
+! Now need to create the pit list
+npit = 0
+do i = 1,pclump%ncells
+	j = pclump%list(i)
+	if (mono(j)%site(2) == NBY+1) then	! site on the bone surface
+		npit = npit+1
+		bonesite(:,npit) = mono(j)%site
+	endif
+	pclast%mono(i) = j
+	mono(j)%iclast = nclast
+	mono(j)%status = OSTEO
+enddo
+pclast%npit = npit
+pclast%count = pclump%ncells
+pclast%cm = 0
+allocate(pclast%pit(npit))
+do i = 1,npit
+	pclast%pit(i)%site = bonesite(:,i)
+	pclast%cm = pclast%cm + pclast%pit(i)%site
+enddo
+call pitrates(pclast)
+pclast%cm = pclast%cm/npit
+pclast%cm(2) = NBY + 0.5
+pclump%status = DEAD
+write(logmsg,'(a,3i4,3f6.1,2i4)') 'clast site, cm, count, npit: ',pclast%site,pclast%cm,pclast%count,pclast%npit
+call logger(logmsg)
+end subroutine
+
+!------------------------------------------------------------------------------------------------
 ! The bone resorption rate at a given (x,z) depends on:
 !	n = the number of monocytes that fused to make the osteoclast
 !	d = the distance of the target bone site from the osteoclast centre
@@ -724,6 +827,7 @@ end function
 subroutine clastDeath(i)
 integer :: i
 integer :: k, site(3), kcell
+integer :: x,y,z
 
 !do k = 1,clast(i)%npit
 !	if (clast(i)%pit(k)%fraction > 0 .and. clast(i)%pit(k)%fraction < 0.5) then
@@ -732,16 +836,18 @@ integer :: k, site(3), kcell
 !		occupancy(site(1),site(2),site(3))%indx = 0
 !	endif
 !enddo
+write(logmsg,*) 'clast death: ',i
+call logger(logmsg)
 clast(i)%status = DEAD
 deallocate(clast(i)%pit)
 do k = 1,clast(i)%count
 	kcell = clast(i)%mono(k)
 	site = mono(kcell)%site
+!	write(logmsg,*) 'Mono dies: ',kcell,site
+!	call logger(logmsg)
 	mono(kcell)%status = DEAD
 	occupancy(site(1),site(2),site(3))%indx = 0
 enddo
-write(logmsg,*) 'clast death: ',i
-call logger(logmsg)
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -964,14 +1070,14 @@ end subroutine
 
 !--------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------
-subroutine get_scene(ncap_list,cap_list,nmono_list,mono_list,npit_list,pit_list) BIND(C)
+subroutine get_scene(ncap_list,cap_list,nmono_list,mono_list,npit_list,pit_list,nclast_list,clast_list) BIND(C)
 !DEC$ ATTRIBUTES DLLEXPORT :: get_scene
 use, intrinsic :: iso_c_binding
-integer(c_int) :: nmono_list, mono_list(*), ncap_list, npit_list
-real(c_float) :: cap_list(*), pit_list(*)
-integer :: k, j, kcell, iclast, site(3), nfused, x, y, z, status, mono_state, icap
-real :: tnow, t1, t2, fraction, ypit
-!integer :: itcstate, stype, ctype
+integer(c_int) :: nmono_list, mono_list(*), ncap_list, npit_list, nclast_list
+real(c_float) :: cap_list(*), pit_list(*), clast_list(*)
+integer :: k, j, kcell, iclump, site(3), nfused, x, y, z, status, mono_state, icap, iclast
+real :: tnow, t1, t2, fraction, ypit, size, lastjump(3)
+type(osteoclast_type), pointer :: pclast
 real :: clast_diam = 0.9
 real :: mono_diam = 0.5
 
@@ -984,30 +1090,33 @@ if (nmono > 0) then
 		status = mono(kcell)%status
 		if (status == DEAD .or. status == LEFT) cycle
 		if (mono(kcell)%region /= MARROW) cycle
-				if (status == CROSSING) then
+		if (status == CROSSING) then
 			mono_state = 1
+		elseif (status == CLUMPED) then
+			mono_state = 2
 		elseif (status == FUSING) then
-			iclast = mono(kcell)%iclast
-			t1 = clast(iclast)%fusetime
-			t2 = clast(iclast)%entrytime
+			iclump = mono(kcell)%iclump
+			t2 = clump(iclump)%fusetime
+			t1 = clump(iclump)%starttime
 			fraction = min(1.0,(tnow-t1)/(t2-t1))
-			mono_state = 2 + fraction*99
+			mono_state = 2 + fraction*98
 		elseif (status == FUSED) then
-			mono_state = 101
+			mono_state = 100
 			nfused = nfused + 1
+		elseif (status == OSTEO) then
+			cycle
 		else
             mono_state = 0
 		endif
         site = mono(kcell)%site
-        if (.not.FAST_DISPLAY .or. mono_state /= 0) then
-!		if (status == FUSED) then
-			k = k+1
-			j = 5*(k-1)
-			mono_list(j+1) = kcell-1
-			mono_list(j+2:j+4) = site
-			mono_list(j+5) = mono_state
-!	        write(nfpos,'(a2,i6,4i4)') 'M ',kcell-1, site, mono_state
-	    endif
+        if (FAST_DISPLAY .and. mono_state < 2) cycle
+		k = k+1
+		j = 5*(k-1)
+		mono_list(j+1) = kcell-1
+		mono_list(j+2:j+4) = site
+		mono_list(j+5) = mono_state
+!		write(logmsg,*) k,mono_state
+!		call logger(logmsg)
     enddo
 endif
 nmono_list = k
@@ -1023,7 +1132,6 @@ do icap = 1,ncap
 	cap_list(j+7) = capillary(icap)%radius+0.25
 enddo
 ncap_list = ncap
-
 
 ! Pit section
 k = 0
@@ -1044,6 +1152,25 @@ do x = 1,NX
 	enddo
 enddo
 npit_list = k
+
+! Osteoclast section
+k = 0
+do iclast = 1,nclast
+	pclast => clast(iclast)
+	if (pclast%status == DEAD) cycle
+	k = k+1
+	size = clast_size(pclast)
+	j = 7*(k-1)
+	clast_list(j+1:j+3) = pclast%cm
+!	clast_list(j+2) = clast_list(j+2) - 0.5
+!	clast_list(j+4:j+6) = (/1,0,0/)		! direction unit vector
+	lastjump = dir2D(:,pclast%lastdir)
+	clast_list(j+4:j+6) = lastjump/sqrt(dot_product(lastjump,lastjump))
+	clast_list(j+7) = size
+enddo
+nclast_list = k
+!write(logmsg,'(a,4i6)') '# of mono, cap, pit, clast: ',nmono_list, ncap_list, npit_list, nclast_list
+!call logger(logmsg)
 end subroutine
 
 !-----------------------------------------------------------------------------------------
@@ -1310,7 +1437,7 @@ res = 0
 ok = .true.
 istep = istep + 1
 if (mod(istep,1000) == 0) then
-	write(logmsg,*) 'istep: ',istep,mono_cnt,nleft
+	write(logmsg,'(a,i8,6i6)') 'istep: ',istep,mono_cnt,nleft	!,mono(22)%status,mono(22)%site
 	call logger(logmsg)
 endif
 !write(nflog,*) 'call updater'
@@ -1381,8 +1508,8 @@ do i = 1,nclump
 		call logger(logmsg)
 	enddo
 enddo
-write(logmsg,*) 'Clumped monocytes  '
-call logger(logmsg)
+!write(logmsg,*) 'Clumped monocytes  '
+!call logger(logmsg)
 !do i = 1,nmono
 !	status = mono(i)%status
 !	if (status == LEFT .or. status == DEAD) cycle

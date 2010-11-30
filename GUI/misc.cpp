@@ -2,7 +2,6 @@
 #include <fstream>
 #ifdef _WIN32
 #include <windows.h>
-//#define sleep(n) Sleep(1000 * n)
 #endif
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -102,9 +101,13 @@ void SocketHandler::processor()
 		if (nb > 0) {
 			ba = socket->readLine(1024);
 			qdata = QString(ba);
-		    emit sh_output(qdata); // Emit signal to update GUI
-			if (port == CPORT0) {
-				LOG_QMSG(qdata);
+//		    emit sh_output(qdata); // Emit signal to update GUI
+			QStringList s = qdata.split("^",QString::SkipEmptyParts);
+			for (int k=0; k<s.length(); k++) {
+				emit sh_output(s[k]); // Emit signal to update GUI
+				if (port == CPORT0) {
+					LOG_QMSG(s[k]);
+				}
 			}
 			if (quitMessage(qdata)) {
 				sprintf(msg,"Closing connection: port: %d", port);
@@ -201,7 +204,7 @@ void ExecThread::run()
 		if (i%nt_vtk == 0) {
 			if (showingVTK != 0) {
 				snapshot();
-				Sleep(30);
+				Sleep(10);
 			}
 		}
 		if (stopped) break;
@@ -282,11 +285,27 @@ void ExecThread::run()
 //-----------------------------------------------------------------------------------------
 void ExecThread::snapshot()
 {
-	LOG_MSG("snapshot");
+//	LOG_MSG("snapshot");
 	mutex2.lock();
-	get_scene(&ncap_list,cap_list,&nmono_list,mono_list,&npit_list,pit_list);
-	sprintf(msg,"got: %d %d %d",ncap_list,nmono_list,npit_list);
-	LOG_MSG(msg);
+	get_scene(&ncap_list,cap_list,&nmono_list,mono_list,&npit_list,pit_list,&nclast_list,clast_list);
+//	sprintf(msg,"got: ncap %d nmono %d npit %d nclast %d",ncap_list,nmono_list,npit_list,nclast_list);
+//	LOG_MSG(msg);
+	if (ncap_list > MAX_CAP) {
+		LOG_MSG("Error: MAX_CAP exceeded");
+		exit(1);
+	}
+	if (nmono_list > MAX_MONO) {
+		LOG_MSG("Error: MAX_MONO exceeded");
+		exit(1);
+	}
+	if (npit_list > MAX_PIT) {
+		LOG_MSG("Error: MAX_PIT exceeded");
+		exit(1);
+	}
+	if (nclast_list > MAX_CLAST) {
+		LOG_MSG("Error: MAX_CLAST exceeded");
+		exit(1);
+	}
 	mutex2.unlock();
 	emit display(); // Emit signal to update VTK display
 }

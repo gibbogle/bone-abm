@@ -1028,7 +1028,7 @@ padding: 8px
               <x>10</x>
               <y>0</y>
               <width>431</width>
-              <height>540</height>
+              <height>564</height>
              </rect>
             </property>
             <layout class="QGridLayout" name="gridLayout_4">
@@ -1833,6 +1833,13 @@ padding: 8px
               <widget class="QLabel" name="units_Y_SIZE">
                <property name="text">
                 <string>µm</string>
+               </property>
+              </widget>
+             </item>
+             <item row="21" column="2">
+              <widget class="QCheckBox" name="cbox_fastdisplay">
+               <property name="text">
+                <string>Fast display</string>
                </property>
               </widget>
              </item>

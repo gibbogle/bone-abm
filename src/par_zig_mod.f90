@@ -24,7 +24,8 @@
 MODULE Par_Zig_mod
 
    IMPLICIT NONE
-
+   save
+	
    PRIVATE
 
    INTEGER,  PARAMETER  ::  DP=SELECTED_REAL_KIND( 12, 60 )

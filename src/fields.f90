@@ -3,6 +3,7 @@
 module fields
 use global
 implicit none
+save
 
 real, allocatable :: S1P_conc(:,:,:), S1P_grad(:,:,:,:)
 real, allocatable :: RANKL_conc(:,:,:), RANKL_grad(:,:,:,:)

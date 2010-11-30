@@ -1,5 +1,6 @@
 module defines
 implicit none
+save
 
 integer, parameter :: nfinp=10, nflog=11, nfpos=12
 integer, parameter :: TCP_PORT_0 = 5000		! main communication port (logging)
@@ -23,12 +24,12 @@ integer, parameter :: MOTILE = 1
 integer, parameter :: ALIVE = 1
 integer, parameter :: CHEMOTACTIC = 2
 integer, parameter :: STICKY = 3
-integer, parameter :: FUSING = 4
-integer, parameter :: FUSED = 5
-integer, parameter :: CLOSED = 6
-integer, parameter :: MATURE = 6
-integer, parameter :: CROSSING = 7
-integer, parameter :: LEFT = 8
+integer, parameter :: CLUMPED = 4
+integer, parameter :: FUSING = 5
+integer, parameter :: FUSED = 6
+integer, parameter :: OSTEO = 7
+integer, parameter :: CROSSING = 8
+integer, parameter :: LEFT = 9
 
 integer, parameter :: NEUMANN_MODEL = 1
 integer, parameter :: MOORE18_MODEL = 2
@@ -42,7 +43,7 @@ integer, parameter :: MAX_MONO = 50000
 integer, parameter :: MAX_CLAST = 100
 integer, parameter :: MAX_CAP = 100
 integer, parameter :: MAX_SIGNAL = MAX_CLAST
-integer, parameter :: MAX_NCLUMP = 20
+integer, parameter :: MAX_NCLUMP = 50
 integer, parameter :: MAX_CLUMP_CELLS = 40
 real, parameter :: DELTA_T = 0.25		! minutes
 real, parameter :: BIGTIME = 1.0e10
@@ -83,14 +84,17 @@ real, parameter :: S1P_CHEMOLEVEL = 0.1		! 0 -> 1
 
 ! RANKL parameters
 logical, parameter :: use_RANK = .true.
-real, parameter :: RANKSIGNAL_rateconstant = 10.5
-real, parameter :: RANKSIGNAL_halflife = 12		! hours
+real, parameter :: RANKSIGNAL_rateconstant = 10.
+real, parameter :: RANKSIGNAL_halflife = 6		! hours
 real, parameter :: ST1 = 0.3	! -> CHEMOTACTIC
 real, parameter :: ST2 = 0.5	! -> STICKY
 
 ! Clump parameters
 integer, parameter :: CLUMP_THRESHOLD = 25
-real, parameter :: CLUMP_SEPARATION = 8
+real, parameter :: CLUMP_SEPARATION = 6
+real, parameter :: CLUMP_FALL_PROB = 0.001	! arbitrary
+
+real, parameter :: Kattraction = 4
 
 type pit_type
 !	logical :: active
@@ -130,8 +134,10 @@ end type
 type osteoclast_type
     integer :: ID
     integer :: site(3)
+    real :: cm(3)
 	real :: normal(3)
     integer(2) :: status
+    integer(2) :: lastdir
     real :: fusetime			! time that the monocytes began to fuse to form the osteoclast
     real :: entrytime			! time that the cell became a mature osteoclast
     real :: movetime			! time that the cell will move on
@@ -190,6 +196,7 @@ type clump_type
 	integer :: list(MAX_CLUMP_CELLS)
 	integer :: status
 	real :: starttime
+	real :: fusetime
 	real :: cm(3)
 end type
 

@@ -1,8 +1,8 @@
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
-subroutine get_ndays(infile,ndays)
+subroutine get_days(infile,days)
 character*(*) :: infile
-integer :: ndays
+real :: days
 real :: val
 character*(32) :: str
 integer :: nfinp = 10
@@ -13,7 +13,7 @@ do
 	read(nfinp,'(a)') line
 	read(line,*) val,str
 	if (trim(str) == 'NDAYS') then
-		ndays = val
+		days = val
 		close(nfinp)
 		return
 	endif
@@ -25,16 +25,17 @@ end subroutine
 program main
 use bone_mod
 integer :: nt = 10000
-integer :: ndays = 2
+real :: simdays = 2
 character*(64) :: infile = 'basecase.inp'
-integer :: res
+integer :: res, nlen
 
 use_tcp = .false.
-call get_ndays(infile,ndays)
-write(*,*) 'NDAYS: ',ndays
-call execute(infile)
+call get_days(infile,simdays)
+write(*,*) 'DAYS: ',simdays
+nlen = len(infile)
+call execute(infile,nlen)
 
-nt = ndays*24*60*4
+nt = simdays*24*60*4
 do it = 1,nt
 	call simulate_step(res)
 enddo

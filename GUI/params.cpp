@@ -78,12 +78,12 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 "Motility persistence parameter",
 "T cell motility is described by speed and persistence parameters, each in the range 0 - 1. MOTILITY_RHO determines the extent to which motion is in the same direction from one time step to the next."},
 
-{"X_SIZE", 1000, 0, 0,
+{"X_SIZE", 700, 0, 0,
 "Bone patch size",
 "Dimension of the modelled bone region (in X and Z directions).\n\
 [um]"},
 
-{"Y_SIZE", 500, 0, 0,
+{"Y_SIZE", 400, 0, 0,
 "Slice thickness",
 "Dimension of the modelled region in Y direction.\n\
 [um]"},
@@ -102,7 +102,7 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 "Monocytes/mm3",
 "Average number of monocytes in 1 cubic mm of marrow."},
 
-{"IN_PER_HOUR", 10, 0, 0,
+{"IN_PER_HOUR", 20, 0, 0,
 "Monocyte influx",
 "Rate of influx pf osteoclast-precursor monocytes from the blood.\n\
 [/hour]"},
@@ -126,12 +126,12 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 "Time taken for a group of monocytes to form an osteoclast, after they have aggregated\n\
 [mins]"},
 
-{"CLAST_LIFETIME", 4.0, 1.0, 20.0,
+{"CLAST_LIFETIME", 10.0, 1.0, 20.0,
 "Osteoclast lifetime",
 "Length of time that an osteoclast remains active\n\
 [days]"},
 
-{"CLAST_DWELL_TIME", 180.0, 10.0, 500.0,
+{"CLAST_DWELL_TIME", 120.0, 10.0, 500.0,
 "Osteoclast dwell time",
 "Length of time that an osteoclast remains in one spot, before moving one grid\n\
 [days]"},
@@ -193,7 +193,7 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 "DC chemotaxis influence parameter",
 "Strength of chemotactic influence on T cell motion towards DCs."},
 
-{"NDAYS", 4.0, 0.0, 30.0,
+{"NDAYS", 8.0, 0.0, 30.0,
 "Number of days",
 "Length of the simulation.\n\
 [days]"},
