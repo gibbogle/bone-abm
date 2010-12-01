@@ -330,7 +330,7 @@ do iclump = 1,nclump
 		call consolidate_clump(pclump)
 	endif
 	if (nclump > 1) then
-		call separate_clump(iclump)
+		call separate_clump(pclump)
 	endif
 	if (pclump%status < FUSING) then
 		stickysum = 0
@@ -796,8 +796,8 @@ call pitrates(pclast)
 pclast%cm = pclast%cm/npit
 pclast%cm(2) = NBY + 0.5
 pclump%status = DEAD
-write(logmsg,'(a,3i4,3f6.1,2i4)') 'clast site, cm, count, npit: ',pclast%site,pclast%cm,pclast%count,pclast%npit
-call logger(logmsg)
+!write(logmsg,'(a,3i4,3f6.1,2i4)') 'clast site, cm, count, npit: ',pclast%site,pclast%cm,pclast%count,pclast%npit
+!call logger(logmsg)
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -1545,7 +1545,7 @@ integer(c_int) :: res
 character*(8), parameter :: quit = '__EXIT__'
 integer :: error, i
 
-call report
+!call report
 call wrapup
 
 if (res == 0) then

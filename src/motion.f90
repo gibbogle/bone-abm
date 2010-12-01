@@ -683,6 +683,7 @@ else
 		stop
 	endif
 	pclump => clump(nclump)
+	pclump%ID = nclump
 	cell1%status = CLUMPED
 	cell2%status = CLUMPED
 	cell1%iclump = nclump
@@ -693,8 +694,8 @@ else
 	call centre_of_mass(pclump)
 	pclump%starttime = tnow
 	pclump%status = ALIVE
-	write(logmsg,*) 'New clump'
-	call logger(logmsg)
+!	write(logmsg,*) 'New clump'
+!	call logger(logmsg)
 endif
 end subroutine
 
@@ -788,14 +789,14 @@ end subroutine
 ! Move away from another clump (ncells = n) if:
 !	n0 + n > MAX_CLUMP_CELLS
 !---------------------------------------------------------------------
-subroutine separate_clump(iclump0)
-integer :: iclump0
-integer :: iclump, i, imax, jump(3), site2(3), site0(3), indx, iclast
-type(clump_type), pointer :: pclump0, pclump
+subroutine separate_clump(pclump0)
+type(clump_type), pointer :: pclump0
+integer :: iclump0, iclump, i, imax, jump(3), site2(3), site0(3), indx, iclast
+type(clump_type), pointer :: pclump
 real :: r(3), d, rsum(3), proj, pmax
 logical :: ok
 
-pclump0 => clump(iclump0)
+iclump0 = pclump0%ID
 rsum = 0
 do iclump = 1,nclump
 	if (iclump == iclump0) cycle
@@ -806,8 +807,8 @@ do iclump = 1,nclump
 	r(2) = 0
 	d = sqrt(dot_product(r,r))
 	if (d > CLUMP_SEPARATION) cycle
-	write(logmsg,'(a,2i4,4f6.1)') 'near clump: ',iclump0,iclump,r,d
-	call logger(logmsg)
+!	write(logmsg,'(a,2i4,4f6.1)') 'near clump: ',iclump0,iclump,r,d
+!	call logger(logmsg)
 	rsum = rsum + r
 enddo
 ! Turn off movement away from clasts
@@ -872,8 +873,8 @@ do i = 1,pclump0%ncells
 	occupancy(site0(1),site0(2),site0(3))%indx = pclump0%list(i)
 enddo
 pclump0%cm = pclump0%cm + jump
-write(logmsg,'(a,i3,3f5.1,3i3)') 'Moved clump: ',iclump0,r,jump
-call logger(logmsg)
+!write(logmsg,'(a,i3,3f5.1,3i3)') 'Moved clump: ',iclump0,r,jump
+!call logger(logmsg)
 end subroutine
 
 !---------------------------------------------------------------------
