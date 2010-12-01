@@ -78,12 +78,12 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 "Motility persistence parameter",
 "T cell motility is described by speed and persistence parameters, each in the range 0 - 1. MOTILITY_RHO determines the extent to which motion is in the same direction from one time step to the next."},
 
-{"X_SIZE", 700, 0, 0,
+{"X_SIZE", 1000, 0, 0,
 "Bone patch size",
 "Dimension of the modelled bone region (in X and Z directions).\n\
 [um]"},
 
-{"Y_SIZE", 400, 0, 0,
+{"Y_SIZE", 500, 0, 0,
 "Slice thickness",
 "Dimension of the modelled region in Y direction.\n\
 [um]"},
@@ -126,7 +126,7 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 "Time taken for a group of monocytes to form an osteoclast, after they have aggregated\n\
 [mins]"},
 
-{"CLAST_LIFETIME", 10.0, 1.0, 20.0,
+{"CLAST_LIFETIME", 5.0, 1.0, 20.0,
 "Osteoclast lifetime",
 "Length of time that an osteoclast remains active\n\
 [days]"},

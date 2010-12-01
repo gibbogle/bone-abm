@@ -192,6 +192,7 @@ type capillary_type
 end type
 
 type clump_type
+	integer :: ID
 	integer :: ncells
 	integer :: list(MAX_CLUMP_CELLS)
 	integer :: status
