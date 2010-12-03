@@ -187,7 +187,7 @@ void ExecThread::run()
 			snapshot();
 			updated = true;
 		}
-		while(paused) {
+		while(paused || leftb) {
 			Sleep(100);
 		}
 		if (stopped) break;

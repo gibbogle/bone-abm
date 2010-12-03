@@ -15,7 +15,6 @@ Params::Params()
 "TCR avidity has a lognormal distribution, described by the median and shape parameters.\n\
 The shape value must be greater than 1, and values close to 1 give distributions that are close to normal."},
 
-
 {"TC_STIM_RATE_CONSTANT", 1, 0.0, 0.0,
 "Stimulation rate constant",
 "Rate constant Ks for TCR stimulation, where:\n\
@@ -69,6 +68,7 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 "Maximum stimulation level",
 "Maximum integrated TCR stimulation level (saturation level)."},
 */
+
 
 {"MOTILITY_BETA", 0.2, 0.25, 0.5,
 "Motility speed parameter",
@@ -167,6 +167,7 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 "Fusing threshold",
 "Number of monocytes in the high-signal region required to trigger fusing."},
 
+/*
 {"EXIT_RULE", 1, 1, 2,
 "Exit rule",
 "T cell exit rule.  1 = use NGEN_EXIT, 2 = use EXIT_THRESHOLD, 3 = no restriction."},
@@ -174,6 +175,7 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 {"EXIT_REGION", 1, 1, 2,
 "Exit region",
 "Determines blob region for cell exits: 1 = everywhere, 2 = lower half of blob, 3 = by chemotaxis, via discrete exits."},
+*/
 
 {"CROSS_PROB", 0.02, 0.0, 1.0,
 "Capillary egress probability",

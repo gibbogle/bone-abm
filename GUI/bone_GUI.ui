@@ -88,120 +88,6 @@ padding: 8px
            <attribute name="title">
             <string>Monocyte</string>
            </attribute>
-           <widget class="QMyLabel" name="label_TC_AVIDITY_MEDIAN">
-            <property name="geometry">
-             <rect>
-              <x>760</x>
-              <y>80</y>
-              <width>61</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="cursor">
-             <cursorShape>ArrowCursor</cursorShape>
-            </property>
-            <property name="mouseTracking">
-             <bool>true</bool>
-            </property>
-            <property name="toolTip">
-             <string>TCR avidity has a lognormal distribution, described by the mean and shape parameters.</string>
-            </property>
-            <property name="statusTip">
-             <string/>
-            </property>
-            <property name="whatsThis">
-             <string/>
-            </property>
-            <property name="text">
-             <string>label_TC_AVIDITY_MEDIAN</string>
-            </property>
-            <property name="wordWrap">
-             <bool>false</bool>
-            </property>
-            <property name="textInteractionFlags">
-             <set>Qt::LinksAccessibleByMouse</set>
-            </property>
-           </widget>
-           <widget class="QSlider" name="slider_TC_AVIDITY_MEDIAN">
-            <property name="geometry">
-             <rect>
-              <x>823</x>
-              <y>80</y>
-              <width>61</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-           </widget>
-           <widget class="QLineEdit" name="line_TC_AVIDITY_MEDIAN">
-            <property name="geometry">
-             <rect>
-              <x>910</x>
-              <y>80</y>
-              <width>51</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="alignment">
-             <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-            </property>
-           </widget>
-           <widget class="QMyLabel" name="label_TC_AVIDITY_SHAPE">
-            <property name="geometry">
-             <rect>
-              <x>760</x>
-              <y>120</y>
-              <width>51</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="text">
-             <string>label_TC_AVIDITY_SHAPE</string>
-            </property>
-            <property name="wordWrap">
-             <bool>false</bool>
-            </property>
-           </widget>
-           <widget class="QSlider" name="slider_TC_AVIDITY_SHAPE">
-            <property name="geometry">
-             <rect>
-              <x>823</x>
-              <y>120</y>
-              <width>61</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-           </widget>
-           <widget class="QLineEdit" name="line_TC_AVIDITY_SHAPE">
-            <property name="geometry">
-             <rect>
-              <x>910</x>
-              <y>120</y>
-              <width>51</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="alignment">
-             <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-            </property>
-           </widget>
            <widget class="QWidget" name="layoutWidget">
             <property name="geometry">
              <rect>
@@ -304,148 +190,6 @@ padding: 8px
              </item>
             </layout>
            </widget>
-           <widget class="QwtPlot" name="qwtPlot_TC_AVIDITY">
-            <property name="geometry">
-             <rect>
-              <x>420</x>
-              <y>50</y>
-              <width>300</width>
-              <height>170</height>
-             </rect>
-            </property>
-           </widget>
-           <widget class="QwtPlot" name="qwtPlot_DIVIDE1">
-            <property name="geometry">
-             <rect>
-              <x>420</x>
-              <y>250</y>
-              <width>300</width>
-              <height>170</height>
-             </rect>
-            </property>
-           </widget>
-           <widget class="QMyLabel" name="label_DIVIDE1_MEDIAN">
-            <property name="geometry">
-             <rect>
-              <x>760</x>
-              <y>280</y>
-              <width>61</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="mouseTracking">
-             <bool>false</bool>
-            </property>
-            <property name="text">
-             <string>label_DIVIDE1_MEDIAN</string>
-            </property>
-            <property name="wordWrap">
-             <bool>false</bool>
-            </property>
-           </widget>
-           <widget class="QSlider" name="slider_DIVIDE1_MEDIAN">
-            <property name="geometry">
-             <rect>
-              <x>820</x>
-              <y>280</y>
-              <width>61</width>
-              <height>16</height>
-             </rect>
-            </property>
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-           </widget>
-           <widget class="QLineEdit" name="line_DIVIDE1_MEDIAN">
-            <property name="geometry">
-             <rect>
-              <x>910</x>
-              <y>280</y>
-              <width>51</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="alignment">
-             <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-            </property>
-           </widget>
-           <widget class="QMyLabel" name="label_DIVIDE1_SHAPE">
-            <property name="geometry">
-             <rect>
-              <x>760</x>
-              <y>320</y>
-              <width>61</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="mouseTracking">
-             <bool>false</bool>
-            </property>
-            <property name="text">
-             <string>label_DIVIDE1_SHAPE</string>
-            </property>
-            <property name="wordWrap">
-             <bool>false</bool>
-            </property>
-           </widget>
-           <widget class="QSlider" name="slider_DIVIDE1_SHAPE">
-            <property name="geometry">
-             <rect>
-              <x>820</x>
-              <y>320</y>
-              <width>61</width>
-              <height>16</height>
-             </rect>
-            </property>
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-           </widget>
-           <widget class="QLineEdit" name="line_DIVIDE1_SHAPE">
-            <property name="geometry">
-             <rect>
-              <x>910</x>
-              <y>320</y>
-              <width>51</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="alignment">
-             <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-            </property>
-           </widget>
-           <widget class="QLabel" name="alabel_dist">
-            <property name="geometry">
-             <rect>
-              <x>610</x>
-              <y>10</y>
-              <width>291</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>14</pointsize>
-              <weight>75</weight>
-              <bold>true</bold>
-             </font>
-            </property>
-            <property name="text">
-             <string>Probability distributions</string>
-            </property>
-           </widget>
            <widget class="QLabel" name="label">
             <property name="geometry">
              <rect>
@@ -470,138 +214,6 @@ padding: 8px
            <attribute name="title">
             <string>Osteoclast</string>
            </attribute>
-           <widget class="QMyLabel" name="label_DC_LIFETIME_SHAPE">
-            <property name="geometry">
-             <rect>
-              <x>780</x>
-              <y>160</y>
-              <width>61</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="mouseTracking">
-             <bool>false</bool>
-            </property>
-            <property name="text">
-             <string>label_DC_LIFETIME_SHAPE</string>
-            </property>
-            <property name="wordWrap">
-             <bool>false</bool>
-            </property>
-           </widget>
-           <widget class="QwtPlot" name="qwtPlot_DC_LIFETIME">
-            <property name="geometry">
-             <rect>
-              <x>760</x>
-              <y>200</y>
-              <width>300</width>
-              <height>200</height>
-             </rect>
-            </property>
-           </widget>
-           <widget class="QLineEdit" name="line_DC_LIFETIME_SHAPE">
-            <property name="geometry">
-             <rect>
-              <x>930</x>
-              <y>160</y>
-              <width>51</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="alignment">
-             <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-            </property>
-           </widget>
-           <widget class="QMyLabel" name="label_DC_LIFETIME_MEDIAN">
-            <property name="geometry">
-             <rect>
-              <x>780</x>
-              <y>120</y>
-              <width>61</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="mouseTracking">
-             <bool>false</bool>
-            </property>
-            <property name="text">
-             <string>label_DC_LIFETIME_MEDIAN</string>
-            </property>
-            <property name="wordWrap">
-             <bool>false</bool>
-            </property>
-           </widget>
-           <widget class="QLineEdit" name="line_DC_LIFETIME_MEDIAN">
-            <property name="geometry">
-             <rect>
-              <x>930</x>
-              <y>120</y>
-              <width>51</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="alignment">
-             <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-            </property>
-           </widget>
-           <widget class="QSlider" name="slider_DC_LIFETIME_SHAPE">
-            <property name="geometry">
-             <rect>
-              <x>840</x>
-              <y>160</y>
-              <width>61</width>
-              <height>16</height>
-             </rect>
-            </property>
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-           </widget>
-           <widget class="QSlider" name="slider_DC_LIFETIME_MEDIAN">
-            <property name="geometry">
-             <rect>
-              <x>840</x>
-              <y>120</y>
-              <width>61</width>
-              <height>16</height>
-             </rect>
-            </property>
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-           </widget>
-           <widget class="QLabel" name="alabel_dist_2">
-            <property name="geometry">
-             <rect>
-              <x>760</x>
-              <y>60</y>
-              <width>291</width>
-              <height>20</height>
-             </rect>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>14</pointsize>
-              <weight>75</weight>
-              <bold>true</bold>
-             </font>
-            </property>
-            <property name="text">
-             <string>Probability distributions</string>
-            </property>
-           </widget>
            <widget class="QWidget" name="layoutWidget">
             <property name="geometry">
              <rect>
@@ -1055,109 +667,14 @@ padding: 8px
                </property>
               </spacer>
              </item>
-             <item row="9" column="0">
-              <widget class="QMyLabel" name="label_EXIT_RULE">
-               <property name="mouseTracking">
-                <bool>false</bool>
-               </property>
-               <property name="text">
-                <string>label_EXIT_RULE</string>
-               </property>
-               <property name="wordWrap">
-                <bool>false</bool>
-               </property>
-              </widget>
-             </item>
-             <item row="9" column="1">
-              <spacer name="horizontalSpacer_25">
-               <property name="orientation">
-                <enum>Qt::Horizontal</enum>
-               </property>
-               <property name="sizeHint" stdset="0">
-                <size>
-                 <width>40</width>
-                 <height>13</height>
-                </size>
-               </property>
-              </spacer>
-             </item>
-             <item row="9" column="2">
-              <widget class="QComboBox" name="comb_EXIT_RULE">
-               <property name="maximumSize">
-                <size>
-                 <width>120</width>
-                 <height>16777215</height>
-                </size>
-               </property>
-               <item>
-                <property name="text">
-                 <string>No chemotaxis</string>
-                </property>
-               </item>
-               <item>
-                <property name="text">
-                 <string>Chemotaxis</string>
-                </property>
-               </item>
-              </widget>
-             </item>
              <item row="10" column="0">
-              <widget class="QMyLabel" name="label_EXIT_REGION">
-               <property name="mouseTracking">
-                <bool>false</bool>
-               </property>
-               <property name="toolTip">
-                <string>determines blob region for cell exits</string>
-               </property>
-               <property name="text">
-                <string>label_EXIT_REGION</string>
-               </property>
-               <property name="wordWrap">
-                <bool>false</bool>
-               </property>
-              </widget>
-             </item>
-             <item row="10" column="1">
-              <spacer name="horizontalSpacer_26">
-               <property name="orientation">
-                <enum>Qt::Horizontal</enum>
-               </property>
-               <property name="sizeHint" stdset="0">
-                <size>
-                 <width>40</width>
-                 <height>13</height>
-                </size>
-               </property>
-              </spacer>
-             </item>
-             <item row="10" column="2">
-              <widget class="QComboBox" name="comb_EXIT_REGION">
-               <property name="maximumSize">
-                <size>
-                 <width>120</width>
-                 <height>16777215</height>
-                </size>
-               </property>
-               <item>
-                <property name="text">
-                 <string>Capillary</string>
-                </property>
-               </item>
-               <item>
-                <property name="text">
-                 <string>Sinusoid</string>
-                </property>
-               </item>
-              </widget>
-             </item>
-             <item row="12" column="0">
               <widget class="QMyLabel" name="label_CHEMO_RADIUS">
                <property name="text">
                 <string>label_CHEMO_RADIUS</string>
                </property>
               </widget>
              </item>
-             <item row="12" column="1">
+             <item row="10" column="1">
               <spacer name="horizontalSpacer_27">
                <property name="orientation">
                 <enum>Qt::Horizontal</enum>
@@ -1170,7 +687,7 @@ padding: 8px
                </property>
               </spacer>
              </item>
-             <item row="12" column="2">
+             <item row="10" column="2">
               <widget class="QLineEdit" name="line_CHEMO_RADIUS">
                <property name="maximumSize">
                 <size>
@@ -1183,7 +700,7 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="13" column="0">
+             <item row="11" column="0">
               <widget class="QMyLabel" name="label_CHEMO_K_EXIT">
                <property name="mouseTracking">
                 <bool>false</bool>
@@ -1199,7 +716,7 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="13" column="1">
+             <item row="11" column="1">
               <spacer name="horizontalSpacer_28">
                <property name="orientation">
                 <enum>Qt::Horizontal</enum>
@@ -1212,7 +729,7 @@ padding: 8px
                </property>
               </spacer>
              </item>
-             <item row="13" column="2">
+             <item row="11" column="2">
               <widget class="QLineEdit" name="line_CHEMO_K_EXIT">
                <property name="maximumSize">
                 <size>
@@ -1225,7 +742,7 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="15" column="0">
+             <item row="13" column="0">
               <widget class="QMyLabel" name="label_NDAYS">
                <property name="mouseTracking">
                 <bool>false</bool>
@@ -1241,7 +758,7 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="15" column="1">
+             <item row="13" column="1">
               <spacer name="horizontalSpacer_29">
                <property name="orientation">
                 <enum>Qt::Horizontal</enum>
@@ -1254,7 +771,7 @@ padding: 8px
                </property>
               </spacer>
              </item>
-             <item row="16" column="0">
+             <item row="14" column="0">
               <widget class="QMyLabel" name="label_SEED1">
                <property name="mouseTracking">
                 <bool>false</bool>
@@ -1270,7 +787,7 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="16" column="1">
+             <item row="14" column="1">
               <spacer name="horizontalSpacer_30">
                <property name="orientation">
                 <enum>Qt::Horizontal</enum>
@@ -1283,7 +800,7 @@ padding: 8px
                </property>
               </spacer>
              </item>
-             <item row="16" column="2">
+             <item row="14" column="2">
               <widget class="QSpinBox" name="spin_SEED1">
                <property name="maximumSize">
                 <size>
@@ -1299,7 +816,7 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="17" column="0">
+             <item row="15" column="0">
               <widget class="QMyLabel" name="label_SEED2">
                <property name="mouseTracking">
                 <bool>false</bool>
@@ -1315,7 +832,7 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="17" column="1">
+             <item row="15" column="1">
               <spacer name="horizontalSpacer_31">
                <property name="orientation">
                 <enum>Qt::Horizontal</enum>
@@ -1328,7 +845,7 @@ padding: 8px
                </property>
               </spacer>
              </item>
-             <item row="17" column="2">
+             <item row="15" column="2">
               <widget class="QSpinBox" name="spin_SEED2">
                <property name="maximumSize">
                 <size>
@@ -1344,7 +861,7 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="15" column="2">
+             <item row="13" column="2">
               <widget class="QLineEdit" name="line_NDAYS">
                <property name="maximumSize">
                 <size>
@@ -1357,7 +874,7 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="19" column="0">
+             <item row="17" column="0">
               <widget class="QMyLabel" name="label_NT_ANIMATION">
                <property name="toolTip">
                 <string>animation update interval</string>
@@ -1367,7 +884,7 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="19" column="1">
+             <item row="17" column="1">
               <spacer name="horizontalSpacer_32">
                <property name="orientation">
                 <enum>Qt::Horizontal</enum>
@@ -1380,7 +897,7 @@ padding: 8px
                </property>
               </spacer>
              </item>
-             <item row="19" column="2">
+             <item row="17" column="2">
               <widget class="QSpinBox" name="spin_NT_ANIMATION">
                <property name="maximumSize">
                 <size>
@@ -1396,14 +913,14 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="14" column="0">
+             <item row="12" column="0">
               <widget class="QMyLabel" name="label_CHEMO_K_DC">
                <property name="text">
                 <string>label_CHEMO_K_DC</string>
                </property>
               </widget>
              </item>
-             <item row="14" column="2">
+             <item row="12" column="2">
               <widget class="QLineEdit" name="line_CHEMO_K_DC">
                <property name="maximumSize">
                 <size>
@@ -1416,7 +933,7 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="14" column="1">
+             <item row="12" column="1">
               <spacer name="horizontalSpacer_33">
                <property name="orientation">
                 <enum>Qt::Horizontal</enum>
@@ -1429,21 +946,21 @@ padding: 8px
                </property>
               </spacer>
              </item>
-             <item row="12" column="3">
+             <item row="10" column="3">
               <widget class="QLabel" name="units_CHEMO_RADIUS">
                <property name="text">
                 <string>µm</string>
                </property>
               </widget>
              </item>
-             <item row="15" column="3">
+             <item row="13" column="3">
               <widget class="QLabel" name="units_NDAYS">
                <property name="text">
                 <string>days</string>
                </property>
               </widget>
              </item>
-             <item row="18" column="0">
+             <item row="16" column="0">
               <widget class="QMyLabel" name="label_NCPU">
                <property name="toolTip">
                 <string>animation update interval</string>
@@ -1453,7 +970,7 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="18" column="1">
+             <item row="16" column="1">
               <spacer name="horizontalSpacer_34">
                <property name="orientation">
                 <enum>Qt::Horizontal</enum>
@@ -1466,7 +983,7 @@ padding: 8px
                </property>
               </spacer>
              </item>
-             <item row="18" column="2">
+             <item row="16" column="2">
               <widget class="QSpinBox" name="spin_NCPU">
                <property name="maximumSize">
                 <size>
@@ -1482,21 +999,21 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="20" column="2">
+             <item row="18" column="2">
               <widget class="QCheckBox" name="cbox_savepos">
                <property name="text">
                 <string>Save cell paths</string>
                </property>
               </widget>
              </item>
-             <item row="11" column="0">
+             <item row="9" column="0">
               <widget class="QMyLabel" name="label_CROSS_PROB">
                <property name="text">
                 <string>label_CROSS_PROB</string>
                </property>
               </widget>
              </item>
-             <item row="11" column="1">
+             <item row="9" column="1">
               <spacer name="horizontalSpacer_45">
                <property name="orientation">
                 <enum>Qt::Horizontal</enum>
@@ -1509,7 +1026,7 @@ padding: 8px
                </property>
               </spacer>
              </item>
-             <item row="11" column="2">
+             <item row="9" column="2">
               <widget class="QLineEdit" name="line_CROSS_PROB">
                <property name="maximumSize">
                 <size>
@@ -1836,7 +1353,7 @@ padding: 8px
                </property>
               </widget>
              </item>
-             <item row="21" column="2">
+             <item row="19" column="2">
               <widget class="QCheckBox" name="cbox_fastdisplay">
                <property name="text">
                 <string>Fast display</string>
@@ -2310,12 +1827,6 @@ padding: 8px
  </widget>
  <customwidgets>
   <customwidget>
-   <class>QwtPlot</class>
-   <extends>QFrame</extends>
-   <header>qwt_plot.h</header>
-   <container>1</container>
-  </customwidget>
-  <customwidget>
    <class>QMyLabel</class>
    <extends>QLabel</extends>
    <header>qmylabel.h</header>
@@ -2327,8 +1838,6 @@ padding: 8px
  <tabstops>
   <tabstop>line_MOTILITY_BETA</tabstop>
   <tabstop>line_MOTILITY_RHO</tabstop>
-  <tabstop>comb_EXIT_RULE</tabstop>
-  <tabstop>comb_EXIT_REGION</tabstop>
   <tabstop>line_CHEMO_RADIUS</tabstop>
   <tabstop>line_CHEMO_K_EXIT</tabstop>
   <tabstop>line_NDAYS</tabstop>

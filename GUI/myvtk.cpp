@@ -1,5 +1,10 @@
 // myvtk.cpp
 
+#include <vtkCamera.h>
+#include <vtkInteractorStyleTrackballCamera.h>
+#include <vtkObjectFactory.h>
+
+
 #ifdef _WIN32
 #include "windows.h"
 #endif
@@ -9,6 +14,65 @@
 
 LOG_USE();
 
+
+// Define interaction style
+class MouseInteractorStyle4 : public vtkInteractorStyleTrackballCamera
+{
+  public:
+	static MouseInteractorStyle4* New();
+	vtkTypeMacro(MouseInteractorStyle4, vtkInteractorStyleTrackballCamera);
+
+	virtual void OnLeftButtonDown()
+	{
+	  std::cout << "Pressed left mouse button." << std::endl;
+	  LOG_QMSG("Pressed left mouse button.");
+	  leftb = true;
+	  // Forward events
+	  vtkInteractorStyleTrackballCamera::OnLeftButtonDown();
+	}
+
+	virtual void OnMiddleButtonDown()
+	{
+	  std::cout << "Pressed middle mouse button." << std::endl;
+	  // Forward events
+	  vtkInteractorStyleTrackballCamera::OnMiddleButtonDown();
+	}
+
+	virtual void OnRightButtonDown()
+	{
+	  std::cout << "Pressed right mouse button." << std::endl;
+	  // Forward events
+	  vtkInteractorStyleTrackballCamera::OnRightButtonDown();
+	}
+
+	virtual void OnLeftButtonUp()
+	{
+	  std::cout << "Released left mouse button." << std::endl;
+	  LOG_QMSG("Released left mouse button.");
+	  leftb = false;
+	  // Forward events
+	  vtkInteractorStyleTrackballCamera::OnLeftButtonUp();
+	}
+
+	virtual void OnMiddleButtonUp()
+	{
+	  std::cout << "Released middle mouse button." << std::endl;
+	  // Forward events
+	  vtkInteractorStyleTrackballCamera::OnMiddleButtonUp();
+	}
+
+	virtual void OnRightButtonUp()
+	{
+	  std::cout << "Released right mouse button." << std::endl;
+	  // Forward events
+	  vtkInteractorStyleTrackballCamera::OnRightButtonUp();
+	}
+
+};
+
+vtkStandardNewMacro(MouseInteractorStyle4);
+
+
 //-----------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------
 MyVTK::MyVTK(QWidget *page)
@@ -17,6 +81,7 @@ MyVTK::MyVTK(QWidget *page)
 	double backgroundColor[] = {0.0,0.0,0.0};
 
 	Pi = 4*atan(1.0);
+	leftb = false;
 	qvtkWidget = new QVTKWidget(page,QFlag(0));
 	LOG_MSG("Created a new QVTKWidget");
 	QVBoxLayout *layout = new QVBoxLayout;
@@ -36,6 +101,10 @@ MyVTK::MyVTK(QWidget *page)
 	iren = qvtkWidget->GetInteractor();
 //	iren->Initialize();
 //	ren->RemoveAllViewProps();
+
+	vtkSmartPointer<MouseInteractorStyle4> style =
+	  vtkSmartPointer<MouseInteractorStyle4>::New();
+	iren->SetInteractorStyle( style );
 
 	iren->Initialize();
 

@@ -40,6 +40,7 @@ QMutex mutex1, mutex2;
 int summaryData[100];
 int NX, NY, NZ, NBY;
 int nt_vtk;
+bool leftb;
 
 QMyLabel::QMyLabel(QWidget *parent) : QLabel(parent)
 {}
@@ -120,7 +121,7 @@ MainWindow::MainWindow(QWidget *parent)
 	nParams = parm->nParams;
 	createLists();
 	createActions(); 
-	drawDistPlots();
+//	drawDistPlots();
 	loadParams();
 	writeout();
     timer = new QTimer(this);
@@ -167,9 +168,9 @@ void MainWindow::createActions()
 		}
 	}
 	// Graph menu
-    connect(action_add_graph, SIGNAL(triggered()), this, SLOT(addGraph()));
-    connect(action_remove_graph, SIGNAL(triggered()), this, SLOT(removeGraph()));
-    connect(action_remove_all, SIGNAL(triggered()), this, SLOT(removeAllGraphs()));
+//    connect(action_add_graph, SIGNAL(triggered()), this, SLOT(addGraph()));
+//    connect(action_remove_graph, SIGNAL(triggered()), this, SLOT(removeGraph()));
+//    connect(action_remove_all, SIGNAL(triggered()), this, SLOT(removeAllGraphs()));
     connect(action_save_snapshot, SIGNAL(triggered()), this, SLOT(saveSnapshot()));
 
 //	connect((QObject *)lcdNumber_hour, SIGNAL(hourUpdate(double)), this, SLOT(Display(double)));
@@ -215,7 +216,7 @@ void MainWindow::createLists()
         QString wname = w->objectName();
 		if (wname.startsWith("line_")) {
 			connect(w, SIGNAL(textChanged(QString)), this, SLOT(changeParam()));
-			connect(w, SIGNAL(textChanged(QString)), this, SLOT(redrawDistPlot()));
+//			connect(w, SIGNAL(textChanged(QString)), this, SLOT(redrawDistPlot()));
 		}
 		if (wname.startsWith("spin_")) {
 			connect(w, SIGNAL(valueChanged(int)), this, SLOT(changeParam()));
@@ -233,16 +234,16 @@ void MainWindow::createLists()
 
 	QwtPlot *qp;
 
-	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_TC_AVIDITY");
-	distplot_list[0] = qp;
-	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DIVIDE1");
-	distplot_list[1] = qp;
+//	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_TC_AVIDITY");
+//	distplot_list[0] = qp;
+//	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DIVIDE1");
+//	distplot_list[1] = qp;
 //	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DIVIDE2");
 //	distplot_list[1] = qp;
 //	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DC_ANTIGEN");
 //	distplot_list[2] = qp;
-	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DC_LIFETIME");
-	distplot_list[2] = qp;
+//	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DC_LIFETIME");
+//	distplot_list[2] = qp;
 }
 
 //--------------------------------------------------------------------------------------------------------
@@ -260,6 +261,7 @@ void MainWindow:: drawDistPlots()
 		qp = distplot_list[j];
         QString name = qp->objectName();
 		LOG_QMSG(name);
+		/*
 		if (j == 0) {
 			qp->setTitle("Receptor Avidity");
 			median_qstr = line_TC_AVIDITY_MEDIAN->text();
@@ -268,7 +270,7 @@ void MainWindow:: drawDistPlots()
 			qp->setTitle("First division time (hrs)");
 			median_qstr = line_DIVIDE1_MEDIAN->text();
 			shape_qstr = line_DIVIDE1_SHAPE->text();
-			/*
+
 		} else if (j == 2) {
 			qp->setTitle("Later division time (hrs)");
 			median_qstr = line_DIVIDE2_MEDIAN->text();
@@ -277,12 +279,13 @@ void MainWindow:: drawDistPlots()
 			qp->setTitle("DC antigen density");
 			median_qstr = line_DC_ANTIGEN_MEDIAN->text();
 			shape_qstr = line_DC_ANTIGEN_SHAPE->text();
-			*/
+
 		} else if (j == 2) {
 			qp->setTitle("Cell lifetime (days)");
 			median_qstr = line_DC_LIFETIME_MEDIAN->text();
 			shape_qstr = line_DC_LIFETIME_SHAPE->text();
 		}
+		*/
 		LOG_MSG("drawDistPlots (a)")
 		median = median_qstr.toDouble();
 		shape = shape_qstr.toDouble();
