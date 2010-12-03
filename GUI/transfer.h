@@ -24,5 +24,6 @@ extern QMutex mutex1, mutex2;
 extern int summaryData[100];
 extern int NX, NY, NZ, NBY;
 extern int nt_vtk;
+extern bool leftb;
 
 #endif // TRANSFER_H

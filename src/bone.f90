@@ -1243,8 +1243,8 @@ read(nfinp,*) SIGNAL_THRESHOLD				! defines the high-signal region, near the sou
 read(nfinp,*) SIGNAL_AFACTOR				! field amplification factor (0.4)
 read(nfinp,*) MTHRESHOLD					! number of monocytes in the high-signal region that triggers fusing (25)
 
-read(nfinp,*) exit_rule						! 1 = no chemotaxis, 2 = chemotaxis
-read(nfinp,*) exit_region					! region for cell exits 1 = capillary, 2 = sinusoid
+!read(nfinp,*) exit_rule						! 1 = no chemotaxis, 2 = chemotaxis
+!read(nfinp,*) exit_region					! region for cell exits 1 = capillary, 2 = sinusoid
 read(nfinp,*) cross_prob					! probability (/timestep) of monocyte egress to capillary
 read(nfinp,*) chemo_radius					! radius of chemotactic influence (sites)
 read(nfinp,*) chemo_K_exit					! level of chemotactic influence towards exits
