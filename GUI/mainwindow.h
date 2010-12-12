@@ -105,6 +105,7 @@ public slots:
 	void errorPopup(QString);
 	void displayScene();
 	void showSummary();
+	void setInitialized();
 	void zzz();
 
 private:
