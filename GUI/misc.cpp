@@ -15,6 +15,8 @@
 
 #include "libbone.h"
 
+#define __COMPILETIME_LOADING__
+
 LOG_USE();
 char msg[2048];
 
@@ -148,7 +150,7 @@ void ExecThread::run()
 	infile = std_infile.c_str();
 
 #ifdef __COMPILETIME_LOADING__
-
+LOG_QMSG("__COMPILETIME_LOADING__ defined");
 #ifdef __GFORTRAN_DLL__
 	/*
 	__bone_mod_MOD_execute(&nsteps);
