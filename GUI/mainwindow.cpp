@@ -232,7 +232,7 @@ void MainWindow::createLists()
 		}
 	}
 
-	QwtPlot *qp;
+//	QwtPlot *qp;
 
 //	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_TC_AVIDITY");
 //	distplot_list[0] = qp;
@@ -1225,7 +1225,7 @@ void MainWindow::initializeGraphs(RESULT_SET *R)
 void MainWindow::drawGraphs()
 {
 	RESULT_SET *R;
-	double nborn_max = 0, ntot_max = 0, nDC_max = 0, teffgen_max = 0, ncog_max = 0, ncogseed_max = 0;
+	double nborn_max = 0, ntot_max = 0;
 	for (int k=0; k<Plot::ncmax; k++) {
 		R = graphResultSet[k];
 		if (R != 0) {
@@ -1278,27 +1278,6 @@ void MainWindow::displayScene()
 	vtk->renderCells();
 	mutex2.unlock();
 
-	/*
-//	sprintf(msg,"showingVTK: %d",showingVTK);
-//	LOG_MSG(msg);
-	if (showingVTK > 0 || firstVTK) {
-		firstVTK = false;
-		bool redo = false;
-		if (showingVTK == 1) {
-			redo = true;
-			showingVTK = 2;
-		}
-		vtk->renderCells(redo,false);
-//	}
-
-	bool savepos = cbox_savepos->isChecked();
-	if (savepos) {
-		if (step < savepos_start) {
-			savepos = false;
-		}
-	}
-	posdata = true;
-	*/
 }
 
 
