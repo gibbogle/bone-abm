@@ -1,0 +1,75 @@
+# depslib dependency file v1.0
+1285808741 source:c:\users\gib\bone\par_zig_mod.f90
+
+1282633230 source:c:\users\gib\bone\defines.f90
+
+1286236459 source:c:\users\gib\bone\winsock_c.f90
+
+1282110737 source:c:\users\gib\bone\fields.f90
+
+1282523328 source:c:\users\gib\bone\motion.f90
+
+1286247203 source:c:\users\gib\bone\global.f90
+
+1286257989 source:c:\users\gib\bone\bone.f90
+
+1285801269 source:c:\users\gib\bone\tcpc.c
+	<sys/types.h>
+	<stdio.h>
+	<winsock.h>
+	<stdlib.h>
+	<string.h>
+	<unistd.h>
+	<arpa/inet.h>
+	<netinet/in.h>
+	<sys/socket.h>
+	<netdb.h>
+
+1285801263 
+
+1285801263 source:c:\users\gib\bone\clientc.c
+	<stdio.h>
+	<stdlib.h>
+	<Winsock2.h>
+	<sys/types.h>
+	<sys/socket.h>
+	<unistd.h>
+	<netinet/in.h>
+	<netdb.h>
+
+1287456607 source:/Users/mbog002/Code/bone-abm/src/Winsock_c.f90
+
+1287456607 source:/Users/mbog002/Code/bone-abm/src/clientc.c
+	<stdio.h>
+	<stdlib.h>
+	<Winsock2.h>
+	<sys/types.h>
+	<sys/socket.h>
+	<unistd.h>
+	<netinet/in.h>
+	<netdb.h>
+
+1287456607 source:/Users/mbog002/Code/bone-abm/src/defines.f90
+
+1287456607 source:/Users/mbog002/Code/bone-abm/src/par_zig_mod.f90
+
+1287456607 source:/Users/mbog002/Code/bone-abm/src/tcpc.c
+	<sys/types.h>
+	<stdio.h>
+	<winsock.h>
+	<stdlib.h>
+	<string.h>
+	<unistd.h>
+	<arpa/inet.h>
+	<netinet/in.h>
+	<sys/socket.h>
+	<netdb.h>
+
+1287456607 source:/Users/mbog002/Code/bone-abm/src/global.f90
+
+1287456607 source:/Users/mbog002/Code/bone-abm/src/fields.f90
+
+1287456607 source:/Users/mbog002/Code/bone-abm/src/motion.f90
+
+1287461800 source:/Users/mbog002/Code/bone-abm/src/bone.f90
+
