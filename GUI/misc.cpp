@@ -140,40 +140,19 @@ ExecThread::ExecThread(QString infile, QString dllfile)
 void ExecThread::run()
 {
 	LOG_MSG("Invoking DLL...");
-	const char *infile, *outfile, *resfile, *runfile;
+	const char *infile;
 	QString infile_path = inputFile;
 	QString casename = QFileInfo(inputFile).baseName();
-    QString outfile_path = casename + ".res";	
-    QString resfile_path = "res.log";
-    QString runfile_path = "run.log";
-
-		LOG_QMSG(infile_path);
-
 	int len_infile = infile_path.length();
-	int len_outfile = outfile_path.length();
-	int len_resfile = resfile_path.length();
-	int len_runfile = runfile_path.length();
 	std::string std_infile = infile_path.toStdString();
-	std::string std_outfile = outfile_path.toStdString();
-	std::string std_resfile = resfile_path.toStdString();
-	std::string std_runfile = runfile_path.toStdString();
 	infile = std_infile.c_str();
-	outfile = std_outfile.c_str();
-	resfile = std_resfile.c_str();
-	runfile = std_runfile.c_str();
 
 #ifdef __COMPILETIME_LOADING__
 
 #ifdef __GFORTRAN_DLL__
+	/*
 	__bone_mod_MOD_execute(&nsteps);
-//					const_cast<char *>(infile),   \
-//					const_cast<char *>(outfile),  \
-//					const_cast<char *>(resfile),  \
-//					const_cast<char *>(runfile),  \
-//					len_infile,  \
-//					len_outfile, \
-//					len_resfile, \
-//					len_runfile);
+	*/
 #else
 	paused = false;
 	execute(const_cast<char *>(infile),&len_infile);
@@ -214,71 +193,9 @@ void ExecThread::run()
 	int result = 0;
 	terminate_run(&result);
 #endif
+#endif
 	LOG_MSG("Returning from exthread");
 	return;
-
-#else
-
-//	sprintf(msg,"inputFile: %p  %p",(const char *)((infile_path.toStdString()).data()), infile);
-//	LOG_MSG(msg);
-	LOG_QMSG(outfile_path);
-
-	QLibrary myLib(dll_path);
-
-	LOG_QMSG(dll_path);
-
-	LOG_QMSG(myLib.errorString());
-
-#ifdef __GFORTRAN_DLL__
-//	typedef int (*MyPrototype)(int *, char *, char *, char *, char *, int, int, int, int);
-//	typedef int (*MyPrototype)(int *);
-	typedef int (*MyPrototype)(char *, int);
-	LOG_MSG("__GNUC__ is defined");
-	MyPrototype execute = (MyPrototype) myLib.resolve("__bone_mod_MOD_execute");	// NOTE: DLL procedure name must be in uppercase
-	if (execute) {
-			LOG_MSG("resolved EXECUTE()");
-			execute(const_cast<char *>(infile), len_infile);
-//			execute(&nsteps);
-//					const_cast<char *>(infile),   \
-//					const_cast<char *>(outfile),  \
-//					const_cast<char *>(resfile),  \
-//					const_cast<char *>(runfile),  \
-//					len_infile,  \
-//					len_outfile, \
-//					len_resfile, \
-//					len_runfile);
-
-#else
-
-//	typedef int (*MyPrototype)(int *, char *, int, char *, int, char *, int, char *, int);
-//	typedef int (*MyPrototype)(int *);
-	typedef int (*MyPrototype)(char *, int);
-	MyPrototype execute = (MyPrototype) myLib.resolve("EXECUTE");	// NOTE: DLL procedure name must be in uppercase
-	if (execute) {	
-		LOG_MSG("resolved EXECUTE()");
-		execute(const_cast<char *>(infile), len_infile);
-//		execute(&nsteps);
-//			const_cast<char *>(infile), len_infile, \
-//			const_cast<char *>(outfile), len_outfile, \
-//			const_cast<char *>(resfile), len_resfile, \
-//			const_cast<char *>(runfile), len_runfile);
-#endif
-
-	    LOG_MSG("DLL execution completed");
-//		sleep(1);
-//		LOG_MSG("unload DLL");
-		myLib.unload();
-//		LOG_MSG("deleteLater");
-		myLib.deleteLater();
-//		LOG_MSG("end run");
-			} else {
-				LOG_MSG("Failed to resolve EXECUTE in the dynamic library");
-				LOG_QMSG(myLib.errorString());
-				exit(1);
-	}
-
-//	done = true;
-#endif
 }
 
 //-----------------------------------------------------------------------------------------

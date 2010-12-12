@@ -562,12 +562,9 @@ int MyVTK::inTileList(SURFACE_TILE *tile)
 //---------------------------------------------------------------------------------------------
 void MyVTK::makeBox()
 {
-	double pos[3];
 	vtkActor *actor;
-	VERT_TILE tile;
-	double s[3], v[3], cpos[3];
+	double v[3], cpos[3];
 	int i, i1, i2, j;
-	char msg[256];
 	double boxColor[] = {1,1,1};
 	double cnr[8][3];
 	int side[8][2];
@@ -635,10 +632,11 @@ void MyVTK::process_tiles()
 {
 	double pos[3];
 	vtkActor *actor;
-	VERT_TILE tile;
-	double s[3], v[3];
-	char msg[256];
+//	VERT_TILE tile;
+//	double v[3];
+//	char msg[256];
 	unsigned char col[3];
+	/*
 	double boneColor[] = {0.9,0.9,0.5};
 	double pitColor[] = {1.0,0.3,0.1};
 	double whiteColor[] = {1,1,1};
@@ -647,11 +645,11 @@ void MyVTK::process_tiles()
 	double blueColor[] = {0,0,1};
 	double xColor[] = {0.0,1.0,0.0};
 	double zColor[] = {0.0,0.0,1.0};
-	unsigned char w[3] = {255,255,255};
 	unsigned char r[3] = {255,0,0};
 	unsigned char g[3] = {0,255,0};
 	unsigned char b[3] = {0,0,255};
-	int nnew = 0;
+	*/
+	unsigned char bone[3] = {250,250,128};
 
 	vtkSmartPointer<vtkCellArray> dummycells;
 
@@ -691,7 +689,7 @@ void MyVTK::process_tiles()
 				bone_array[x][z].y = pos[1];
 				points->SetPoint(ipos, pos[0], pos[1], pos[2]); // square glyph positions set here
 //				dummycells->InsertCellPoint(ipos);
-				colors->InsertNextTupleValue(w);
+				colors->InsertNextTupleValue(bone);
 				ipos++;
 			}
 		}
@@ -761,7 +759,6 @@ void MyVTK::process_tiles()
 //	vtkSmartPointer<vtkDataArray> c = ginput->GetPointData()->GetScalars();
 	for (int i=0; i<pitpos_list.length(); i++) {
 		int x = pitpos_list[i].pos[0];
-		int y = pitpos_list[i].pos[1];
 		int z = pitpos_list[i].pos[2];
 		double ypit = pitpos_list[i].ypit;
 		bone_array[x][z].y = ypit;
@@ -782,12 +779,14 @@ void MyVTK::process_tiles()
 	}
 	return;
 
+	/*
 	// The code below, for displaying the sides of the pits, gets slow
 	// when there are many pits.
+	int nnew = 0;
 	for (int i=0; i<pitpos_list.length(); i++) {
 		double height;
 		int x = pitpos_list[i].pos[0];
-		int ypit = pitpos_list[i].ypit;
+//		int ypit = pitpos_list[i].ypit;
 		int z = pitpos_list[i].pos[2];
 		if (x == 1 || x == NX) continue;
 		if (z == 1 || z == NZ) continue;
@@ -866,6 +865,7 @@ void MyVTK::process_tiles()
 	}
 	sprintf(msg,"New tiles: %d",nnew);
 	LOG_MSG(msg);
+	*/
 }
 
 //---------------------------------------------------------------------------------------------
