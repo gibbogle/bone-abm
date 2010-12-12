@@ -159,6 +159,8 @@ LOG_QMSG("__COMPILETIME_LOADING__ defined");
 	paused = false;
 	execute(const_cast<char *>(infile),&len_infile);
 	LOG_MSG("execute returned");
+	// Now the "Stop" button can be enabled
+	emit(initialized());
 	get_dimensions(&NX,&NY,&NZ,&NBY);
 	sprintf(msg,"exthread: nsteps: %d",nsteps);
 	LOG_MSG(msg);

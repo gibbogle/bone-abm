@@ -1026,7 +1026,7 @@ void MainWindow::runServer()
     // Disable parts of the GUI        
     action_run->setEnabled(false);
     action_pause->setEnabled(true);
-    action_stop->setEnabled(true);
+	action_stop->setEnabled(false);
     action_inputs->setEnabled(true);
     action_VTK->setEnabled(true);
 	action_save_snapshot->setEnabled(false);
@@ -1083,11 +1083,19 @@ void MainWindow::runServer()
 	exthread = new ExecThread(inputFile,dll_path);
 	connect(exthread, SIGNAL(display()), this, SLOT(displayScene()));
 	connect(exthread, SIGNAL(summary()), this, SLOT(showSummary()));
+	connect(exthread, SIGNAL(initialized()), this, SLOT(setInitialized()));
 	exthread->ncpu = ncpu;
 	exthread->nsteps = int(hours*60/DELTA_T);
 	exthread->paused = false;
 	exthread->stopped = false;
 	exthread->start();
+}
+
+//--------------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------------
+void MainWindow::setInitialized()
+{
+	action_stop->setEnabled(true);
 }
 
 void MainWindow::zzz()

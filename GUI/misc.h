@@ -58,6 +58,7 @@ public:
 signals:
 	 void display();
 	 void summary();
+	 void initialized();
 };
 
 bool quitMessage(QString);
