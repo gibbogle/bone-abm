@@ -69,14 +69,51 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 "Maximum integrated TCR stimulation level (saturation level)."},
 */
 
+{"MONOCYTE_DIAMETER", 10.0, 5.0, 25.0,
+"Diameter of a monocyte",
+"Currently osteocyte-precursor monocytes are assumed to be all the same size.\n\
+[um]"},
 
 {"MOTILITY_BETA", 0.2, 0.25, 0.5,
 "Motility speed parameter",
-"T cell motility is described by speed and persistence parameters, each in the range 0 - 1. Median T cell speed is roughly proportional to MOTILITY_BETA."},
+"T cell motility is described by speed and persistence parameters, each in the range 0 - 1.\n\
+Median T cell speed is roughly proportional to MOTILITY_BETA."},
 
 {"MOTILITY_RHO", 0.76, 0.5, 0.9,
 "Motility persistence parameter",
-"T cell motility is described by speed and persistence parameters, each in the range 0 - 1. MOTILITY_RHO determines the extent to which motion is in the same direction from one time step to the next."},
+"T cell motility is described by speed and persistence parameters, each in the range 0 - 1.\n\
+MOTILITY_RHO determines the extent to which motion is in the same direction from one time step to the next."},
+
+{"S1P_CHEMOLEVEL", 0.1, 0.0, 1.0,
+"Level of S1P chemotaxis",
+"Level of S1P-mediated chemotactic influence on a monocyte.  The overall S1P chemotaxis influence factor is given by:\n\
+S1P influence factor = (Level of S1P chemotaxis)*min(1.0,(S1P gradient)/(Reference S1P gradient))*(cell S1P1 level)"},
+
+{"S1P_KDIFFUSION", 0.001, 0.0, 0.0,
+"S1P diffusion coefficient",
+"Coefficient of diffusion of S1P through marrow."},
+
+{"S1P_KDECAY", 0.00001, 0.0, 0.0,
+"S1P decay coefficient",
+"Coefficient of decay of S1P.\n\
+[/min]"},
+
+{"S1P_GRADLIM", 0.02, 0.0, 0.0,
+"Reference S1P gradient",
+"S1P gradient is scaled by this to arrive at the gradient influence factor.  The overall S1P chemotaxis influence factor is given by:\n\
+S1P influence factor = (Level of S1P chemotaxis)*min(1.0,(S1P gradient)/(Reference S1P gradient))*(cell S1P1 level)"},
+
+{"S1P1_THRESHOLD", 0.5, 0.0, 0.0,
+"S1P1 threshold for egress",
+"Monocyte egress is possible when the cell's S1P1 level exceeds this threshold.  The probability of egress (in a time step) of a monocyte in contact with a capillary is then given by:\n\
+probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1P1_THRESHOLD)\n\
+[0-1]"},
+
+{"S1P1_RISETIME", 6, 0.0, 0.0,
+"S1P1 rise time",
+"Time required for monocyte S1P1 level to rise from 0 to 1. (Currently the rate of increase is treated as constant).\n\
+[hours]"},
+
 
 {"X_SIZE", 1000, 0, 0,
 "Bone patch size",
@@ -91,11 +128,6 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 {"CAPILLARY_DIAMETER", 50.0, 20.0, 200.0,
 "Diameter of a capillary",
 "(Currently we consider only a single capillary with a fixed diameter)\n\
-[um]"},
-
-{"MONOCYTE_DIAMETER", 10.0, 5.0, 25.0,
-"Diameter of a monocyte",
-"Currently osteocyte-precursor monocytes are assumed to be all the same size.\n\
 [um]"},
 
 {"MONO_PER_MM3", 2100, 100, 5000,
@@ -178,10 +210,12 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 */
 
 {"CROSS_PROB", 0.02, 0.0, 1.0,
-"Capillary egress probability",
+"Max capillary egress probability",
 "The probability (per time step) of a monocyte beginning to cross the endothelium into the capillary, while next to a capillary site\n\
+is given by: probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1P1_THRESHOLD)\n\
 [0-1]"},
 
+/*
 {"CHEMO_RADIUS", 30.0, 10.0, 200.0,
 "Radius of chemotactic influence",
 "Range of chemotactic influence of an exit site or DC on T cell motion.  At this distance the influence is reduced to 5% of its maximum value.\n\
@@ -194,6 +228,7 @@ rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
 {"CHEMO_K_DC", 0.0, 0.0, 10.0,
 "DC chemotaxis influence parameter",
 "Strength of chemotactic influence on T cell motion towards DCs."},
+*/
 
 {"NDAYS", 8.0, 0.0, 30.0,
 "Number of days",

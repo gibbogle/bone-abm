@@ -1197,6 +1197,7 @@ real :: TC_AVIDITY_MEAN,TC_AVIDITY_SHAPE,TC_STIM_RATE_CONSTANT,TC_STIM_HALFLIFE,
 real :: DC_LIFETIME_MEAN,DC_LIFETIME_SHAPE
 real :: IL2_THRESHOLD,ACTIVATION_THRESHOLD,FIRST_DIVISION_THRESHOLD,DIVISION_THRESHOLD,EXIT_THRESHOLD,STIMULATION_LIMIT
 real :: chemo_radius,chemo_K_exit,chemo_K_DC
+real :: S1P1_RISETIME
 
 ok = .false.
 open(nfinp,file=inputfile,status='old')
@@ -1207,8 +1208,15 @@ open(nfinp,file=inputfile,status='old')
 !read(nfinp,*) TC_STIM_HALFLIFE				! halflife of T cell stimulation (hours)
 !read(nfinp,*) divide_mean1
 !read(nfinp,*) divide_shape1
+read(nfinp,*) MONOCYTE_DIAMETER				! monocyte diameter (um) = 10	! um
 read(nfinp,*) BETA							! speed: 0 < beta < 1		(0.65)
 read(nfinp,*) RHO							! persistence: 0 < rho < 1	(0.95)
+read(nfinp,*) S1P_CHEMOLEVEL
+read(nfinp,*) S1P_KDIFFUSION
+read(nfinp,*) S1P_KDECAY
+read(nfinp,*) S1P_GRADLIM
+read(nfinp,*) S1P1_THRESHOLD
+read(nfinp,*) S1P1_RISETIME
 
 !read(nfinp,*) DC_LIFETIME_MEAN				! days
 !read(nfinp,*) DC_LIFETIME_SHAPE 			! days
@@ -1224,7 +1232,6 @@ read(nfinp,*) X_SIZE						! size of bone region (square)
 read(nfinp,*) Y_SIZE						! thickness of slice
 
 read(nfinp,*) CAPILLARY_DIAMETER			! capillary diameter (um) (= 3)
-read(nfinp,*) MONOCYTE_DIAMETER				! monocyte diameter (um) = 10	! um
 read(nfinp,*) MONO_PER_MM3					! initial (equil) number of monocytes/mm3 (= 2000)
 read(nfinp,*) IN_PER_HOUR					! rate of influx of monocytes from the blood
 read(nfinp,*) STEM_PER_MM2					! number of stem cells/mm3 (=20) (NEEDS to be normalized)
@@ -1246,9 +1253,9 @@ read(nfinp,*) MTHRESHOLD					! number of monocytes in the high-signal region tha
 !read(nfinp,*) exit_rule						! 1 = no chemotaxis, 2 = chemotaxis
 !read(nfinp,*) exit_region					! region for cell exits 1 = capillary, 2 = sinusoid
 read(nfinp,*) cross_prob					! probability (/timestep) of monocyte egress to capillary
-read(nfinp,*) chemo_radius					! radius of chemotactic influence (sites)
-read(nfinp,*) chemo_K_exit					! level of chemotactic influence towards exits
-read(nfinp,*) chemo_K_DC					! level of chemotactic influence towards DCs
+!read(nfinp,*) chemo_radius					! radius of chemotactic influence (sites)
+!read(nfinp,*) chemo_K_exit					! level of chemotactic influence towards exits
+!read(nfinp,*) chemo_K_DC					! level of chemotactic influence towards DCs
 
 read(nfinp,*) days							! number of days to simulate
 read(nfinp,*) seed(1)						! seed vector(1) for the RNGs
@@ -1265,12 +1272,13 @@ NY = Y_SIZE/DELTA_X	+NBY							! convert um -> grids
 if (mod(NX,2) /= 0) NX = NX+1						! ensure that NX is even (why?)
 NZ = NX
 CAPILLARY_DIAMETER = CAPILLARY_DIAMETER/DELTA_X		! convert um -> grids
-chemo_radius = chemo_radius/DELTA_X					! convert um -> grids
+!chemo_radius = chemo_radius/DELTA_X					! convert um -> grids
 STEM_CYCLETIME = 60*STEM_CYCLETIME					! convert hours -> minutes
 CLAST_LIFETIME = CLAST_LIFETIME*24*60				! convert days -> minutes
 MAX_RESORPTION_RATE = MAX_RESORPTION_RATE/DELTA_X	! convert um/min -> grids
 MAX_RESORPTION_D = MAX_RESORPTION_D/DELTA_X			! convert um -> grids/min
 SIGNAL_RADIUS = SIGNAL_RADIUS/DELTA_X				! convert um -> grids
+S1P1_BASERATE = 1./(60.*S1P1_RISETIME)				! convert time (hours) to rate (/min)
 
 !write(*,*) 'DC_RADIUS, chemo_radius: ',DC_RADIUS,chemo_radius
 !chemo_N = max(3,int(chemo_radius + 0.5))	! convert from um to lattice grids

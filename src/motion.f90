@@ -445,7 +445,7 @@ if (S1P_chemotaxis) then
 	gamp = sqrt(dot_product(g,g))	! Magnitude of S1P gradient
 	g = g/gamp
 	call S1P_chemo_weights(g,w)		! w(:) now holds the normalized gradient vector components
-	S1Pfactor = S1P_CHEMOLEVEL*min(1.0,gamp/S1P_GRADLIM)
+	S1Pfactor = S1P_CHEMOLEVEL*min(1.0,gamp/S1P_GRADLIM)*cell%S1P1
 endif
 
 lastdir1 = cell%lastdir

@@ -31,12 +31,18 @@ logical :: use_CPORT1 = .true.
 !DEC$ ATTRIBUTES DLLEXPORT :: use_TCP
 
 ! Parameters read from inputfile
+real :: MONOCYTE_DIAMETER = 10			! um
 real :: BETA							! speed: 0 < beta < 1
 real :: RHO								! persistence: 0 < rho < 1
+real :: S1P_CHEMOLEVEL
+real :: S1P_KDIFFUSION
+real :: S1P_KDECAY
+real :: S1P_GRADLIM
+real :: S1P1_THRESHOLD
+real :: S1P1_BASERATE
 real :: X_SIZE
 real :: Y_SIZE
 real :: CAPILLARY_DIAMETER = 3
-real :: MONOCYTE_DIAMETER = 10	! um
 integer :: MONO_PER_MM3 = 2000
 integer :: STEM_PER_MM2			! = 20 for 
 real :: STEM_CYCLETIME = 6*60	! 6 hours
