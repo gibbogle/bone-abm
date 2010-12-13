@@ -62,7 +62,7 @@ integer :: x, y, z, xx, yy, zz, k, nb
 real, allocatable :: influx(:,:,:)
 real, allocatable :: dCdt(:,:,:)
 real, parameter :: dt = 1.0
-real, parameter :: Kperm = 0.05, Kdecay = 0.00001, Kdiffusion = 0.001
+real, parameter :: Kperm = 0.05	! Kdecay = 0.00001, Kdiffusion = 0.001
 real :: g(3), gamp, gmax
 logical :: steady = .true.
 
@@ -94,7 +94,7 @@ do x = 1,NX
 enddo
 
 if (steady) then
-	call steadystate(influx,Kdiffusion,Kdecay,S1P_conc)
+	call steadystate(influx,S1P_KDIFFUSION,S1P_KDECAY,S1P_conc)
 else
 !	allocate(dCdt(NX,NY,NZ))
 !	dCdt = 0
