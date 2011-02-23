@@ -146,6 +146,8 @@ nsignal = 1
 signal(1)%site = (/ NX/2,NBY,NZ/2 /)
 call init_fields
 
+RANKSIGNAL_decayrate = log(2.0)/(RANKSIGNAL_HALFLIFE*60)    ! rate/min
+
 NMONO_INITIAL = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*MONO_PER_MM3	! domain as fraction of 1 mm3 x rate of monocytes
 NSTEM = (PI*NX*CAPILLARY_DIAMETER*DELTA_X**2/1.0e6)*STEM_PER_MM2	! capillary surface area as fraction of 1 mm2 x rate of stem cells
 write(logmsg,*) 'NSTEM, NMONO_INITIAL: ',NSTEM,NMONO_INITIAL
@@ -283,7 +285,7 @@ integer :: site(3)
 S = pmono%RANKSIGNAL
 site = pmono%site
 C = RANKL_conc(site(1),site(2),site(3))
-S = (1-RANKSIGNAL_decayfactor)*S + rate_RANKSIGNAL(S,C)*DELTA_T
+S = (1-RANKSIGNAL_decayrate)*S + rate_RANKSIGNAL(S,C)*DELTA_T
 pmono%RANKSIGNAL = min(S,1.0)
 if (pmono%status == MOTILE .and. pmono%RANKSIGNAL > ST1) then
 	pmono%status = CHEMOTACTIC
