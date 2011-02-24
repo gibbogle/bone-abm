@@ -40,11 +40,12 @@ real :: S1P_KDECAY
 real :: S1P_GRADLIM
 real :: S1P1_THRESHOLD
 real :: S1P1_BASERATE
+
 real :: X_SIZE
 real :: Y_SIZE
 real :: CAPILLARY_DIAMETER = 3
 integer :: MONO_PER_MM3 = 2000
-integer :: STEM_PER_MM2			! = 20 for 
+integer :: STEM_PER_MM3
 real :: STEM_CYCLETIME = 6*60	! 6 hours
 real :: CROSSING_TIME = 2*60
 
@@ -57,7 +58,7 @@ real :: MAX_RESORPTION_RATE = 0.02		! um/min
 real :: MAX_RESORPTION_D = 10			! um
 integer :: MAX_RESORPTION_N = 30
 
-! Signal parameters
+! Signal parameters (NOT USED)
 real :: SIGNAL_RADIUS					! radius of influence of bone signal (um -> grids) (10)
 real :: SIGNAL_THRESHOLD				! defines the high-signal region, near the source (0.14)
 real :: SIGNAL_AFACTOR					! field amplification factor (0.4)

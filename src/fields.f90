@@ -62,7 +62,7 @@ integer :: x, y, z, xx, yy, zz, k, nb
 real, allocatable :: influx(:,:,:)
 real, allocatable :: dCdt(:,:,:)
 real, parameter :: dt = 1.0
-real, parameter :: Kperm = 0.05	! Kdecay = 0.00001, Kdiffusion = 0.001
+real, parameter :: Kperm = 0.05		! determines rate of influx of S1P
 real :: g(3), gamp, gmax
 logical :: steady = .true.
 
@@ -154,7 +154,7 @@ end subroutine
 subroutine init_RANKL
 integer :: isignal, site(3), x, y, z
 real, allocatable :: influx(:,:,:)
-real, parameter :: Kdecay = 0.00001, Kdiffusion = 0.001
+!real, parameter :: Kdecay = 0.00001, Kdiffusion = 0.001
 
 write(logmsg,*) 'Initializing RANKL'
 call logger(logmsg)
@@ -174,7 +174,7 @@ do isignal = 1,nsignal
 	site = signal(isignal)%site
 	influx(site(1),site(2)+1,site(3)) = 1
 enddo
-call steadystate(influx,Kdiffusion,Kdecay,RANKL_conc)
+call steadystate(influx,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc)
 !call gradient(influx,RANKL_conc,RANKL_grad)
 !write(*,*) 'RANKL gradient: ',RANKL_grad(:,25,25,25)
 deallocate(influx)
@@ -184,7 +184,8 @@ end subroutine
 ! Solve for steady-state concentration field for a constituent that is defined by:
 !	influx(:,:,:)	if > 0, the rate of influx into grid cell (x,y,z)
 !					if < 0, (x,y,z) is not MARROW
-!	Kdiffusion		diffusion coefficient
+!	Kdiffusion		diffusion coefficient (um^2.min^-1)
+!	Kdecay			decay coefficient (min^-1)
 !----------------------------------------------------------------------------------------
 subroutine steadystate(influx,Kdiffusion,Kdecay,C)
 real :: influx(:,:,:), C(:,:,:)

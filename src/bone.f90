@@ -149,7 +149,8 @@ call init_fields
 RANKSIGNAL_decayrate = log(2.0)/(RANKSIGNAL_HALFLIFE*60)    ! rate/min
 
 NMONO_INITIAL = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*MONO_PER_MM3	! domain as fraction of 1 mm3 x rate of monocytes
-NSTEM = (PI*NX*CAPILLARY_DIAMETER*DELTA_X**2/1.0e6)*STEM_PER_MM2	! capillary surface area as fraction of 1 mm2 x rate of stem cells
+!NSTEM = (PI*NX*CAPILLARY_DIAMETER*DELTA_X**2/1.0e6)*STEM_PER_MM2	! capillary surface area as fraction of 1 mm2 x rate of stem cells
+NSTEM = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*STEM_PER_MM3	! domain as fraction of 1 mm3 x rate of monocytes
 write(logmsg,*) 'NSTEM, NMONO_INITIAL: ',NSTEM,NMONO_INITIAL
 call logger(logmsg)
 nclast = 0
@@ -1236,7 +1237,7 @@ read(nfinp,*) Y_SIZE						! thickness of slice
 read(nfinp,*) CAPILLARY_DIAMETER			! capillary diameter (um) (= 3)
 read(nfinp,*) MONO_PER_MM3					! initial (equil) number of monocytes/mm3 (= 2000)
 read(nfinp,*) IN_PER_HOUR					! rate of influx of monocytes from the blood
-read(nfinp,*) STEM_PER_MM2					! number of stem cells/mm3 (=20) (NEEDS to be normalized)
+read(nfinp,*) STEM_PER_MM3					! number of stem cells/mm3
 read(nfinp,*) STEM_CYCLETIME				! stem cell division cycle time (hours) (= 6*60	! 6 hours)
 read(nfinp,*) CROSSING_TIME					! time taken for a monocyte to cross into the capillary (mins)
 
@@ -1247,10 +1248,10 @@ read(nfinp,*) MAX_RESORPTION_RATE			! maximum bone removal rate (/grid cell) (0.
 read(nfinp,*) MAX_RESORPTION_D				! maximum pit depth (for scaling rate) (5) (um)
 read(nfinp,*) MAX_RESORPTION_N				! number of monos in osteoclast corresponding to MAX_RESORPTION_RATE (30)
 
-read(nfinp,*) SIGNAL_RADIUS					! radius of influence of bone signal (um -> grids) (10)
-read(nfinp,*) SIGNAL_THRESHOLD				! defines the high-signal region, near the source (0.14)
-read(nfinp,*) SIGNAL_AFACTOR				! field amplification factor (0.4)
-read(nfinp,*) MTHRESHOLD					! number of monocytes in the high-signal region that triggers fusing (25)
+!read(nfinp,*) SIGNAL_RADIUS					! radius of influence of bone signal (um -> grids) (10)
+!read(nfinp,*) SIGNAL_THRESHOLD				! defines the high-signal region, near the source (0.14)
+!read(nfinp,*) SIGNAL_AFACTOR				! field amplification factor (0.4)
+!read(nfinp,*) MTHRESHOLD					! number of monocytes in the high-signal region that triggers fusing (25)
 
 !read(nfinp,*) exit_rule						! 1 = no chemotaxis, 2 = chemotaxis
 !read(nfinp,*) exit_region					! region for cell exits 1 = capillary, 2 = sinusoid
@@ -1263,7 +1264,7 @@ read(nfinp,*) days							! number of days to simulate
 read(nfinp,*) seed(1)						! seed vector(1) for the RNGs
 read(nfinp,*) seed(2)						! seed vector(2) for the RNGs
 read(nfinp,*) ncpu							! number of threads, not used currently
-read(nfinp,*) NT_GUI_OUT					! interval between GUI outputs (timesteps)
+read(nfinp,*) NT_GUI_OUT					! interval between GUI outputs (timesteps) 
 read(nfinp,*) SPECIES						! animal species
 close(nfinp)
 !call logger('Finished reading input file')

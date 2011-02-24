@@ -85,6 +85,8 @@ logical, parameter :: S1P_chemotaxis = .true.
 
 ! RANKL parameters
 logical, parameter :: use_RANK = .true.
+real, parameter :: RANKL_KDIFFUSION = 0.001
+real, parameter :: RANKL_KDECAY = 0.00001
 real, parameter :: RANKSIGNAL_rateconstant = 10.
 real, parameter :: RANKSIGNAL_halflife = 12		! hours
 real, parameter :: ST1 = 0.3	! -> CHEMOTACTIC
