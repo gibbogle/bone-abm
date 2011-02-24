@@ -132,16 +132,16 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 
 {"MONO_PER_MM3", 2100, 100, 5000,
 "Monocytes/mm3",
-"Average number of monocytes in 1 cubic mm of marrow."},
+"Average number of monocytes per cubic mm of marrow (initial)."},
 
 {"IN_PER_HOUR", 18, 0, 0,
 "Monocyte influx",
 "Rate of influx pf osteoclast-precursor monocytes from the blood.\n\
 [/hour]"},
 
-{"STEM_PER_MM2", 10, 0, 1000,
-"Stem cells/mm2",
-"Average number of stem cells per square mm of capillary surface."},
+{"STEM_PER_MM3", 5, 0, 0,
+"Stem cells/mm3",
+"Average number of stem cells per cubic mm of marrow."},
 
 {"STEM_CYCLETIME", 6.0, 3.0, 12.0,
 "Stem cell cycle time",
@@ -182,6 +182,7 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Maximum resorption N",
 "Number of osteoclast monocytes corresponding to maximum resorption rate."},
 
+/*
 {"SIGNAL_RADIUS", 50, 0, 0,
 "Signal range",
 "Range of the signal that attracts monocytes to the bone surface (inverse square law applies within this range)\n\
@@ -199,7 +200,6 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Fusing threshold",
 "Number of monocytes in the high-signal region required to trigger fusing."},
 
-/*
 {"EXIT_RULE", 1, 1, 2,
 "Exit rule",
 "T cell exit rule.  1 = use NGEN_EXIT, 2 = use EXIT_THRESHOLD, 3 = no restriction."},

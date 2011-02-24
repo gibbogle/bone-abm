@@ -1025,7 +1025,7 @@ void MainWindow::runServer()
 
     // Disable parts of the GUI        
     action_run->setEnabled(false);
-    action_pause->setEnabled(true);
+	action_pause->setEnabled(false);
 	action_stop->setEnabled(false);
     action_inputs->setEnabled(true);
     action_VTK->setEnabled(true);
@@ -1095,6 +1095,7 @@ void MainWindow::runServer()
 //--------------------------------------------------------------------------------------------------------
 void MainWindow::setInitialized()
 {
+	action_pause->setEnabled(true);
 	action_stop->setEnabled(true);
 }
 
