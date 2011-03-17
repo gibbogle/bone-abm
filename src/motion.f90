@@ -419,6 +419,14 @@ real :: f0, f
 logical :: free, cross, field
 
 cell => mono(kcell)
+if (istep - cell%lastmovestep > 1050) then
+	write(logmsg,*) 'No move: ',cell%ID,istep,kcell,istep - cell%lastmovestep,cell%site
+	call logger(logmsg)
+	stop
+elseif (istep - cell%lastmovestep > 1000) then
+	write(logmsg,*) 'No move: ',cell%ID,istep,kcell,istep - cell%lastmovestep,cell%site
+	call logger(logmsg)
+endif
 site1 = cell%site
 go = .false.
 field = .false.
@@ -490,6 +498,8 @@ if (psum == 0) then
 !	if (field) then
 !		write(*,*) 'clustering: ',kcell
 !	endif
+	write(logmsg,*) 'psum = 0: ',cell%ID
+	call logger(logmsg)
 	return
 else
     go = .true.
@@ -525,6 +535,7 @@ endif
 
 cell%site = site2
 cell%lastdir = dir1
+cell%lastmovestep = istep
 occupancy(site2(1),site2(2),site2(3))%indx = kcell
 occupancy(site1(1),site1(2),site1(3))%indx = 0
 end subroutine

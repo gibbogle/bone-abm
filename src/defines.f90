@@ -120,6 +120,7 @@ type monocyte_type
     real :: entrytime			! time that the cell entered the marrow (from blood or stem cell division)
     real :: exittime			! time that the cell left the marrow (for the blood, or to form an osteoclast)
     real :: dietime             ! time cell will die
+    integer :: lastmovestep
 !    type(clump_type), pointer :: clump
 !    type(O_type),    pointer :: optr    ! because NULL is used by winsock (from ifwinty).  NULLIFY() instead.
 end type

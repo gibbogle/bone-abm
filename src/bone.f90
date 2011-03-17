@@ -486,6 +486,7 @@ mono(nmono)%iclump = 0
 mono(nmono)%S1P1 = 0
 mono(nmono)%RANKSIGNAL = 0
 mono(nmono)%stickiness = 0
+mono(nmono)%lastmovestep = istep
 !nullify(mono(nmono)%clump)
 occupancy(site(1),site(2),site(3))%species = MONOCYTE
 !if (.not.use_TCP) then
@@ -1103,16 +1104,22 @@ if (nmono > 0) then
 			t1 = clump(iclump)%starttime
 			fraction = min(1.0,(tnow-t1)/(t2-t1))
 			mono_state = 2 + fraction*98
+!			if (fraction < 0) then
+!				write(logmsg,*) 'fraction = 0: ',istep,kcell
+!				call logger(logmsg)
+!			endif
 		elseif (status == FUSED) then
 			mono_state = 100
 			nfused = nfused + 1
 		elseif (status == OSTEO) then
 			cycle
+		elseif (status == CHEMOTACTIC .or. status == STICKY) then		! DEBUGGING!!!!!!!!!
+			mono_state = 2
 		else
             mono_state = 0
 		endif
         site = mono(kcell)%site
-        if (FAST_DISPLAY .and. mono_state < 2) cycle
+        if (FAST_DISPLAY .and. mono_state < 1) cycle
 		k = k+1
 		j = 5*(k-1)
 		mono_list(j+1) = kcell-1
