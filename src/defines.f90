@@ -42,7 +42,7 @@ integer, parameter :: NBY = 8
 integer, parameter :: MAX_MONO = 50000
 integer, parameter :: MAX_CLAST = 100
 integer, parameter :: MAX_CAP = 100
-integer, parameter :: MAX_SIGNAL = MAX_CLAST
+integer, parameter :: MAX_SIGNAL = 10000
 integer, parameter :: MAX_NCLUMP = 50
 integer, parameter :: MAX_CLUMP_CELLS = 40
 real, parameter :: DELTA_T = 0.25		! minutes
@@ -89,6 +89,7 @@ real, parameter :: RANKL_KDIFFUSION = 0.001
 real, parameter :: RANKL_KDECAY = 0.00001
 real, parameter :: RANKSIGNAL_rateconstant = 10.
 real, parameter :: RANKSIGNAL_halflife = 12		! hours
+real, parameter :: RANK_BONE_RATIO = 0.1			! ratio of RANKL secretion to bone signal strength.
 real, parameter :: ST1 = 0.3	! -> CHEMOTACTIC
 real, parameter :: ST2 = 0.5	! -> STICKY
 
@@ -97,11 +98,15 @@ integer, parameter :: CLUMP_THRESHOLD = 25
 real, parameter :: CLUMP_SEPARATION = 6
 real, parameter :: CLUMP_FALL_PROB = 0.001	! arbitrary
 
+! Pit parameters
+real, parameter :: MAX_PIT_DEPTH = 50	! microns
+
 real, parameter :: Kattraction = 4
 
 type pit_type
 !	logical :: active
-	integer :: site(3)
+!	integer :: site(3)
+	integer :: delta(3)
 	real :: rate
 !	real :: fraction
 end type
@@ -137,7 +142,7 @@ end type
 
 type osteoclast_type
     integer :: ID
-    integer :: site(3)
+!    integer :: site(3)
     real :: cm(3)
 	real :: normal(3)
     integer(2) :: status
@@ -176,14 +181,21 @@ type occupancy_type
 	integer :: region
 	integer :: species
     integer :: indx
-    integer :: signal
-    real :: intensity
+!    integer :: signal
+!    real :: intensity
     real :: bone_fraction
+end type
+
+type surface_type
+	real :: target_depth	! desired excavation depth (units of grids)
+	real :: signal			! current bone signal strength
+	real :: depth			! current excavation depth (units of grids)
 end type
 
 type signal_type
 	logical :: active
 	integer :: site(3)
+	real :: intensity
 	real :: normal(3)
 end type
 
