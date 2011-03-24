@@ -20,180 +20,38 @@ integer :: dir2D(3,8) = reshape((/ -1,0,-1, -1,0,0, -1,0,1, 0,0,1, 1,0,1, 1,0,0,
 contains
 
 
+
+
 !---------------------------------------------------------------------
-! The osteoclast is moved one lattice jump, and the locations of active
-! pit sites are recomputed, together with their resorption rates.
 !---------------------------------------------------------------------
-subroutine move_clast1(pclast,res)
+real function TotalSignal(pclast,site)
 type(osteoclast_type), pointer :: pclast
-integer :: res
-integer :: ipit, iy, x, y, z, site(3), i, imono, kdir, dx, dz, dirmax, iclast, ddir
-real :: prob(0:4) = (/ 0.5, 0.15, 0.07, 0.025, 0.01 /)
-integer :: jump(3), lastjump(3), kpar=0
-real :: d, bf, radius0, radius1, v(3), proj
-real(8) :: psum, pmax, R, dp, p(8), ptemp(8)
-!real :: p(3) = (/0.25,0.5,0.25/)	! arbitrary, interim
-logical :: covered, bdryhit, possible(8)
-type(osteoclast_type), pointer :: pclast1
-integer, save :: count = 0
+integer :: site(3)
+integer :: k, x, z
 
-possible = .true.
-res = 0
-! First choose a direction.  Quantify the new bone available in each direction.
-!lastjump = dir(:,pclast%lastdir)
-pmax = 0
-do kdir = 1,8
-	jump = dir2D(:,kdir)
-	ddir = abs(pclast%lastdir - kdir)
-	if (ddir > 4) then
-		ddir = abs(ddir-8)
-	endif
-	p(kdir) = prob(ddir)
-	bdryhit = .false.
-	psum = 0
-	do ipit = 1,pclast%npit
-		site = pclast%pit(ipit)%site + jump	! this is where this clast pit would move to
-		! is this site too close to the boundary?
-		if ((site(1) <= 1 .or. site(1) >= NX) .or. (site(3) <= 1 .or. site(3) >= NZ)) then
-			bdryhit = .true.
-			exit
-		endif
-		! is this a site currently covered by the clast?
-		covered = .false.
-		do i = 1,pclast%npit
-			if (site(1) == pclast%pit(i)%site(1) .and. site(3) == pclast%pit(i)%site(3)) then
-				covered = .true.
-				exit
-			endif
-		enddo
-		if (.not.covered) then
-			dp = 0
-			do y = NBY,1,-1
-				bf = occupancy(site(1),y,site(3))%bone_fraction
-				if (bf > 0) then
-!					d = NBY - y + 2 - bf
-					d = NBY - y + 1 - bf
-!					dp = 1/d**3
-					dp = 0.2*d
-					exit
-				endif
-			enddo
-			psum = psum + dp
-!				write(*,'(9i4,2f8.4)') kdir,jump,ipit,site,y,bf,dp
-		endif
-	enddo
-	if (bdryhit) then
-		p(kdir) = 0
-		possible(kdir) = .false.
-	else
-		p(kdir) = max(0.0,p(kdir)-psum)
-!		p(kdir) = min(p(kdir),psum)
-!		if (psum > pmax) then
-!			pmax = psum
-!			dirmax = kdir
-!		endif
-	endif
-	! Check for nearby osteoclasts.
-	! Treat osteoclast footprint as a circle with radius = sqrt(count)
-	do iclast = 1,nclast
-		pclast1 => clast(iclast)
-		if (associated(pclast,pclast1)) cycle
-		if (pclast1%status == DEAD) cycle
-		radius0 = sqrt(real(pclast%count))
-		radius1 = sqrt(real(pclast1%count))
-		v = pclast1%cm - pclast%cm
-		d = sqrt(dot_product(v,v))
-		if (d < 0.9*(radius0 + radius1)) then	! we don't want to move in the direction of v
-			proj = dot_product(v,real(jump))
-			if (proj > 0) then
-!				write(*,*) 'Too close: ', iclast
-				p(kdir) = 0
-				possible(kdir) = .false.
-			endif
-		endif
-	enddo	
+TotalSignal = 0
+do k = 1,pclast%npit
+	x = site(1) + pclast%pit(k)%delta(1)
+	z = site(3) + pclast%pit(k)%delta(3)
+	TotalSignal = TotalSignal + surface(x,z)%signal
 enddo
-
-!write(*,'(9f7.3)') pmax,p
-if (sum(p) == 0) then	! no good moves, need to find some fresh bone
-	call logger('No good moves for this osteoclast')
-	if (possible(pclast%lastdir)) then	! keep going in the same direction
-		kdir = pclast%lastdir
-		res = 1
-	else								! choose a new direction
-		p = 0
-		do i = 1,8
-			if (possible(i)) p(i) = 1
-		enddo
-		if (sum(p) == 0) then
-			res = 2			! die!
-			return
-		endif
-		res = -1
-	endif
-endif
-if (res /= 1) then
-!	ptemp = p
-	!do kdir = 1,8
-	!	if (p(kdir) < 0.75*pmax) p(kdir) = 0
-	!enddo
-!	if (sum(p) == 0) then	! use probs unchanged
-!		p = ptemp/sum(ptemp)
-!	else
-		p = p/sum(p)
-!	endif
-	R = par_uni(kpar)
-	psum = 0
-	do kdir = 1,8
-		psum = psum + p(kdir)
-		if (psum > R) exit
-	enddo
-	kdir = min(8,kdir)
-endif
-jump = dir2D(:,kdir)
-do ipit = 1,pclast%npit
-	x = pclast%pit(ipit)%site(1) + jump(1)
-	z = pclast%pit(ipit)%site(3) + jump(3)
-	y = 0
-	do iy = NBY,1,-1
-		if (occupancy(x,iy,z)%bone_fraction > 0) then
-			y = iy
-			exit
-		endif
-	enddo
-	if (y == 0) then
-		write(logmsg,*) 'Error: moveclast: y = 0: ',ipit,x,y,z
-		call logger(logmsg)
-		stop
-	endif
-	pclast%pit(ipit)%site = (/x,y,z/)
-enddo
-pclast%site = pclast%site + jump
-pclast%cm = pclast%cm + jump
-pclast%lastdir = kdir
-!write(*,'(a,7i4)') 'clast: ',pclast%site,jump,kdir
-do i = 1,pclast%count
-	imono = pclast%mono(i)
-	site = mono(imono)%site
-	occupancy(site(1),site(2),site(3))%indx = 0
-	site = site + jump
-	mono(imono)%site = site
-	occupancy(site(1),site(2),site(3))%indx = imono
-enddo
-res = abs(res)
-end subroutine
+end function
 
 !---------------------------------------------------------------------
 ! The osteoclast is moved one lattice jump, and the locations of active
 ! pit sites are recomputed, together with their resorption rates.
+! Chemotaxis
+! When osteoclast motion is influenced by the bone signal, the jump 
+! probabilities depend on the relative signal strengths of the 
+! neighbour sites.
 !---------------------------------------------------------------------
 subroutine move_clast(pclast,res)
 type(osteoclast_type), pointer :: pclast
 integer :: res
-integer :: ipit, iy, x, y, z, site(3), i, imono, kdir, dx, dz, dirmax, iclast, ddir
+integer :: ipit, iy, x, y, z, site(3), i, imono, kdir, dx, dz, dirmax, iclast, ddir, nsig
 real :: prob(0:4) = (/ 0.5, 0.15, 0.07, 0.025, 0.01 /)
 integer :: jump(3), lastjump(3), kpar=0
-real :: d, bf, v(3), proj, size0, size1, djump, dsum, depth
+real :: d, bf, v(3), proj, size0, size1, djump, dsum, depth, totsig(0:8), siglim
 real(8) :: psum, pmax, R, dp, p(8), ptemp(8)
 !real :: p(3) = (/0.25,0.5,0.25/)	! arbitrary, interim
 logical :: covered, bdryhit, nearclast, freshbone, possible(8)
@@ -214,19 +72,25 @@ res = 0
 ! at a distance approx equal to the long axis dimension of the osteoclast, i.e.
 ! sqrt(count).
 
+site = pclast%cm + 0.5
+totsig(0) = TotalSignal(pclast,site)
+nsig = 0
 size0 = clast_size(pclast)
 if (dbug) write(*,'(a,i4,4f8.1)') 'move_clast: ',pclast%ID,pclast%cm,size0
 pmax = 0
 do kdir = 1,8
 	p(kdir) = 0
 	jump = dir2D(:,kdir)
-	djump = sqrt(real(dot_product(jump,jump)))
-	dsum = 0
-	do i = 1,20
-		dsum = dsum + djump
-		if (dsum > size0) exit
-	enddo
-	site = pclast%cm + i*jump + 0.5
+!	djump = sqrt(real(dot_product(jump,jump)))
+!	dsum = 0
+!	do i = 1,20
+!		dsum = dsum + djump
+!		if (dsum > size0) exit
+!	enddo
+!	site = pclast%cm + i*jump + 0.5
+	site = pclast%cm + jump + 0.5
+	totsig(kdir) = TotalSignal(pclast,site)
+	if (totsig(kdir) > 0) nsig = nsig + 1
 	if (dbug) write(*,*) 'kdir,i,site: ',kdir,i,site
 	bdryhit = .false.
 	if ((site(1) <= 1 .or. site(1) >= NX) .or. (site(3) <= 1 .or. site(3) >= NZ)) then
@@ -262,62 +126,84 @@ do kdir = 1,8
 		possible(kdir) = .false.
 		cycle
 	endif
-	x = site(1)
-	z = site(3)
-	do y = NBY,1,-1
-		bf = occupancy(x,y,z)%bone_fraction
-!		if (bf /= 1.0) then
-!			write(*,*) y,bf
-!			stop
+!	x = site(1)
+!	z = site(3)
+!	do y = NBY,1,-1
+!		bf = occupancy(x,y,z)%bone_fraction
+!		if (bf > 0) then
+!			depth = (NBY + 0.5) - (y - 0.5 + bf)
+!			exit
 !		endif
-		if (bf > 0) then
-			depth = (NBY + 0.5) - (y - 0.5 + bf)
-!			write(*,*) 'depth: ',depth
-			exit
-		endif
-	enddo
-	p(kdir) = exp(-Kattraction*depth)
-	if (p(kdir) > 0.9) freshbone = .true.
-	! At this stage p(:) contains the relatice attractiveness of this direction,
+!	enddo
+
+! DO NOT USE DEPTH OR PERSISTENCE OF DIRECTION NOW, USE SIGNAL
+!	depth = surface(x,z)%depth
+!	p(kdir) = exp(-Kattraction*depth)
+!	if (p(kdir) > 0.9) freshbone = .true.	
+	! At this stage p(:) contains the relative attractiveness of this direction,
 	! without accounting for the direction of the previous jump.
 	! Now multiply by the weight that represents persistence of direction
-	ddir = abs(pclast%lastdir - kdir)
-	if (ddir > 4) then
-		ddir = abs(ddir-8)
-	endif
-	if (dbug) write(*,'(5i3,5f8.3)') kdir,ddir,site,depth,p(kdir),prob(ddir)
-	p(kdir) = p(kdir)*prob(ddir)
-	pmax = max(pmax,p(kdir))
+!	ddir = abs(pclast%lastdir - kdir)
+!	if (ddir > 4) then
+!		ddir = abs(ddir-8)
+!	endif
+!	if (dbug) write(*,'(5i3,5f8.3)') kdir,ddir,site,depth,p(kdir),prob(ddir)
+!	p(kdir) = p(kdir)*prob(ddir)
+!	pmax = max(pmax,p(kdir))
 enddo
-if (dbug) write(*,'(a,8f7.4)') 'p: ',p
+!if (dbug) write(*,'(a,8f7.4)') 'p: ',p
+
+! An OC can move to a new site if the move is possible and if the total signal at the new site
+! exceeds (sufficiently) that at the current site, or if the current total signal = 0.  
+! The probability of the move is proportional to the signal excess.
+! If the current total signal and all neighbour site total signals are zero, the osteoclast dies. 
+siglim = min(totsig(0)*1.3,0.1)
+pmax = 0
+do kdir = 1,8
+	if (possible(kdir) .and. totsig(kdir) > siglim) then
+		p(kdir) = totsig(kdir)
+		pmax = max(pmax,p(kdir))
+	endif
+enddo
+
 ! Now filter out direction probs that are too small in comparison with the prob of the most preferred direction
 do kdir = 1,8
 	if (p(kdir) < 0.2*pmax) then
 		p(kdir) = 0
 	endif
 enddo
-p = p/sum(p)
+psum = sum(p)
+if (psum == 0) then
+	if (totsig(0) == 0 .and. nsig == 0) then
+		res = 2
+	else
+		res = 0
+	endif
+	return
+endif
+p = p/psum
 
 !write(*,'(9f7.3)') pmax,p
-if (.not.freshbone) then	! no good moves, need to find some fresh bone
-	write(logmsg,*) 'No good moves for this osteoclast: ', pclast%ID
-	call logger(logmsg)
-	if (possible(pclast%lastdir)) then	! keep going in the same direction
-		kdir = pclast%lastdir
-		res = 1
-	else								! choose a new direction
-		p = 0
-		do i = 1,8
-			if (possible(i)) p(i) = 1
-		enddo
-		if (sum(p) == 0) then
-			res = 2			! die! (maybe)
-			return
-		endif
-		res = -1
-	endif
-endif
-if (res /= 1) then
+!if (.not.freshbone) then	! no good moves, need to find some fresh bone
+!!	write(logmsg,*) 'No good moves for this osteoclast: ', pclast%ID
+!!	call logger(logmsg)
+!	if (possible(pclast%lastdir)) then	! keep going in the same direction
+!		kdir = pclast%lastdir
+!		res = 1
+!	else								! choose a new direction
+!		p = 0
+!		do i = 1,8
+!			if (possible(i)) p(i) = 1
+!		enddo
+!		if (sum(p) == 0) then
+!			res = 2			! die! (maybe)
+!			return
+!		endif
+!		res = -1
+!	endif
+!endif
+
+!if (res /= 1) then
 	R = par_uni(kpar)
 	psum = 0
 	do kdir = 1,8
@@ -325,30 +211,30 @@ if (res /= 1) then
 		if (psum > R) exit
 	enddo
 	kdir = min(8,kdir)
-endif
+!endif
 jump = dir2D(:,kdir)
 if (dbug) write(*,*) 'kdir: ',kdir,jump
-do ipit = 1,pclast%npit
-	x = pclast%pit(ipit)%site(1) + jump(1)
-	z = pclast%pit(ipit)%site(3) + jump(3)
-	y = 0
-	do iy = NBY,1,-1
-		if (occupancy(x,iy,z)%bone_fraction > 0) then
-			y = iy
-			exit
-		endif
-	enddo
-	if (y == 0) then
-		write(logmsg,*) 'Error: moveclast: y = 0: ',ipit,x,y,z
-		call logger(logmsg)
-		stop
-	endif
-	pclast%pit(ipit)%site = (/x,y,z/)
-enddo
-pclast%site = pclast%site + jump
+!do ipit = 1,pclast%npit
+!	x = pclast%pit(ipit)%site(1) + jump(1)
+!	y = pclast%pit(ipit)%site(2)
+!	z = pclast%pit(ipit)%site(3) + jump(3)
+!	y = 0
+!	do iy = NBY,1,-1
+!		if (occupancy(x,iy,z)%bone_fraction > 0) then
+!			y = iy
+!			exit
+!		endif
+!	enddo
+!	if (y == 0) then
+!		write(logmsg,*) 'Error: moveclast: y = 0: ',ipit,x,y,z
+!		call logger(logmsg)
+!		stop
+!	endif
+!	pclast%pit(ipit)%site = (/x,y,z/)
+!enddo
+!pclast%site = pclast%site + jump
 pclast%cm = pclast%cm + jump
 pclast%lastdir = kdir
-if (dbug) write(*,'(a,7i4)') 'clast: ',pclast%site,jump,kdir
 do i = 1,pclast%count
 	imono = pclast%mono(i)
 	site = mono(imono)%site
@@ -419,22 +305,22 @@ real :: f0, f
 logical :: free, cross, field
 
 cell => mono(kcell)
-if (istep - cell%lastmovestep > 1050) then
-	write(logmsg,*) 'No move: ',cell%ID,istep,kcell,istep - cell%lastmovestep,cell%site
-	call logger(logmsg)
-	stop
-elseif (istep - cell%lastmovestep > 1000) then
-	write(logmsg,*) 'No move: ',cell%ID,istep,kcell,istep - cell%lastmovestep,cell%site
-	call logger(logmsg)
-endif
+!if (istep - cell%lastmovestep > 1050) then
+!	write(logmsg,*) 'No move: ',cell%ID,istep,kcell,istep - cell%lastmovestep,cell%site
+!	call logger(logmsg)
+!	stop
+!elseif (istep - cell%lastmovestep > 1000) then
+!	write(logmsg,*) 'No move: ',cell%ID,istep,kcell,istep - cell%lastmovestep,cell%site
+!	call logger(logmsg)
+!endif
 site1 = cell%site
 go = .false.
 field = .false.
 f0 = 0
-if (cell%status >= CHEMOTACTIC .and. occupancy(site1(1),site1(2),site1(3))%signal /= 0) then
-	field = .true.
-	f0 = occupancy(site1(1),site1(2),site1(3))%intensity
-endif
+!if (cell%status >= CHEMOTACTIC .and. occupancy(site1(1),site1(2),site1(3))%signal /= 0) then
+!	field = .true.
+!	f0 = occupancy(site1(1),site1(2),site1(3))%intensity
+!endif
 
 ! TESTING!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 field = .false.
@@ -471,7 +357,7 @@ do irel = 1,nreldir
 		if (field) then
 			! The probability of a jump is modified by the relative signal intensities of the two sites
 			! This is a very crude interim treatment
-			f = occupancy(site2(1),site2(2),site2(3))%intensity
+!			f = occupancy(site2(1),site2(2),site2(3))%intensity
 			if (f >= SIGNAL_THRESHOLD) then
 				p(irel) = max(0.0,f-f0)
 			else
@@ -900,12 +786,12 @@ real :: R
 integer :: i, j, site(3), site2(3), y, ylo, yhi, nhit,hitcell(MAX_CLUMP_CELLS)
 integer :: kpar = 0
 
+on_surface = .false.
 R = par_uni(kpar)
 if (R > CLUMP_FALL_PROB) return
 ylo = NY
 yhi = 0
 nhit = 0
-on_surface = .false.
 do i = 1,pclump%ncells
 	j = pclump%list(i)
 	y = mono(j)%site(2)

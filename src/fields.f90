@@ -36,11 +36,11 @@ end function
 !----------------------------------------------------------------------------------------
 subroutine init_fields
 
-if (S1P_chemotaxis) then
-	call init_S1P
-endif
 if (use_RANK) then
 	call init_RANKL
+endif
+if (S1P_chemotaxis) then
+	call init_S1P
 endif
 end subroutine
 
@@ -152,11 +152,12 @@ end subroutine
 !----------------------------------------------------------------------------------------
 !----------------------------------------------------------------------------------------
 subroutine init_RANKL
-integer :: isignal, site(3), x, y, z
+integer :: isignal, site(3), x, y, z, it, nt
 real, allocatable :: influx(:,:,:)
+real :: dt
 !real, parameter :: Kdecay = 0.00001, Kdiffusion = 0.001
 
-write(logmsg,*) 'Initializing RANKL'
+write(logmsg,*) 'Initializing RANKL: '
 call logger(logmsg)
 allocate(RANKL_conc(NX,NY,NZ))
 !allocate(RANKL_grad(3,NX,NY,NZ))
@@ -170,13 +171,28 @@ do x = 1,NX
 		enddo
 	enddo
 enddo
-do isignal = 1,nsignal
-	site = signal(isignal)%site
-	influx(site(1),site(2)+1,site(3)) = 1
+!do isignal = 1,nsignal
+!	site = signal(isignal)%site
+!	influx(site(1),site(2)+1,site(3)) = RANK_BONE_RATIO*signal(isignal)%intensity
+!enddo
+y = NBY+1
+do x = 1,NX
+	do z = 1,NZ
+		influx(x,y,z) = RANK_BONE_RATIO*surface(x,z)%signal
+	enddo
 enddo
 call steadystate(influx,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc)
 !call gradient(influx,RANKL_conc,RANKL_grad)
 !write(*,*) 'RANKL gradient: ',RANKL_grad(:,25,25,25)
+write(logmsg,*) 0,RANKL_conc(NX/2,NBY+2,NZ/2)
+call logger(logmsg)
+dt = 10.0
+nt = 2
+do it = 1,nt
+	call evolve(influx,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc,dt)
+	write(logmsg,*) it,RANKL_conc(NX/2,NBY+2,NZ/2)
+call logger(logmsg)
+enddo
 deallocate(influx)
 end subroutine
 
@@ -190,27 +206,31 @@ end subroutine
 subroutine steadystate(influx,Kdiffusion,Kdecay,C)
 real :: influx(:,:,:), C(:,:,:)
 real :: Kdiffusion, Kdecay
-real :: dx2diff, total, maxchange, dC, sum
-real, parameter :: alpha = 0.99
+real :: dx2diff, total, maxchange, dC, sum, dV
+real, parameter :: alpha = 0.5
 real, parameter :: tol = 1.0e-6		! max change in C at any site as fraction of average C
 integer :: x, y, z, xx, yy, zz, nb, nc, k, it
 integer :: nt = 10000
-real, allocatable :: dCdt(:,:,:),Ctemp(:,:,:)
+real, allocatable :: Ctemp(:,:,:)
 
 dx2diff = DELTA_X**2/Kdiffusion
+dV = DELTA_X**3
 allocate(Ctemp(NX,NY,NZ))
-allocate(dCdt(NX,NY,NZ))
 maxchange = 1.0e10
 total = 0
 nc = 1
 C = 0
 do it = 1,nt
-	if (mod(it,10) == 0) then
+	if (mod(it,100) == 0) then
 		x = NX/2
 		z = NZ/2
 !		write(*,'(i6,20e10.3)') it,(C(x,y,z),y=NBY+1,NY/2-NBY,4),maxchange,total/nc
 	endif
-	if (maxchange < tol*total/nc) exit
+	if (maxchange < tol*total/nc) then
+		write(logmsg,*) 'Convergence reached: it: ',it
+		call logger(logmsg)
+		exit
+	endif
 	maxchange = 0
 	total = 0
 	nc = 0
@@ -234,7 +254,8 @@ do it = 1,nt
 					nb = nb + 1
 					sum = sum + C(xx,yy,zz)
 				enddo
-				Ctemp(x,y,z) = alpha*(sum + dC)/(Kdecay*dx2diff + dC + nb) + (1-alpha)*C(x,y,z)
+!				Ctemp(x,y,z) = alpha*(sum + dC)/(Kdecay*dx2diff + dC + nb) + (1-alpha)*C(x,y,z)
+				Ctemp(x,y,z) = alpha*(DELTA_X*Kdiffusion*sum + influx(x,y,z))/(Kdecay*dV + nb*DELTA_X*Kdiffusion) + (1-alpha)*C(x,y,z)
 				dC = abs(Ctemp(x,y,z) - C(x,y,z))
 				maxchange = max(dC,maxchange)
 				nc = nc + 1
@@ -245,7 +266,6 @@ do it = 1,nt
 	C = Ctemp
 enddo
 deallocate(Ctemp)
-deallocate(dCdt)
 
 end subroutine
 
@@ -322,6 +342,47 @@ do z = 1,NZ
 		enddo
 	enddo
 enddo
+end subroutine
+
+!----------------------------------------------------------------------------------------
+!----------------------------------------------------------------------------------------
+subroutine evolve(influx,Kdiffusion,Kdecay,C,dt)
+real :: influx(:,:,:), C(:,:,:)
+real :: Kdiffusion, Kdecay, dt
+real :: dx2diff, total, maxchange, C0, dC, sum, dV, dMdt
+real, parameter :: alpha = 0.99
+integer :: x, y, z, xx, yy, zz, nb, nc, k, it
+real, allocatable :: Ctemp(:,:,:)
+
+dV = DELTA_X**3
+allocate(Ctemp(NX,NY,NZ))
+
+do z = 1,NZ
+	do y = 1,NY
+		do x = 1,NX
+			if (influx(x,y,z) < 0) cycle
+			C0 = C(x,y,z)
+			sum = 0
+			nb = 0
+			do k = 1,6
+				xx = x + neumann(1,k)
+				yy = y + neumann(2,k)
+				zz = z + neumann(3,k)
+				if (outside(xx,yy,zz)) cycle
+				if (influx(xx,yy,zz) < 0) cycle
+				nb = nb + 1
+				sum = sum + C(xx,yy,zz)
+			enddo
+			dMdt = Kdiffusion*DELTA_X*(sum - nb*C0) - Kdecay*C0*dV + influx(x,y,z)
+			Ctemp(x,y,z) = (C(x,y,z)*dV + dMdt*dt)/dV
+!			if (x == NX/2 .and. y == NBY+2 .and. z == NZ/2) write(*,*) 'dMdt: ',dMdt
+!			Ctemp(x,y,z) = dt*(alpha*(sum + dC)/(Kdecay*dx2diff + dC + nb) +
+		enddo
+	enddo
+enddo
+C = Ctemp
+deallocate(Ctemp)
+
 end subroutine
 			
 end module

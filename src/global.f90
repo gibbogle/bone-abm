@@ -7,6 +7,7 @@ implicit none
 save
 
 type(occupancy_type), allocatable, target :: occupancy(:,:,:)
+type(surface_type), allocatable, target :: surface(:,:)
 type(monocyte_type), allocatable, target :: mono(:)
 type(osteoclast_type), allocatable, target :: clast(:)
 type(osteoblast_type), allocatable :: blast(:)
