@@ -6,7 +6,7 @@ implicit none
 save
 
 real, allocatable :: S1P_conc(:,:,:), S1P_grad(:,:,:,:)
-real, allocatable :: RANKL_conc(:,:,:), RANKL_grad(:,:,:,:)
+real, allocatable :: RANKL_conc(:,:,:), RANKL_grad(:,:,:,:), RANKLinflux(:,:,:)
 
 contains
 
@@ -152,22 +152,22 @@ end subroutine
 !----------------------------------------------------------------------------------------
 !----------------------------------------------------------------------------------------
 subroutine init_RANKL
-integer :: isignal, site(3), x, y, z, it, nt
-real, allocatable :: influx(:,:,:)
-real :: dt
+integer :: isignal, site(3), x, y, z, it, nt, isig
+real :: dt, sum
+real :: g(3), gamp, gmax
 !real, parameter :: Kdecay = 0.00001, Kdiffusion = 0.001
 
-write(logmsg,*) 'Initializing RANKL: '
+write(logmsg,*) 'Initializing RANKL: KDECAY: ', RANKL_KDECAY
 call logger(logmsg)
 allocate(RANKL_conc(NX,NY,NZ))
-!allocate(RANKL_grad(3,NX,NY,NZ))
-allocate(influx(NX,NY,NZ))
+allocate(RANKL_grad(3,NX,NY,NZ))
+allocate(RANKLinflux(NX,NY,NZ))
 
-influx = -1
+RANKLinflux = -1
 do x = 1,NX
-	do y = 1,NY
+	do y = NBY+1,NY
 		do z = 1,NZ
-			if (occupancy(x,y,z)%region == MARROW) influx(x,y,z) = 0
+			if (occupancy(x,y,z)%region == MARROW .or. occupancy(x,y,z)%region == LAYER) RANKLinflux(x,y,z) = 0
 		enddo
 	enddo
 enddo
@@ -178,22 +178,70 @@ enddo
 y = NBY+1
 do x = 1,NX
 	do z = 1,NZ
-		influx(x,y,z) = RANK_BONE_RATIO*surface(x,z)%signal
+		RANKLinflux(x,y,z) = RANK_BONE_RATIO*surface(x,z)%signal
 	enddo
 enddo
-call steadystate(influx,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc)
-!call gradient(influx,RANKL_conc,RANKL_grad)
+call steadystate(RANKLinflux,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc)
+call gradient(RANKLinflux,RANKL_conc,RANKL_grad)
 !write(*,*) 'RANKL gradient: ',RANKL_grad(:,25,25,25)
 write(logmsg,*) 0,RANKL_conc(NX/2,NBY+2,NZ/2)
 call logger(logmsg)
-dt = 10.0
-nt = 2
+! Testing convergence
+nt = 10
+dt = 100*DELTA_T
 do it = 1,nt
-	call evolve(influx,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc,dt)
+	call evolve(RANKLinflux,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc,dt)
 	write(logmsg,*) it,RANKL_conc(NX/2,NBY+2,NZ/2)
-call logger(logmsg)
+	call logger(logmsg)
+	sum = 0
+	do isig = 1,nsignal
+		site = signal(isig)%site
+		sum = sum + RANKL_conc(site(1),NBY+1,site(3))
+	enddo
+	write(logmsg,*) 'Mean patch RANKL: ',sum/nsignal
+	call logger(logmsg)
 enddo
-deallocate(influx)
+gmax = 0
+do x = 1,NX
+	do y = NBY+1,NY
+		do z = 1,NZ
+			g = RANKL_grad(:,x,y,z)
+			gamp = sqrt(dot_product(g,g))
+			gmax = max(gamp,gmax)
+		enddo
+	enddo
+enddo
+write(logmsg,*) 'Max RANKL gradient: ',gmax
+call logger(logmsg)
+end subroutine
+
+!----------------------------------------------------------------------------------------
+!----------------------------------------------------------------------------------------
+subroutine EvolveRANKL(nt,totsig)
+integer :: nt
+real :: totsig
+!real, allocatable :: influx(:,:,:)
+integer :: x, y, z, site(3), isig
+real :: dt, sum
+
+dt = nt*DELTA_T
+totsig = 0
+y = NBY+1
+do x = 1,NX
+	do z = 1,NZ
+		RANKLinflux(x,y,z) = RANK_BONE_RATIO*surface(x,z)%signal
+		totsig = totsig + RANKLinflux(x,y,z)
+	enddo
+enddo
+call evolve(RANKLinflux,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc,dt)
+call gradient(RANKLinflux,RANKL_conc,RANKL_grad)
+sum = 0
+do isig = 1,nsignal
+	site = signal(isig)%site
+	sum = sum + RANKL_conc(site(1),NBY+1,site(3))
+enddo
+write(logmsg,*) 'Mean patch RANKL: ',sum/nsignal, totsig
+call logger(logmsg)
 end subroutine
 
 !----------------------------------------------------------------------------------------
@@ -235,7 +283,7 @@ do it = 1,nt
 	total = 0
 	nc = 0
 	do z = 1,NZ
-		do y = 1,NY
+		do y = NBY+1,NY
 			do x = 1,NX
 				if (influx(x,y,z) < 0) cycle
 				if (influx(x,y,z) > 0) then
@@ -280,7 +328,7 @@ real, parameter :: MISSING_VAL = 1.0e10
 
 grad = 0
 do z = 1,NZ
-	do y = 1,NY
+	do y = NBY+1,NY
 		do x = 1,NX
 			if (influx(x,y,z) < 0) cycle
 			x1 = x - 1
@@ -315,7 +363,7 @@ do z = 1,NZ
 	enddo
 enddo
 do z = 1,NZ
-	do y = 1,NY
+	do y = NBY+1,NY
 		do x = 1,NX
 			if (influx(x,y,z) < 0) cycle
 			do i = 1,3
@@ -356,9 +404,8 @@ real, allocatable :: Ctemp(:,:,:)
 
 dV = DELTA_X**3
 allocate(Ctemp(NX,NY,NZ))
-
 do z = 1,NZ
-	do y = 1,NY
+	do y = NBY+1,NY
 		do x = 1,NX
 			if (influx(x,y,z) < 0) cycle
 			C0 = C(x,y,z)

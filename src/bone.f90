@@ -298,6 +298,7 @@ do y = 1,NBY
 	occupancy(:,y,:)%region = BONE
 	occupancy(:,y,:)%bone_fraction = 1.0
 enddo
+occupancy(:,NBY+1,:)%region = LAYER
 allocate(surface(NX,NZ))
 surface%signal = 0
 
@@ -380,10 +381,11 @@ entrysite(:,1:na) = templist(:,1:na)
 deallocate(templist)
 nentrysites = na
 
+RANKSIGNAL_decayrate = log(2.0)/(RANKSIGNAL_HALFLIFE)    ! rate/min
+RANKL_KDECAY = log(2.0)/(RANKL_HALFLIFE)    ! rate/min
+
 call createPatch
 call init_fields
-
-RANKSIGNAL_decayrate = log(2.0)/(RANKSIGNAL_HALFLIFE*60)    ! rate/min
 
 NMONO_INITIAL = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*MONO_PER_MM3	! domain as fraction of 1 mm3 x rate of monocytes
 !NSTEM = (PI*NX*CAPILLARY_DIAMETER*DELTA_X**2/1.0e6)*STEM_PER_MM2	! capillary surface area as fraction of 1 mm2 x rate of stem cells
@@ -552,19 +554,32 @@ end subroutine
 subroutine update_RANK(pmono)
 type(monocyte_type), pointer :: pmono
 real :: S, C
-integer :: site(3)
+integer :: site(3), status
 
 S = pmono%RANKSIGNAL
 site = pmono%site
+status = pmono%status
 C = RANKL_conc(site(1),site(2),site(3))
 S = (1-RANKSIGNAL_decayrate)*S + rate_RANKSIGNAL(S,C)*DELTA_T
+!if (pmono%ID == 1) then
+!	write(*,'(2i6,3e12.4)') istep,status,C,S,rate_RANKSIGNAL(S,C)
+!endif
 pmono%RANKSIGNAL = min(S,1.0)
-if (pmono%status == MOTILE .and. pmono%RANKSIGNAL > ST1) then
+if (status == MOTILE .and. pmono%RANKSIGNAL > ST1) then
 	pmono%status = CHEMOTACTIC
 !	call logger('CHEMOTACTIC')
-elseif (pmono%status == CHEMOTACTIC .and. pmono%RANKSIGNAL > ST2) then
+endif
+if (status == CHEMOTACTIC .and. pmono%RANKSIGNAL < ST1/2) then
+	pmono%status = DEAD		! MOTILE
+endif
+if (status == STICKY .and. pmono%RANKSIGNAL < ST2/2) then
+	pmono%status = DEAD		! CHEMOTACTIC
+endif
+if (status == CHEMOTACTIC .and. pmono%RANKSIGNAL > ST2 .and. NearOB(pmono)) then
 	pmono%status = STICKY
-!	call logger('STICKY')
+!	write(logmsg,*) 'First STICKY mono: ',pmono%ID
+!	call logger(logmsg)
+!	stop
 endif
 if (pmono%status == STICKY) then
 	pmono%stickiness = pmono%RANKSIGNAL
@@ -625,8 +640,8 @@ do iclump = 1,nclump
 			do i = 1,pclump%ncells
 				mono(pclump%list(i))%status = FUSING
 			enddo
-			write(logmsg,*) 'Started FUSING: ',iclump,pclump%cm
-			call logger(logmsg)
+!			write(logmsg,*) 'Started FUSING: ',iclump,pclump%cm
+!			call logger(logmsg)
 		endif
 	elseif (pclump%status == FUSING) then
 		if (tnow >= pclump%fusetime) then
@@ -670,7 +685,7 @@ enddo
 do iclast = 1,nclast
 	pclast => clast(iclast)
 	if (pclast%status == DEAD) cycle
-	if (pclast%status == ALIVE .and. tnow > pclast%dietime) then
+	if (tnow > pclast%dietime) then
 		call clastDeath(iclast)
 		cycle
 	endif
@@ -683,14 +698,32 @@ do iclast = 1,nclast
 	if (tnow > pclast%movetime) then
 !		write(*,*) 'Move osteoclast: ',tnow,iclast
 		call move_clast(pclast,res)
-		if (res == 0) then
+		if (res == 0) then			! no move
 			pclast%movetime = tnow + CLAST_DWELL_TIME
-		elseif (res == 1) then			! osteoclast needs to move fast to get to fresh bone
+			pclast%blocktime = 0
+			pclast%status = RESORBING
+		elseif (res == 1) then		! moved
+			pclast%movetime = tnow + CLAST_DWELL_TIME
+			pclast%blocktime = 0
+			pclast%status = RESORBING
+		elseif (res == 2) then		! osteoclast blocked, turn off resorption	
+			if (pclast%blocktime == 0) then
+				write(logmsg,*) 'OC blocked: ',iclast,tnow
+				call logger(logmsg)
+				pclast%blocktime = tnow
+			elseif (tnow - pclast%blocktime > CLAST_STOP_TIME) then
+				write(logmsg,*) 'OC blocked too long: ',iclast,tnow
+				call logger(logmsg)
+				call clastDeath(iclast)
+				cycle
+			endif
+			! osteoclast needs to be checked more often for possible move
 			pclast%movetime = tnow + CLAST_DWELL_TIME/10
-			write(logmsg,*) 'Fast moving osteoclast: ',pclast%movetime,iclast
-			call logger(logmsg)
-		elseif (res == 2) then		! osteoclast can't move, must die
-			call logger('Osteoclast cannot move - dies')
+			pclast%status = ALIVE
+			!write(logmsg,*) 'Blocked osteoclast: ',pclast%movetime,iclast
+			!call logger(logmsg)
+		elseif (res == 3) then		
+			call logger('No signal left, OC dies')
 			call clastDeath(iclast)
 			cycle
 		endif
@@ -700,13 +733,23 @@ enddo
 end subroutine
 
 !------------------------------------------------------------------------------------------------
-! Now use surface(:,:)%depth instead of pclast%pit and bone_fraction
+! Now use surface(:,:)%depth and %signal instead of pclast%pit and bone_fraction.
+! If the OC has never received any bone signal, no resorption.
 !------------------------------------------------------------------------------------------------
 subroutine resorber(pclast)
 type(osteoclast_type), pointer :: pclast
 !type(occupancy_type), pointer :: pbone
-integer :: k, x, z
+integer :: k, x, z, site(3)
+real :: totsig
 
+if (pclast%status /= RESORBING) then
+	site = pclast%cm + 0.5
+	totsig = TotalSignal(pclast,site)
+	if (totsig == 0) then
+		return
+	endif
+	pclast%status = RESORBING
+endif
 call pitrates(pclast)
 do k = 1,pclast%npit
 !	site = pclast%pit(k)%site
@@ -1524,6 +1567,8 @@ use, intrinsic :: iso_c_binding
 integer(c_int) :: res
 logical :: ok
 integer :: error
+real :: totsig
+integer, parameter :: NT_EVOLVE = 20
 
 res = 0
 !call logger("simulate_step")
@@ -1541,6 +1586,22 @@ call mover
 !	call checkSignals(ok)
 !	if (.not.ok) res = 1
 !endif
+if (mod(istep,NT_EVOLVE) == 0) then
+	call evolveRANKL(NT_EVOLVE,totsig)
+	if (totsig == 0 .and. nclump > 0) then
+		call break_clumps
+	endif
+	
+!	nliveOC = 0
+!	do ic = 1,nclast
+!		if (clast(ic)%status /= DEAD) then
+!			nliveOC = nliveOC + 1
+!		endif
+!	enddo
+!	if (nliveOC == 0) then
+!		call logger("All osteoclasts are dead")
+!	endif
+endif
 end subroutine
 
 
@@ -1625,6 +1686,8 @@ if (allocated(stem)) deallocate(stem)
 if (allocated(capillary)) deallocate(capillary)
 if (allocated(entrysite)) deallocate(entrysite)
 if (allocated(RANKL_conc)) deallocate(RANKL_conc)
+if (allocated(RANKL_grad)) deallocate(RANKL_grad)
+if (allocated(RANKLinflux)) deallocate(RANKLinflux)
 if (allocated(S1P_conc)) deallocate(S1P_conc)
 if (allocated(S1P_grad)) deallocate(S1P_grad)
 

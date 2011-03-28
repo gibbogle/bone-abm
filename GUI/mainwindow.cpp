@@ -174,7 +174,7 @@ void MainWindow::createActions()
     connect(action_save_snapshot, SIGNAL(triggered()), this, SLOT(saveSnapshot()));
 
 //	connect((QObject *)lcdNumber_hour, SIGNAL(hourUpdate(double)), this, SLOT(Display(double)));
-
+	cbox_fastdisplay->setChecked(true);
 }
 
 //--------------------------------------------------------------------------------------------------------
@@ -336,7 +336,7 @@ void MainWindow::loadParams()
 		if (qsname.startsWith("line_") || qsname.startsWith("spin_") 
 			|| qsname.startsWith("comb_") || qsname.startsWith("cbox_")
 			|| qsname.startsWith("rbut_")) {
-			LOG_QMSG(qsname);
+//			LOG_QMSG(qsname);
 			QString wtag = qsname.mid(5);
 			int rbutton_case = 0;
 			if (qsname.startsWith("rbut_")) {
@@ -355,6 +355,7 @@ void MainWindow::loadParams()
 					if (qsname.startsWith("line_")) {
                         double val = p.value;
 						QString val_str = QString::number(val);
+//						LOG_QMSG(val_str);
 						QLineEdit *w_l = (QLineEdit *)w;
                         w_l->setText(val_str);
 						if (USE_RANGES) {
@@ -494,7 +495,6 @@ void MainWindow::loadParams()
                         s->setMinimum(0);
                         s->setMaximum(splus->nTicks());
                         s->setSliderPosition(ival);
-						
  //                       sliderParam.append(w);	// associates jth slider s with w and ptag
 						sliderParam[j] = w;
                         connect(s, SIGNAL(valueChanged(int)), this, SLOT(updateSliderBox())); //sliderReleased
@@ -504,10 +504,10 @@ void MainWindow::loadParams()
                     found = true;
                     break;
 
-					if (!found) {
-						sprintf(msg,"%s was not found in the parameter list",(wtag.toStdString()).data());
-						LOG_MSG(msg);
-					}
+//					if (!found) {
+//						sprintf(msg,"%s was not found in the parameter list",(wtag.toStdString()).data());
+//						LOG_MSG(msg);
+//					}
 				}
 			}
 		}
@@ -541,6 +541,7 @@ void MainWindow::reloadParams()
 		if (qsname.startsWith("line_") || qsname.startsWith("spin_") 
 			|| qsname.startsWith("comb_") || qsname.startsWith("cbox_")
 			|| qsname.startsWith("rbut_")) {
+//			LOG_QMSG(qsname);
 			QString wtag = qsname.mid(5);
 			int rbutton_case = 0;
 			if (qsname.startsWith("rbut_")) {
@@ -557,6 +558,7 @@ void MainWindow::reloadParams()
 					if (qsname.startsWith("line_")) {
                         double val = p.value;
 						QString val_str = QString::number(val);
+//						LOG_QMSG(val_str);
 						QLineEdit *w_l = (QLineEdit *)w;
                         w_l->setText(val_str);
 					} else if (qsname.startsWith("spin_")) {
