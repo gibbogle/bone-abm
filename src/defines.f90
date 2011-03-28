@@ -10,6 +10,7 @@ integer, parameter :: MARROW = 0
 integer, parameter :: PIT = -1
 integer, parameter :: BLOOD = -2
 integer, parameter :: BONE = -3
+integer, parameter :: LAYER = -4
 
 integer, parameter :: MONOCYTE = 10
 integer, parameter :: OSTEOBLAST = 11
@@ -30,6 +31,8 @@ integer, parameter :: FUSED = 6
 integer, parameter :: OSTEO = 7
 integer, parameter :: CROSSING = 8
 integer, parameter :: LEFT = 9
+
+integer, parameter :: RESORBING = 2
 
 integer, parameter :: NEUMANN_MODEL = 1
 integer, parameter :: MOORE18_MODEL = 2
@@ -72,7 +75,7 @@ character*(13), parameter :: pausefile = 'pause_dll'
 !real, parameter :: CROSSING_TIME = 2*60
 !real, parameter :: FUSING_TIME = 2*60
 !real, parameter :: CLAST_DWELL_TIME0 = 4*60
-!real, parameter :: CLAST_DWELL_TIME = 3*60
+!real, parameter :: CLAST_DWELL_TIME = 3*60 
 
 
 ! S1P1 parameters
@@ -81,26 +84,34 @@ logical, parameter :: S1P_chemotaxis = .true.
 !real, parameter :: S1P_CHEMOLEVEL = 0.1		! 0 -> 1
 !real, parameter :: S1P_GRADLIM = 0.02
 !real, parameter :: S1P1_THRESHOLD = 0.5
-!real, parameter :: S1P1_BASERATE = 1.0/(6*60)	! 6 hours
+!real, parameter :: S1P1_BASERATE = 1.0/(6*60)	! 6 hours 
 
 ! RANKL parameters
 logical, parameter :: use_RANK = .true.
-real, parameter :: RANKL_KDIFFUSION = 0.001
-real, parameter :: RANKL_KDECAY = 0.00001
-real, parameter :: RANKSIGNAL_rateconstant = 10.
-real, parameter :: RANKSIGNAL_halflife = 12		! hours
-real, parameter :: RANK_BONE_RATIO = 0.1			! ratio of RANKL secretion to bone signal strength.
+real, parameter :: RANKL_KDIFFUSION = 1		! 1/10 of approx 1000 um^2/min
+! http://www.math.ubc.ca/~ais/website/status/diffuse.html
+!real, parameter :: RANKL_KDECAY = 0.00001	! <=== compute from RANKL_HALFLIFE
+real, parameter :: RANKL_HALFLIFE = 12*60
+real, parameter :: RANKSIGNAL_rateconstant = 1.0
+real, parameter :: RANKSIGNAL_halflife = 6*60		! mins
+real, parameter :: RANK_BONE_RATIO = 0.4			! ratio of RANKL secretion to bone signal strength.
 real, parameter :: ST1 = 0.3	! -> CHEMOTACTIC
 real, parameter :: ST2 = 0.5	! -> STICKY
+
+logical, parameter :: RANKL_chemotaxis = .true.
+real, parameter :: RANKL_CHEMOLEVEL = 0.1
+real, parameter :: RANKL_GRADLIM = 0.001
 
 ! Clump parameters
 integer, parameter :: CLUMP_THRESHOLD = 25
 real, parameter :: CLUMP_SEPARATION = 6
 real, parameter :: CLUMP_FALL_PROB = 0.001	! arbitrary
 
+! Osteoclast parameters
+real, parameter :: CLAST_STOP_TIME = 12*60	! max time for an OC to be blocked
 ! Pit parameters
 real, parameter :: MAX_PIT_DEPTH = 50	! microns
-
+real, parameter :: OC_SIGNAL_SENSING_RANGE = 6	! grids
 real, parameter :: Kattraction = 4
 
 type pit_type
@@ -149,7 +160,8 @@ type osteoclast_type
     integer(2) :: lastdir
     real :: fusetime			! time that the monocytes began to fuse to form the osteoclast
     real :: entrytime			! time that the cell became a mature osteoclast
-    real :: movetime			! time that the cell will move on
+    real :: movetime			! time that the cell will be checked for move
+    real :: blocktime			! time that the cell became blocked
     real :: dietime             ! time cell will die
 	integer :: count
 	integer :: mono(100)

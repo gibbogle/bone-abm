@@ -163,7 +163,7 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Length of time that an osteoclast remains active\n\
 [days]"},
 
-{"CLAST_DWELL_TIME", 120.0, 10.0, 500.0,
+{"CLAST_DWELL_TIME", 60.0, 10.0, 500.0,
 "Osteoclast dwell time",
 "Length of time that an osteoclast remains in one spot, before moving one grid\n\
 [days]"},

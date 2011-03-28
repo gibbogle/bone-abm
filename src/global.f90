@@ -84,6 +84,7 @@ integer :: nmono, mono_cnt, nsignal, nclast, nborn, nleft, ncap, nentrysites, nc
 integer, allocatable :: entrysite(:,:)
 type(clump_type), target :: clump(MAX_NCLUMP)
 real :: RANKSIGNAL_decayrate			! from RANKSIGNAL_halflife
+real :: RANKL_KDECAY					! from RANKL_HALFLIFE
 
 contains
 

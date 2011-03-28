@@ -19,33 +19,7 @@ integer :: dir2D(3,8) = reshape((/ -1,0,-1, -1,0,0, -1,0,1, 0,0,1, 1,0,1, 1,0,0,
 
 contains
 
-
-
-
-!---------------------------------------------------------------------
-!---------------------------------------------------------------------
-real function TotalSignal(pclast,site)
-type(osteoclast_type), pointer :: pclast
-integer :: site(3)
-integer :: k, x, z
-
-TotalSignal = 0
-do k = 1,pclast%npit
-	x = site(1) + pclast%pit(k)%delta(1)
-	z = site(3) + pclast%pit(k)%delta(3)
-	TotalSignal = TotalSignal + surface(x,z)%signal
-enddo
-end function
-
-!---------------------------------------------------------------------
-! The osteoclast is moved one lattice jump, and the locations of active
-! pit sites are recomputed, together with their resorption rates.
-! Chemotaxis
-! When osteoclast motion is influenced by the bone signal, the jump 
-! probabilities depend on the relative signal strengths of the 
-! neighbour sites.
-!---------------------------------------------------------------------
-subroutine move_clast(pclast,res)
+subroutine move_clast1(pclast,res)
 type(osteoclast_type), pointer :: pclast
 integer :: res
 integer :: ipit, iy, x, y, z, site(3), i, imono, kdir, dx, dz, dirmax, iclast, ddir, nsig
@@ -96,12 +70,14 @@ do kdir = 1,8
 	if ((site(1) <= 1 .or. site(1) >= NX) .or. (site(3) <= 1 .or. site(3) >= NZ)) then
 		bdryhit = .true.
 		possible(kdir) = .false.
+		write(*,*) 'bdryhit: ',kdir
 		cycle
 	endif
-	if (occupancy(site(1),site(2),site(3))%indx /= 0) then
-		possible(kdir) = .false.
-		cycle
-	endif
+!	if (occupancy(site(1),site(2),site(3))%indx /= 0) then
+!		possible(kdir) = .false.
+!		write(*,*) 'occupancy: ',kdir
+!		cycle
+!	endif
 	! Check for nearby osteoclasts.
 	! Treat osteoclast footprint as a circle with radius = clast_size
 	nearclast = .false.
@@ -124,6 +100,7 @@ do kdir = 1,8
 	enddo	
 	if (nearclast) then
 		possible(kdir) = .false.
+		write(*,*) 'nearclast: ',kdir
 		cycle
 	endif
 !	x = site(1)
@@ -151,13 +128,14 @@ do kdir = 1,8
 !	p(kdir) = p(kdir)*prob(ddir)
 !	pmax = max(pmax,p(kdir))
 enddo
+
 !if (dbug) write(*,'(a,8f7.4)') 'p: ',p
 
 ! An OC can move to a new site if the move is possible and if the total signal at the new site
 ! exceeds (sufficiently) that at the current site, or if the current total signal = 0.  
 ! The probability of the move is proportional to the signal excess.
 ! If the current total signal and all neighbour site total signals are zero, the osteoclast dies. 
-siglim = min(totsig(0)*1.3,0.1)
+siglim = min(totsig(0)*1.3,1.0)
 pmax = 0
 do kdir = 1,8
 	if (possible(kdir) .and. totsig(kdir) > siglim) then
@@ -173,6 +151,13 @@ do kdir = 1,8
 	endif
 enddo
 psum = sum(p)
+if (psum > 0) then
+	p = p/psum
+endif
+if (pclast%ID == 1) then
+	write(*,'(a,9f8.1)') 'totsig: ',totsig
+	write(*,'(a,8f8.4)') 'p: ',p
+endif
 if (psum == 0) then
 	if (totsig(0) == 0 .and. nsig == 0) then
 		res = 2
@@ -213,7 +198,7 @@ p = p/psum
 	kdir = min(8,kdir)
 !endif
 jump = dir2D(:,kdir)
-if (dbug) write(*,*) 'kdir: ',kdir,jump
+write(*,*) 'clast moves: kdir: ',pclast%ID,kdir,jump
 !do ipit = 1,pclast%npit
 !	x = pclast%pit(ipit)%site(1) + jump(1)
 !	y = pclast%pit(ipit)%site(2)
@@ -246,11 +231,287 @@ enddo
 res = abs(res)
 end subroutine
 
+
+!---------------------------------------------------------------------
+!---------------------------------------------------------------------
+real function TotalSignal(pclast,site)
+type(osteoclast_type), pointer :: pclast
+integer :: site(3)
+integer :: k, x, z
+
+TotalSignal = 0
+do k = 1,pclast%npit
+	x = site(1) + pclast%pit(k)%delta(1)
+	z = site(3) + pclast%pit(k)%delta(3)
+	TotalSignal = TotalSignal + surface(x,z)%signal
+enddo
+end function
+
+!---------------------------------------------------------------------
+! The osteoclast is moved one lattice jump, and the locations of active
+! pit sites are recomputed, together with their resorption rates.
+! Chemotaxis
+! When osteoclast motion is influenced by the bone signal, the jump 
+! probabilities depend on the relative signal strengths of the 
+! neighbour sites.
+! There are two cases:
+! (1) OC is on or near sites needing excavation (signal > 0)
+! (2) OC is not near sites needing excavation.  In this case the OC 
+!     must first move towards sites with signal.  It's probably safe to
+!     assume that the OC has a range for detection of signal.
+!
+! Result values (res):
+!     0 = prefer to stay, continue resorbing
+!     1 = prefer or need to move, move possible
+!     2 = move necessary (no signal), move blocked
+!     3 = no signal in patch
+!---------------------------------------------------------------------
+subroutine move_clast(pclast,res)
+type(osteoclast_type), pointer :: pclast
+integer :: res
+integer :: ipit, iy, x, y, z, site(3), i, imono, kdir, dx, dz, dirmax, iclast
+integer :: ddir, nsig, ocsite(3), kmax
+real :: prob(0:4) = (/ 0.5, 0.15, 0.07, 0.025, 0.01 /)
+integer :: jump(3), lastjump(3), kpar=0
+real :: d, bf, v(3), proj, size0, size1, djump, dsum, depth
+real :: totsig(0:8), siglim, sig, patchtot, amp(8), cosa, amax
+real(8) :: psum, pmax, R, dp, p(8), ptemp(8)
+!real :: p(3) = (/0.25,0.5,0.25/)	! arbitrary, interim
+logical :: covered, bdryhit, nearclast, freshbone, possible(8)
+type(osteoclast_type), pointer :: pclast1
+integer, save :: count = 0
+logical :: dbug
+real, parameter :: SIGNAL_EXCESS = 1.3
+
+if (pclast%ID == -1) then
+	dbug = .true.
+else
+	dbug = .false.
+endif
+
+possible = .true.
+freshbone = .false.
+res = 0
+! First choose a direction.  Quantify the new bone available in each direction
+! at a distance approx equal to the long axis dimension of the osteoclast, i.e.
+! sqrt(count).
+
+ocsite = pclast%cm + 0.5
+totsig(0) = TotalSignal(pclast,ocsite)
+nsig = 0
+size0 = clast_size(pclast)
+!if (dbug) write(*,'(a,i4,4f8.1)') 'move_clast: ',pclast%ID,pclast%cm,size0
+do kdir = 1,8
+	jump = dir2D(:,kdir)
+	site = ocsite + jump
+	totsig(kdir) = TotalSignal(pclast,site)
+	if (totsig(kdir) > 0) nsig = nsig + 1
+!	if (dbug) write(*,*) 'kdir,i,site: ',kdir,i,site
+	bdryhit = .false.
+	if ((site(1) <= 1 .or. site(1) >= NX) .or. (site(3) <= 1 .or. site(3) >= NZ)) then
+		bdryhit = .true.
+		possible(kdir) = .false.
+		cycle
+	endif
+	! Check for nearby osteoclasts.
+	! Treat osteoclast footprint as a circle with radius = clast_size
+	nearclast = .false.
+	do iclast = 1,nclast
+		pclast1 => clast(iclast)
+		if (pclast%ID == pclast1%ID) cycle
+		if (pclast1%status == DEAD) cycle
+		size1 = clast_size(pclast1)
+		v = pclast1%cm - pclast%cm
+		d = sqrt(dot_product(v,v))
+		if (d < (size0 + size1)) then	! we don't want to move in the direction of v
+			proj = dot_product(v,real(jump))
+			if (proj > 0) then
+!				write(*,*) 'Too close: ', iclast
+				nearclast = .true.
+				exit
+!				possible(kdir) = .false.
+			endif
+		endif
+	enddo	
+	if (nearclast) then
+		if (dbug) write(*,*) 'nearclast: ',kdir,iclast,size0,size1
+		possible(kdir) = .false.
+		cycle
+	endif
+enddo
+
+if (dbug) write(*,'(9f8.2)') totsig
+if (sum(totsig) == 0) then	
+	! OC is not near sites needing excavation.
+	! Try to move towards a signalling site within range.
+	! If no such movement is possible, turn off resorption
+	patchtot = 0
+	amp = 0
+	do i = 1,nsignal
+		site = signal(i)%site
+		sig = surface(site(1),site(3))%signal
+		patchtot = patchtot + sig
+		if (sig > 0) then
+			v = site - ocsite
+			d = sqrt(dot_product(v,v))
+			if (d <= OC_SIGNAL_SENSING_RANGE) then
+				v = v/d		! unit offset vector
+				! Look at jump directions that reduce distance to the signalling site
+				do kdir = 1,8
+					if (.not.possible(kdir)) cycle
+					cosa = dot_product(v,dir2D(:,kdir))
+					if (cosa > 0) then
+						amp(kdir) = amp(kdir) + cosa*sig/d
+					endif
+				enddo
+			endif
+		endif
+	enddo
+	if (patchtot == 0) then		! Excavation is complete
+		res = 3
+		return
+	endif
+	amax = 0
+	kmax = 0
+	do kdir = 1,8
+		if (amp(kdir) > amax) then
+			amax = amp(kdir)
+			kmax = kdir
+		endif
+	enddo
+	if (kmax == 0) then		! No useful movement is currently possible
+		res = 2
+		return
+	endif
+	call ocmove(pclast,kmax)
+	res = 1
+	return
+endif
+
+! An OC can move to a new site if the move is possible and if the total signal at the new site
+! exceeds (sufficiently) that at the current site, or if the current total signal = 0.  
+! The probability of the move is proportional to the signal excess.
+! If the current total signal and all neighbour site total signals are zero, the osteoclast dies. 
+
+if (totsig(0) == 0) then	! any level of signal is attractive
+	siglim = 0
+else						! need sufficient signal to force a move
+	siglim = max(totsig(0)*SIGNAL_EXCESS,1.0)
+endif
+if (dbug) write(*,*) 'siglim: ',siglim,' possible: ',possible
+p = 0
+pmax = 0
+do kdir = 1,8
+	if (possible(kdir) .and. (totsig(kdir) > siglim)) then
+		p(kdir) = totsig(kdir)
+		if (p(kdir) > pmax) then
+			pmax = p(kdir)
+			kmax = kdir
+		endif
+	endif
+enddo
+
+if (totsig(0) == 0) then	! need to move
+	if (pmax == 0) then		! no useful move is possible, try a random move
+		do kdir = 1,8
+			if (possible(kdir)) then
+				R = par_uni(kpar)
+				if (R < 0.1) then
+					call ocmove(pclast,kdir)
+					res = 1
+					return
+				endif
+			endif
+		enddo
+		res = 2
+		return
+	else					! make a move
+		call ocmove(pclast,kmax)
+		res = 1
+		return
+	endif
+elseif (pmax == 0) then		! do not move
+	res = 0
+	return
+endif	
+
+! Now filter out direction probs that are too small in comparison with the prob of the most preferred direction
+do kdir = 1,8
+	if (p(kdir) < 0.2*pmax) then
+		p(kdir) = 0
+	endif
+enddo
+psum = sum(p)
+if (psum > 0) then
+	p = p/psum
+endif
+
+R = par_uni(kpar)
+psum = 0
+do kdir = 1,8
+	psum = psum + p(kdir)
+	if (psum >= R) exit
+enddo
+call ocmove(pclast,kdir)
+res = 1
+end subroutine
+
+!---------------------------------------------------------------------
+!---------------------------------------------------------------------
+subroutine ocmove(pclast,kdir)
+type(osteoclast_type), pointer :: pclast
+integer :: kdir
+integer :: jump(3), site(3), i, imono
+
+jump = dir2D(:,kdir)
+if (pclast%ID == 1) then
+	write(logmsg,*) 'clast moves: kdir: ',pclast%ID,kdir,jump
+	call logger(logmsg)
+endif
+pclast%cm = pclast%cm + jump
+pclast%lastdir = kdir
+do i = 1,pclast%count
+	imono = pclast%mono(i)
+	site = mono(imono)%site
+	occupancy(site(1),site(2),site(3))%indx = 0
+	site = site + jump
+	mono(imono)%site = site
+	occupancy(site(1),site(2),site(3))%indx = imono
+enddo
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+! We need a way to determine whether a monocyte has moved close enough to the bone surface to
+! make contact with an OB - needed to initiate clustering.
+! Base the criterion on nearness to a signalling site.
+!------------------------------------------------------------------------------------------------
+logical function NearOB(pmono)
+type(monocyte_type), pointer :: pmono
+real :: v(3), d2, d2lim
+integer :: msite(3), ssite(3), isig
+real, parameter :: OB_REACH = 40	! microns
+
+NearOB = .false.
+d2lim = (OB_REACH/DELTA_X)**2
+msite = pmono%site
+do isig = 1,nsignal
+	ssite = signal(isig)%site
+	if (surface(ssite(1),ssite(3))%signal == 0) cycle
+	v = msite - ssite
+	d2 = dot_product(v,v)
+	if (d2 < d2lim) then
+		NearOB = .true.
+		exit
+	endif
+enddo
+end function
+
 !---------------------------------------------------------------------
 ! Currently monocytes move around while in the marrow, and may pass
 ! into the blood, effectively removed from further consideration.
 !---------------------------------------------------------------------
 subroutine mover
+type (monocyte_type), pointer :: pmono
 integer :: kcell, status
 logical :: go
 integer :: kpar = 0
@@ -260,25 +521,30 @@ real :: tnow
 
 tnow = istep*DELTA_T
 do kcell = 1,nmono
-	status = mono(kcell)%status
+	pmono => mono(kcell)
+	status = pmono%status
 	if (status == LEFT .or. status == DEAD) cycle
+!	if (pmono%site(2) == NBY+1 .and. status < FUSED) then
+!		write(*,*) 'y = NBY+1: ',istep,pmono%ID,pmono%site,status
+!		stop
+!	endif
 	if (status == CROSSING) then
-		if (tnow >= mono(kcell)%exittime) then
-			mono(kcell)%status = LEFT
-			mono(kcell)%region = BLOOD
-			site = mono(kcell)%site
+		if (tnow >= pmono%exittime) then
+			pmono%status = LEFT
+			pmono%region = BLOOD
+			site = pmono%site
 			occupancy(site(1),site(2),site(3))%indx = 0
 			mono_cnt = mono_cnt - 1
 			nleft = nleft + 1
 !			write(*,'(a,2i6,2f6.3,i6)') 'monocyte leaves: ',istep,kcell,mono(kcell)%S1P1,mono_cnt
 		endif
-	elseif (status >= MOTILE .and. mono(kcell)%iclump == 0) then	! interim criterion
+	elseif (status >= MOTILE .and. pmono%iclump == 0) then	! interim criterion
 		call mono_jumper(kcell,go,kpar)
 		if (kcell == kdbug) then
-			write(*,'(3i4)') mono(kcell)%site
+			write(*,'(3i4)') pmono%site
 		endif
 	endif
-	if (mono(kcell)%stickiness > 0 .and. mono(kcell)%status < FUSED) then
+	if (pmono%stickiness > 0 .and. pmono%status < FUSED .and. NearOB(pmono)) then
 		call sticker(kcell)
 	endif
 enddo
@@ -298,13 +564,21 @@ logical :: go
 type (monocyte_type), pointer :: cell
 integer :: site1(3),site2(3)
 integer :: region, kcell2
-integer :: irel,dir1,lastdir1
+integer :: irel,dir1,lastdir1,status
 integer :: savesite2(3,26), jmpdir(26)
-real(8) :: psum, p(26), R, w(27), g(3), gamp, S1Pfactor
-real :: f0, f
+real(8) :: psum, p(26), R, wS1P(27), g(3), gamp, S1Pfactor, wRANKL(27), RANKLfactor
+real :: f0, f, motility_factor
 logical :: free, cross, field
 
 cell => mono(kcell)
+status = cell%status
+if (status == MOTILE) then
+	motility_factor = 1
+elseif (status == CHEMOTACTIC) then
+	motility_factor = 0.6
+elseif (status == STICKY) then
+	motility_factor = 0.4
+endif
 !if (istep - cell%lastmovestep > 1050) then
 !	write(logmsg,*) 'No move: ',cell%ID,istep,kcell,istep - cell%lastmovestep,cell%site
 !	call logger(logmsg)
@@ -338,10 +612,25 @@ if (S1P_chemotaxis) then
 	g = S1P_grad(:,site1(1),site1(2),site1(3))
 	gamp = sqrt(dot_product(g,g))	! Magnitude of S1P gradient
 	g = g/gamp
-	call S1P_chemo_weights(g,w)		! w(:) now holds the normalized gradient vector components
+	call chemo_weights(g,wS1P)		! w(:) now holds the normalized gradient vector components
 	S1Pfactor = S1P_CHEMOLEVEL*min(1.0,gamp/S1P_GRADLIM)*cell%S1P1
+!	write(*,*) 'g,gamp: ',g,gamp
+!	write(*,*) 'wS1P: ',wS1P
+!	write(*,*) 'S1P1: ',cell%S1P1
 endif
-
+! Set up weights in the 6 principal axis directions corresponding to RANKL_grad(:,:,:,:)
+if (RANKL_chemotaxis) then
+	g = RANKL_grad(:,site1(1),site1(2),site1(3))
+	gamp = sqrt(dot_product(g,g))	! Magnitude of RANKL gradient
+	g = g/gamp
+	call chemo_weights(g,wRANKL)		! w(:) now holds the normalized gradient vector components
+	RANKLfactor = RANKL_CHEMOLEVEL*min(1.0,gamp/RANKL_GRADLIM)*cell%RANKSIGNAL
+!	write(*,*) 'g,gamp: ',g,gamp
+!	write(*,*) 'wRANKL: ',wRANKL
+!	write(*,*) 'RANK: ',cell%RANKSIGNAL
+endif
+!write(*,*) 'S1Pfactor, RANKLfactor: ',S1Pfactor, RANKLfactor
+!stop
 lastdir1 = cell%lastdir
 p = 0
 psum = 0
@@ -353,7 +642,7 @@ do irel = 1,nreldir
 	! about transition to BLOOD, for example.
 	free = free_site(site2,region,kcell2)
 	if (free) then
-		p(irel) = dirprob(irel)
+		p(irel) = motility_factor*dirprob(irel)
 		if (field) then
 			! The probability of a jump is modified by the relative signal intensities of the two sites
 			! This is a very crude interim treatment
@@ -365,8 +654,12 @@ do irel = 1,nreldir
 			endif
 		endif
 		if (S1P_chemotaxis) then
-			! the increment to the probability depends on S1Pfactor and w(dir1)
-			p(irel) = p(irel) + S1Pfactor*w(dir1)
+			! the increment to the probability depends on S1Pfactor and wS1P(dir1)
+			p(irel) = p(irel) + S1Pfactor*wS1P(dir1)
+		endif
+		if (RANKL_chemotaxis) then
+			! the increment to the probability depends on RANKLfactor and wRANKL(dir1)
+			p(irel) = p(irel) + RANKLfactor*wRANKL(dir1)
 		endif
 		jmpdir(irel) = dir1
 		psum = psum + p(irel)
@@ -427,8 +720,9 @@ occupancy(site1(1),site1(2),site1(3))%indx = 0
 end subroutine
 
 !---------------------------------------------------------------------
+! Use for both S1P and RANKL chemotaxis
 !---------------------------------------------------------------------
-subroutine S1P_chemo_weights(g,w)
+subroutine chemo_weights(g,w)
 real(8) :: g(3), w(27)
 
 w = 0
@@ -477,12 +771,17 @@ integer :: site1(3), site2(3), i, icell2, iclump1, iclump2
 
 cell1 => mono(icell1)
 site1 = cell1%site
+if (site1(2) == NBY+1) then
+	write(*,*) 'sticker (a): ',cell1%ID,site1
+	stop
+endif
 iclump1 = cell1%iclump
 do i = 1,27
 	if (i == 14) cycle
 	site2 = site1 + jumpvec(:,i)
 	if (site2(1) < 1 .or. site2(1) > NX) cycle
-	if (site2(2) < NBY+1 .or. site2(2) > NY) cycle
+!	if (site2(2) < NBY+1 .or. site2(2) > NY) cycle
+	if (site2(2) <= NBY+1 .or. site2(2) > NY) cycle
 	if (site2(3) < 1 .or. site2(3) > NZ) cycle
 	icell2 = occupancy(site2(1),site2(2),site2(3))%indx
 	if (icell2 > 0) then
@@ -497,6 +796,10 @@ do i = 1,27
 		endif
 	endif
 enddo
+if (cell1%site(2) == NBY+1) then
+	write(*,*) 'sticker (b): ',cell1%ID,site1
+	stop
+endif
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -656,7 +959,7 @@ do i = 1,pclump%ncells
 		if (k == 14) cycle
 		site2 = site1 + jumpvec(:,k)
 		if (site2(1) < 1 .or. site2(1) > NX) cycle
-		if (site2(2) < NBY+1 .or. site2(2) > NY) cycle
+		if (site2(2) <= NBY+1 .or. site2(2) > NY) cycle
 		if (site2(3) < 1 .or. site2(3) > NZ) cycle
 		if (occupancy(site2(1),site2(2),site2(3))%indx == 0) then	! this site is available
 			r = cm - site2
@@ -675,6 +978,10 @@ do i = 1,pclump%ncells
 		mono(kcell)%site = site2
 		occupancy(site1(1),site1(2),site1(3))%indx = 0
 		occupancy(site2(1),site2(2),site2(3))%indx = kcell
+	endif
+	if (mono(kcell)%site(2) == NBY+1) then
+		write(*,*) 'consolidate_clump: ',mono(kcell)%ID,mono(kcell)%site
+		stop
 	endif
 enddo
 call centre_of_mass(pclump)
@@ -838,6 +1145,25 @@ enddo
 end subroutine
 
 !---------------------------------------------------------------------
+!---------------------------------------------------------------------
+subroutine break_clumps
+type(clump_type), pointer :: pclump
+integer :: iclump, i, kcell
+
+do iclump = 1,nclump
+	pclump => clump(iclump)
+	if (pclump%status == DEAD) cycle
+	do i = 1,pclump%ncells
+		kcell = pclump%list(i)
+		mono(kcell)%status = DEAD
+		mono(kcell)%iclump = 0
+	enddo
+	pclump%status = DEAD
+enddo
+nclump = 0
+end subroutine
+
+!---------------------------------------------------------------------
 ! Need a vacant site in the plane at y near the clump
 !---------------------------------------------------------------------
 subroutine get_vacant_site(pclump,y,site)
@@ -982,6 +1308,12 @@ if (site(3) > NZ) then
 	free_site = wrapz2(site,region,kcell)
 	return
 endif
+!if (site(2) <= NBY+1) then	!???????????  what's wrong with this?
+!	kcell = 0
+!	region = LAYER
+!	free_site = .false.
+!	return
+!endif
 region = occupancy(site(1),site(2),site(3))%region
 if (region /= MARROW) then
 	kcell = 0
@@ -1185,7 +1517,7 @@ end subroutine
 real function clast_size(pclast)
 type(osteoclast_type), pointer :: pclast
 
-clast_size = 0.7*sqrt(real(pclast%count))
+clast_size = 0.5*sqrt(real(pclast%count))
 end function
 
 !---------------------------------------------------------------------
