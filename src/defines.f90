@@ -33,6 +33,7 @@ integer, parameter :: CROSSING = 8
 integer, parameter :: LEFT = 9
 
 integer, parameter :: RESORBING = 2
+integer, parameter :: MOVING = 3
 
 integer, parameter :: NEUMANN_MODEL = 1
 integer, parameter :: MOORE18_MODEL = 2
@@ -88,7 +89,7 @@ logical, parameter :: S1P_chemotaxis = .true.
 
 ! RANKL parameters
 logical, parameter :: use_RANK = .true.
-real, parameter :: RANKL_KDIFFUSION = 1		! 1/10 of approx 1000 um^2/min
+real, parameter :: RANKL_KDIFFUSION = 2		! 1/10 of approx 1000 um^2/min
 ! http://www.math.ubc.ca/~ais/website/status/diffuse.html
 !real, parameter :: RANKL_KDECAY = 0.00001	! <=== compute from RANKL_HALFLIFE
 real, parameter :: RANKL_HALFLIFE = 12*60
@@ -100,7 +101,7 @@ real, parameter :: ST2 = 0.5	! -> STICKY
 
 logical, parameter :: RANKL_chemotaxis = .true.
 real, parameter :: RANKL_CHEMOLEVEL = 0.1
-real, parameter :: RANKL_GRADLIM = 0.001
+real, parameter :: RANKL_GRADLIM = 0.0005
 
 ! Clump parameters
 integer, parameter :: CLUMP_THRESHOLD = 25
@@ -109,9 +110,12 @@ real, parameter :: CLUMP_FALL_PROB = 0.001	! arbitrary
 
 ! Osteoclast parameters
 real, parameter :: CLAST_STOP_TIME = 12*60	! max time for an OC to be blocked
+real, parameter :: DT_FAST_MOVE = 10.0
+real, parameter :: CLAST_RADIUS_FACTOR = 0.5	! relates OC radius to the sqrt of the number of monocytes
 ! Pit parameters
-real, parameter :: MAX_PIT_DEPTH = 50	! microns
-real, parameter :: OC_SIGNAL_SENSING_RANGE = 6	! grids
+real, parameter :: LACUNA_A = 20		! Parameters of the elliptical region to be excavated
+real, parameter :: LACUNA_B = 10
+real, parameter :: OC_SIGNAL_SENSING_RANGE = 20	! grids
 real, parameter :: Kattraction = 4
 
 type pit_type
@@ -165,6 +169,7 @@ type osteoclast_type
     real :: dietime             ! time cell will die
 	integer :: count
 	integer :: mono(100)
+	integer :: targetsite(3)
 	integer :: npit
 	type(pit_type), allocatable :: pit(:)
 end type

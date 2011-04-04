@@ -26,7 +26,7 @@ program main
 use bone_mod
 integer :: nt = 10000
 real :: simdays = 2
-character*(64) :: infile = 'basecase.inp'
+character*(64) :: infile = 'test30.inp'
 integer :: res, nlen
 
 use_tcp = .false.
@@ -38,6 +38,11 @@ call execute(infile,nlen)
 nt = simdays*24*60*4
 do it = 1,nt
 	call simulate_step(res)
+	if (res /= 0) then
+		write(*,*) 'All osteoclasts have died'
+		res = 0
+		exit
+	endif
 enddo
 call terminate_run(res)
 end program
