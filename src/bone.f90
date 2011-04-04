@@ -266,6 +266,61 @@ call par_zigset(npar,zig_seed,grainsize)
 deallocate(zig_seed)
 end subroutine
 
+!-----------------------------------------------------------------------------------------
+!-----------------------------------------------------------------------------------------
+subroutine omp_initialisation(ok)
+logical :: ok
+integer :: npr, nth
+
+ok = .true.
+if (Mnodes == 1) return
+!!DEC$ IF ( DEFINED (_OPENMP) .OR. DEFINED (IBM))
+#if defined(OPENMP) || defined(_OPENMP)
+write(logmsg,'(a,i2)') 'Requested Mnodes: ',Mnodes
+call logger(logmsg)
+!close(nflog)
+!ok = .false.
+!return
+npr = omp_get_num_procs()
+write(logmsg,'(a,i2)') 'Machine processors: ',npr
+call logger(logmsg)
+
+nth = omp_get_max_threads()
+write(logmsg,'(a,i2)') 'Max threads available: ',nth
+call logger(logmsg)
+if (nth < Mnodes) then
+    Mnodes = nth
+    write(logmsg,'(a,i2)') 'Setting Mnodes = max thread count: ',nth
+	call logger(logmsg)
+endif
+
+call omp_set_num_threads(Mnodes)
+!$omp parallel
+nth = omp_get_num_threads()
+write(logmsg,*) 'Threads, max: ',nth,omp_get_max_threads()
+call logger(logmsg)
+!$omp end parallel
+#endif
+!!DEC$ END IF
+!write(*,*) 'Threads: ',nth
+!if (nth > npr) then
+!    write(*,*) 'Number of threads exceeds CPUs'
+!    stop
+!endif
+
+!stop
+
+!call set_affinity
+!write(*,*) 'set affinity mappings'
+
+!if (track_DCvisits) then
+!    write(*,*) 'To track DC visits %DClist(:) must be allocated for cells'
+!    stop
+!endif
+call logger('did omp_initialisation')
+end subroutine
+
+
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
 subroutine setup(infile,ok)
@@ -282,6 +337,21 @@ ok = .true.
 inputfile = infile
 call read_inputfile(ok)
 if (.not.ok) return
+
+Mnodes = ncpu
+#if defined(OPENMP) || defined(_OPENMP)
+    call logger("OPENMP defined")
+    call omp_initialisation(ok)
+    if (.not.ok) return
+#else
+    call logger("OPENMP NOT defined")
+    if (Mnodes > 1) then
+        write(logmsg,'(a)') 'No OpenMP, using one thread only'
+        call logger(logmsg)
+        Mnodes = 1
+    endif
+#endif
+
 call rng_initialisation
 PI = 4*atan(1.0)
 call make_reldir
@@ -301,6 +371,7 @@ enddo
 occupancy(:,NBY+1,:)%region = LAYER
 allocate(surface(NX,NZ))
 surface%signal = 0
+!MAX_PIT_DEPTH = MAX_PIT_DEPTH/DELTA_X
 
 ! Create a test capillary
 ncap = 1
@@ -348,9 +419,9 @@ do icap = 1,ncap
 					! site (cube) midpoint to the capillary centreline location (xc,yc,zc)
 					if (x2+y2+z2 <= (capillary(icap)%radius)**2) then
 						occupancy(x,y,z)%region = BLOOD
-						if (k <= 10) then
-							write(nflog,'(4f6.1,3i4)') xc,yc,zc,sqrt(x2+y2+z2),x,y,z
-						endif
+!						if (k <= 10) then
+!							write(nflog,'(4f6.1,3i4)') xc,yc,zc,sqrt(x2+y2+z2),x,y,z
+!						endif
 					endif
 				enddo
 			enddo
@@ -393,6 +464,7 @@ NSTEM = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*STEM_PER_MM3	! domain as fraction of 1
 write(logmsg,*) 'NSTEM, NMONO_INITIAL: ',NSTEM,NMONO_INITIAL
 call logger(logmsg)
 nclast = 0
+nliveclast = 0
 nmono = 0
 nborn = 0
 nleft = 0
@@ -425,7 +497,7 @@ do while (i < NSTEM)
 enddo
 
 nclump = 0
-
+stuck = .false.
 !call setSignal(1,ON,ok)
 !if (.not.ok) return
 
@@ -439,8 +511,9 @@ integer :: x, z
 real :: x0, z0, c
 real :: a, b
 
-a = 10
-b = 5
+call logger('createPatch:')
+a = LACUNA_A
+b = LACUNA_B
 x0 = NX/2
 z0 = NZ/2
 nsignal = 0
@@ -455,7 +528,8 @@ do x = 1,NX
 			surface(x,z)%signal = (surface(x,z)%target_depth - surface(x,z)%depth)/MAX_PIT_DEPTH
 			nsignal = nsignal + 1
 			signal(nsignal)%site = (/ x,NBY,z /)
-!			if (x == NX/2) write(*,*) x,z,surface(x,z)%signal
+!			write(logmsg,'(2i5,f8.4)') x,z,surface(x,z)%target_depth
+!			call logger(logmsg)
 		endif
 	enddo
 enddo
@@ -464,18 +538,24 @@ end subroutine
 !------------------------------------------------------------------------------------------------
 ! Determine rates of resorption at the various sites (pits) under an osteoclast.
 ! Modified to use only lateral (x,y) distance.  Pit site now an offset from cm.
+! Note: cheating by setting rate = 0 when signal = 0
 !------------------------------------------------------------------------------------------------
 subroutine pitrates(pclast)
 type(osteoclast_type), pointer :: pclast
-integer :: ipit, site(3)
+integer :: ipit, site(3), x, z
 real :: d, v(3)
 
 do ipit = 1,pclast%npit
 	v = pclast%pit(ipit)%delta
-!	v = pclast%pit(ipit)%site - pclast%site +++
-	v(2) = 0
-	d = sqrt(dot_product(v,v))
-	pclast%pit(ipit)%rate = resorptionRate(pclast%count,d)
+	x = pclast%cm(1) + v(1) + 0.5
+	z = pclast%cm(3) + v(3) + 0.5
+	if (surface(x,z)%signal > 0) then
+		v(2) = 0
+		d = sqrt(dot_product(v,v))
+		pclast%pit(ipit)%rate = resorptionRate(pclast%count,d)
+	else
+		pclast%pit(ipit)%rate = 0
+	endif
 enddo
 end subroutine
 
@@ -656,7 +736,7 @@ do iclump = 1,nclump
 		if (on_surface) then
 !			write(logmsg,*) 'On surface: ',iclump,pclump%cm
 !			call logger(logmsg)
-			call make_osteoclast(pclump)
+			call createOsteoclast(pclump)
 		endif
 	endif
 enddo
@@ -739,10 +819,12 @@ end subroutine
 subroutine resorber(pclast)
 type(osteoclast_type), pointer :: pclast
 !type(occupancy_type), pointer :: pbone
-integer :: k, x, z, site(3)
+integer :: k, x, z, site(3), kk
 real :: totsig
 
-if (pclast%status /= RESORBING) then
+if (pclast%status == MOVING) then
+	return
+elseif (pclast%status /= RESORBING) then
 	site = pclast%cm + 0.5
 	totsig = TotalSignal(pclast,site)
 	if (totsig == 0) then
@@ -769,6 +851,24 @@ do k = 1,pclast%npit
 	z = pclast%cm(3) + pclast%pit(k)%delta(3) + 0.5
 	surface(x,z)%depth =  surface(x,z)%depth + pclast%pit(k)%rate*DELTA_T
 	surface(x,z)%signal = max(0.0,(surface(x,z)%target_depth - surface(x,z)%depth)/MAX_PIT_DEPTH)
+	if (surface(x,z)%depth > 1.1*surface(x,z)%target_depth) then
+		write(logmsg,*) 'target_depth exceeded: ',pclast%ID,k,x,z,surface(x,z)%depth,surface(x,z)%target_depth,surface(x,z)%signal
+		call logger(logmsg)
+!		do kk = 1,pclast%npit
+!			x = pclast%cm(1) + pclast%pit(kk)%delta(1) + 0.5
+!			z = pclast%cm(3) + pclast%pit(kk)%delta(3) + 0.5
+!			surface(x,z)%depth =  surface(x,z)%depth + pclast%pit(kk)%rate*DELTA_T
+!			surface(x,z)%signal = max(0.0,(surface(x,z)%target_depth - surface(x,z)%depth)/MAX_PIT_DEPTH)
+!			write(logmsg,'(3i4,3f8.3,f8.4)') kk,x,z,surface(x,z)%depth,surface(x,z)%target_depth,surface(x,z)%signal,pclast%pit(kk)%rate
+!			call logger(logmsg)
+!		enddo
+!		stop
+	endif
+	if (surface(x,z)%depth > 1.1*MAX_PIT_DEPTH) then
+		write(logmsg,*) 'MAX_PIT_DEPTH exceeded: ',x,z,surface(x,z)%depth,surface(x,z)%target_depth,surface(x,z)%signal
+		call logger(logmsg)
+		stop
+	endif
 enddo
 end subroutine
 
@@ -860,8 +960,11 @@ end subroutine
 
 !------------------------------------------------------------------------------------------------
 ! Change pit sites to relative displacements from osteoclast site
+! Need to redo the pits.  It makes more sense to:
+! (a) Make OCs circular
+! (b) 
 !------------------------------------------------------------------------------------------------
-subroutine make_osteoclast(pclump)
+subroutine createOsteoclast(pclump)
 type(clump_type), pointer :: pclump
 integer :: bonesite(3,100), i, j, npit, ocsite(3)
 logical :: inlist
@@ -872,7 +975,8 @@ integer :: kpar = 0
 
 tnow = istep*DELTA_T
 nclast = nclast + 1
-write(logmsg,*) 'make_osteoclast: ',nclast,tnow
+nliveclast = nliveclast + 1
+write(logmsg,*) 'createOsteoclast: ',nclast,tnow
 call logger(logmsg)
 pclast => clast(nclast)
 pclast%ID = nclast
@@ -894,7 +998,7 @@ do i = 1,pclump%ncells
 	if (mono(j)%site(2) == NBY+1) then	! site on the bone surface
 		npit = npit+1
 		bonesite(:,npit) = mono(j)%site
-!		write(*,*) 'make_osteoclast: pit: ',npit,bonesite(:,npit)
+!		write(*,*) 'createOsteoclast: pit: ',npit,bonesite(:,npit)
 	endif
 	pclast%mono(i) = j
 	mono(j)%iclast = nclast
@@ -967,6 +1071,7 @@ do k = 1,clast(i)%count
 	mono(kcell)%status = DEAD
 	occupancy(site(1),site(2),site(3))%indx = 0
 enddo
+nliveclast = nliveclast - 1
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -998,173 +1103,6 @@ do irel = 1,nreldir
 enddo
 v = v/cnt - site
 v = v/rnorm(v)
-end subroutine
-
-!--------------------------------------------------------------------------------
-!--------------------------------------------------------------------------------
-subroutine save_pos(ok)
-logical :: ok
-integer :: error
-character*(64) :: msg
-
-ok = .true.
-if (use_TCP) then
-	call save_cell_positions
-	msg = 'VTK'
-	clear_to_send = .false.
-    call winsock_send(awp_1,msg,len_trim(msg),error)
-    if (error /= 0) ok = .false.
-endif
-end subroutine
-
-!--------------------------------------------------------------------------------
-!--------------------------------------------------------------------------------
-subroutine save_cell_positions
-!!!use ifport
-integer :: k, kcell, iclast, site(3), j, nfused, x, y, z, status, mono_state, icap
-real :: tnow, t1, t2, fraction, ypit
-!integer :: itcstate, stype, ctype
-real :: clast_diam = 0.9
-real :: mono_diam = 0.5
-logical :: ex
-character*(12) :: fname = 'cell_pos.dat'
-character*(9) :: removefile = 'TO_REMOVE'
-
-tnow = istep*DELTA_T
-if (simulation_start) then
-	inquire(file=fname,exist=ex)
-	if (ex) then
-		call unlink(fname)
-	endif
-	inquire(file=removefile,exist=ex)
-	if (ex) then
-		call unlink(removefile)
-	endif
-endif
-simulation_start = .false.
-
-open(nfpos,file=fname,status='new')
-! Bone section
-write(nfpos,'(a2,4i6)') 'B ',NX,NY,NZ,NBY
-! Monocyte section
-if (nmono > 0) then
-	nfused = 0
-    do kcell = 1,nmono
-		status = mono(kcell)%status
-		if (status == DEAD .or. status == LEFT) cycle
-		if (mono(kcell)%region /= MARROW) cycle
-		if (status == CROSSING) then
-			mono_state = 1
-		elseif (status == FUSING) then
-			iclast = mono(kcell)%iclast
-			t1 = clast(iclast)%fusetime
-			t2 = clast(iclast)%entrytime
-			fraction = min(1.0,(tnow-t1)/(t2-t1))
-			mono_state = 2 + fraction*99
-		elseif (status == FUSED) then
-			mono_state = 101
-			nfused = nfused + 1
-		else
-            mono_state = 0
-		endif
-        site = mono(kcell)%site
-        if (.not.FAST_DISPLAY .or. mono_state /= 0) then
-!		if (status == FUSED) then
-	        write(nfpos,'(a2,i6,4i4)') 'M ',kcell-1, site, mono_state
-	    endif
-!        if (status == FUSING .or. status == FUSED) then
-!			write(nflog,*) istep, kcell, site, mono_state
-!		endif
-    enddo
-!    if (nfused > 0) then
-!	    write(logmsg,*) 'nfused: ',nfused
-!		call logger(logmsg)
-!	endif
-endif
-
-! Capillary section
-do icap = 1,ncap
-	write(nfpos,'(a,6f6.1,f5.2)') 'C ',capillary(icap)%pos1,capillary(icap)%pos2,capillary(icap)%radius + 0.25
-enddo
-
-! Pit section
-do x = 1,NX
-	do z = 1,NZ
-!		do y = 1,NBY
-!			if (occupancy(x,y,z)%region == PIT .or. &
-!			   (occupancy(x,y,z)%region == BONE .and. occupancy(x,y,z)%bone_fraction < 1.0)) then
-!			   ypit = y - 0.5 + occupancy(x,y,z)%bone_fraction
-!				write(nfpos,'(a,3i4,f7.3)') 'P ',x,y,z,ypit
-!				exit
-!			endif
-!		enddo
-		y = NBY
-		ypit = y - 0.5 - surface(x,z)%depth			! Is this OK?
-		write(nfpos,'(a,3i4,f7.3)') 'P ',x,y,z,ypit
-	enddo
-enddo
-
-! T cell section
-!do kcell = 1,nclast
-!	if (cellist(kcell)%ID == 0) cycle  ! gap
-!	site = cellist(kcell)%site
-!	bnd = cellist(kcell)%DCbound
-!	ctype = cellist(kcell)%ctype
-!	stype = struct_type(ctype)
-!	if (stype == NONCOG_TYPE_TAG) then
-!		itcstate = -1
-!	else
-!		gen = get_generation(cellist(kcell)%cptr)
-!		if (get_stage(cellist(kcell)%cptr) == NAIVE) then
-!			itcstate = 0
-!		else
-!			if (bnd(1) == 0 .and. bnd(2) == 0) then
-!				itcstate = gen
-!			else
-!				itcstate = 99
-!			endif
-!		endif
-!	endif
-!	! Need tcstate to convey non-activated status, i.e. 0 = non-activated
-!	write(nfpos,'(a2,i6,3i4,f4.1,i3)') 'T ',kcell-1, site, Tcell_diam, itcstate
-!enddo
-! Bond section
-!do kcell = 1,nlist
-!	if (cellist(kcell)%ID == 0) cycle  ! gap
-!	site = cellist(kcell)%site
-!	do j = 1,2
-!		idc = cellist(kcell)%DCbound(j)
-!		if (idc /= 0) then
-!			if (DClist(idc)%capable) then
-!				dcsite = DClist(idc)%site
-!				dcstate = 1
-!				write(nfpos,'(a2,2i5)') 'B ',kcell-1,idc-1
-!			endif
-!		endif
-!	enddo
-!enddo
-write(nfpos,'(a2,i6)') 'E ',istep
-close(nfpos)
-
-if (.not.clear_to_send) then
-	! wait until the file called removefile exists, then remove it
-	inquire(file=removefile,exist=ex)
-	if (.not.ex) then
-		call logger('wait')
-		do
-!			call logger('wait')
-			inquire(file=removefile,exist=ex)
-			if (.not.ex) then
-!				call sleeper(1)
-!				call millisleep(10) ! no good at all
-			else
-				exit
-			endif
-		enddo
-	endif
-	call unlink(removefile)
-	clear_to_send = .true.
-endif
 end subroutine
 
 !--------------------------------------------------------------------------------
@@ -1262,21 +1200,37 @@ enddo
 ncap_list = ncap
 
 ! Pit section
+y = NBY
 k = 0
 do x = 1,NX
 	do z = 1,NZ
-		do y = 1,NBY
-			if (occupancy(x,y,z)%region == PIT .or. &
-			   (occupancy(x,y,z)%region == BONE .and. occupancy(x,y,z)%bone_fraction < 1.0)) then
-			   ypit = y - 0.5 + occupancy(x,y,z)%bone_fraction
-			   k = k+1
-			   j = 4*(k-1)
-			   pit_list(j+1:j+3) = (/x,y,z/)
-			   pit_list(j+4) = ypit
+!		do y = 1,NBY
+!			if (occupancy(x,y,z)%region == PIT .or. &
+!			   (occupancy(x,y,z)%region == BONE .and. occupancy(x,y,z)%bone_fraction < 1.0)) then
+!			   ypit = y - 0.5 + occupancy(x,y,z)%bone_fraction
+!			   k = k+1
+!			   j = 4*(k-1)
+!			   pit_list(j+1:j+3) = (/x,y,z/)
+!			   pit_list(j+4) = ypit
 !				write(nfpos,'(a,3i4,f7.3)') 'P ',x,y,z,ypit
-				exit
+!				exit
+!			endif
+!		enddo
+
+!		if (surface(x,z)%depth > 0) then
+!			ypit = y + 0.5 - surface(x,z)%depth
+		if (surface(x,z)%target_depth > 0) then
+			if (surface(x,z)%signal == 0) then
+				ypit = 99
+			else
+				ypit = y + 0.5 - surface(x,z)%target_depth
 			endif
-		enddo
+			k = k+1
+			j = 4*(k-1)
+			pit_list(j+1:j+3) = (/x,y,z/)
+			pit_list(j+4) = ypit
+			write(nflog,'(a,3i4,f7.3)') 'P ',x,y,z,ypit
+		endif
 	enddo
 enddo
 npit_list = k
@@ -1582,16 +1536,11 @@ endif
 call updater
 !write(nflog,*) 'call mover: ',nmono
 call mover
-!if (nsignal > 0) then
-!	call checkSignals(ok)
-!	if (.not.ok) res = 1
-!endif
 if (mod(istep,NT_EVOLVE) == 0) then
 	call evolveRANKL(NT_EVOLVE,totsig)
 	if (totsig == 0 .and. nclump > 0) then
 		call break_clumps
 	endif
-	
 !	nliveOC = 0
 !	do ic = 1,nclast
 !		if (clast(ic)%status /= DEAD) then
@@ -1602,48 +1551,11 @@ if (mod(istep,NT_EVOLVE) == 0) then
 !		call logger("All osteoclasts are dead")
 !	endif
 endif
+if (nclast > 0 .and. nliveclast == 0) then
+	res = -1
+endif
 end subroutine
 
-
-!------------------------------------------------------------------------------------------------
-! This is the original version, using files to communicate signals and data with the Qt main.
-!------------------------------------------------------------------------------------------------
-subroutine simulate(ok)
-logical :: ok
-integer :: it, error, res
-
-istep = 0
-ok = .true.
-do it = 1,nsteps
-	inquire(file=stopfile,exist=stopped)
-	if (stopped) then
-		write(logmsg,'(a)') 'Stop order received'
-		call logger(logmsg)
-		return
-	endif
-	call check_pause
-	if (mod(istep,240) == 0) then
-		call snapshot
-!		write(logmsg,'(a,4i6)') 'istep: ',istep,mono_cnt,nmono,nleft
-!		call logger(logmsg)
-	endif
-	if (mod(istep,NT_GUI_OUT) == 0) then
-		call save_pos(ok)
-		if (.not.ok) return
-	endif
-	call simulate_step(res)
-	if (res /= 0) then
-		ok = .false.
-		return
-	endif
-!	call updater
-!	call mover
-!	if (nsignal > 0) then
-!		call checkSignals(ok)
-!		if (.not.ok) return
-!	endif
-enddo
-end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------

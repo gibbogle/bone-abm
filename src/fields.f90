@@ -158,6 +158,8 @@ real :: g(3), gamp, gmax
 !real, parameter :: Kdecay = 0.00001, Kdiffusion = 0.001
 
 write(logmsg,*) 'Initializing RANKL: KDECAY: ', RANKL_KDECAY
+!call formulate(RANKL_KDIFFUSION,RANKL_KDECAY)
+
 call logger(logmsg)
 allocate(RANKL_conc(NX,NY,NZ))
 allocate(RANKL_grad(3,NX,NY,NZ))
@@ -240,8 +242,8 @@ do isig = 1,nsignal
 	site = signal(isig)%site
 	sum = sum + RANKL_conc(site(1),NBY+1,site(3))
 enddo
-write(logmsg,*) 'Mean patch RANKL: ',sum/nsignal, totsig
-call logger(logmsg)
+!write(logmsg,*) 'Mean patch RANKL: ',sum/nsignal, totsig
+!call logger(logmsg)
 end subroutine
 
 !----------------------------------------------------------------------------------------
@@ -251,7 +253,7 @@ end subroutine
 !	Kdiffusion		diffusion coefficient (um^2.min^-1)
 !	Kdecay			decay coefficient (min^-1)
 !----------------------------------------------------------------------------------------
-subroutine steadystate(influx,Kdiffusion,Kdecay,C)
+subroutine steadystate1(influx,Kdiffusion,Kdecay,C)
 real :: influx(:,:,:), C(:,:,:)
 real :: Kdiffusion, Kdecay
 real :: dx2diff, total, maxchange, dC, sum, dV
@@ -314,6 +316,104 @@ do it = 1,nt
 	C = Ctemp
 enddo
 deallocate(Ctemp)
+
+end subroutine
+
+!----------------------------------------------------------------------------------------
+!----------------------------------------------------------------------------------------
+subroutine steadystate(influx,Kdiffusion,Kdecay,C)
+real :: influx(:,:,:), C(:,:,:)
+real :: Kdiffusion, Kdecay
+real :: dx2diff, total, maxchange, maxchange_par, total_par
+real, parameter :: alpha = 0.5
+real, parameter :: tol = 1.0e-6		! max change in C at any site as fraction of average C
+integer :: nc, nc_par, k, it, kpar, dz
+integer :: zlim(2,16), z1, z2, zfr, zto, n	! max 16 threads
+real, allocatable :: C_par(:,:,:)
+integer :: nt = 10000
+real, allocatable :: Ctemp(:,:,:)
+
+dz = NZ/Mnodes + 0.5
+do k = 1,Mnodes
+	zlim(1,k) = (k-1)*dz + 1
+	zlim(2,k) = k*dz
+enddo
+zlim(2,Mnodes) = NZ
+C = 0
+do it = 1,nt
+	maxchange = 0
+	total = 0
+	nc = 0
+	!$omp parallel do private(z1,z2,n,C_par,maxchange_par,total_par,nc_par)
+	do kpar = 0,Mnodes-1
+		z1 = zlim(1,kpar+1)
+		z2 = zlim(2,kpar+1)
+		n = z2 - z1 + 1
+		allocate(C_par(NX,NY,n))
+		call par_steadystate(C,Kdiffusion,Kdecay,C_par,influx,z1,z2,maxchange_par,total_par,nc_par,kpar)
+		C(:,:,z1:z2) = C_par(:,:,1:n)
+		deallocate(C_par)
+		nc = nc + nc_par
+		total = total + total_par
+		maxchange = max(maxchange,maxchange_par)
+	enddo
+	if (maxchange < tol*total/nc) then
+		write(logmsg,*) 'Convergence reached: it: ',it
+		call logger(logmsg)
+		exit
+	endif
+enddo
+end subroutine	
+
+!----------------------------------------------------------------------------------------
+! Note that the array Ctemp() is defined with z:z1-z2, i.e. with
+! a range of n = z2 - z1 + 1 values.  The read accesses of C() and influx() are shared 
+! in this version.  Does this have a big penalty?
+!----------------------------------------------------------------------------------------
+subroutine par_steadystate(C,Kdiffusion,Kdecay,Ctemp,influx,z1,z2,maxchange,total,nc,kpar)
+real :: C(:,:,:), Ctemp(:,:,:), influx(:,:,:)
+integer :: z1, z2, kpar
+real :: Kdiffusion, Kdecay
+real :: dx2diff, total, maxchange, dC, sum, dV
+real, parameter :: alpha = 0.7
+integer :: x, y, z, xx, yy, zz, nb, nc, k, zpar
+
+dx2diff = DELTA_X**2/Kdiffusion
+dV = DELTA_X**3
+
+maxchange = 0
+total = 0
+nc = 0
+do zpar = 1,z2-z1+1
+	z = zpar + z1-1
+	do y = NBY+1,NY
+		do x = 1,NX
+			if (influx(x,y,z) < 0) cycle
+			if (influx(x,y,z) > 0) then
+				dC = influx(x,y,z)*dx2diff
+			else
+				dC = 0
+			endif
+			sum = 0
+			nb = 0
+			do k = 1,6
+				xx = x + neumann(1,k)
+				yy = y + neumann(2,k)
+				zz = z + neumann(3,k)
+				if (outside(xx,yy,zz)) cycle
+				if (influx(xx,yy,zz) < 0) cycle
+				nb = nb + 1
+				sum = sum + C(xx,yy,zz)
+			enddo
+!			Ctemp(x,y,z) = alpha*(sum + dC)/(Kdecay*dx2diff + dC + nb) + (1-alpha)*C(x,y,z)
+			Ctemp(x,y,zpar) = alpha*(DELTA_X*Kdiffusion*sum + influx(x,y,z))/(Kdecay*dV + nb*DELTA_X*Kdiffusion) + (1-alpha)*C(x,y,z)
+			dC = abs(Ctemp(x,y,zpar) - C(x,y,z))
+			maxchange = max(dC,maxchange)
+			nc = nc + 1
+			total = total + Ctemp(x,y,zpar)
+		enddo
+	enddo
+enddo
 
 end subroutine
 
@@ -430,6 +530,116 @@ enddo
 C = Ctemp
 deallocate(Ctemp)
 
+end subroutine
+
+!----------------------------------------------------------------------------------------
+! To formulate algebraic system to solve for steady-state solution of diffusion equation
+! by finite differences.
+! The index of the vector entry corresponding to C at site (x,y,z) is precomputed as
+! vindex(x,y,z).  This is a positive integer for (x,y,z) a marrow site.
+! Otherwise (a site is in a capillary) it is 0.
+! 
+!----------------------------------------------------------------------------------------
+subroutine formulate(Kdiffusion,Kdecay)
+real :: Kdiffusion, Kdecay
+integer, allocatable :: vindex(:,:,:), influx(:,:,:)
+real, allocatable :: A(:,:), b(:), V(:)
+integer :: x, y, z, k, NV, xn, yn, zn, row, col, col0, offset(3)
+logical :: use_nbr(6)
+real :: Area, Vol
+
+Area = 1
+Vol = 1
+allocate(influx(NX,NY,NZ))
+allocate(vindex(NX,NY,NZ))
+k = 0
+do x = 1,NX
+	do y = NBY+1,NY
+		do z = 1,NZ
+			if (occupancy(x,y,z)%region /= MARROW) cycle
+			k = k+1
+			vindex(x,y,z) = k
+		enddo
+	enddo
+enddo
+NV = k
+write(*,*) 'NV: ',NV,4*NV*NV
+allocate(V(NV))
+allocate(A(NV,NV))
+allocate(b(NV))
+A = 0
+b = 0
+influx = 0
+y = NBY+1
+do x = 1,NX
+	do z = 1,NZ
+		influx(x,y,z) = RANK_BONE_RATIO*surface(x,z)%signal
+	enddo
+enddo
+row = 0
+do x = 1,NX
+	if (x > 1) then
+		use_nbr(1) = .true.
+	else
+		use_nbr(1) = .false.
+	endif
+	if (x < NX) then
+		use_nbr(2) = .true.
+	else
+		use_nbr(2) = .false.
+	endif
+	do y = NBY+1,NY
+		if (y > NBY+1) then
+			use_nbr(3) = .true.
+		else
+			use_nbr(3) = .false.
+		endif
+		if (y < NY) then
+			use_nbr(4) = .true.
+		else
+			use_nbr(4) = .false.
+		endif
+		do z = 1,NZ
+			if (z > 1) then
+				use_nbr(5) = .true.
+			else
+				use_nbr(5) = .false.
+			endif
+			if (z < NZ) then
+				use_nbr(6) = .true.
+			else
+				use_nbr(6) = .false.
+			endif
+			if (occupancy(x,y,z)%region /= MARROW) cycle
+			do k = 1,6
+				xn = x + neumann(1,k)
+				yn = y + neumann(2,k)
+				zn = z + neumann(3,k)
+				if (vindex(xn,yn,zn) == 0) then
+					use_nbr(k) = .false.
+				endif
+			enddo
+			row = row + 1
+			col0 = vindex(x,y,z)
+			A(row,col0) = A(row,col) + Kdecay*Vol
+			b(row) = influx(x,y,z)
+			do k = 1,6
+				if (use_nbr(k)) then
+					offset = neumann(:,k)
+					A(row,col0) = A(row,col0) + Kdiffusion*Area
+					col = vindex(x+offset(1),y+offset(2),z+offset(3))
+					if (col == 0) then
+						write(*,*) 'vindex offset error: ',x,y,z,use_nbr,offset
+						stop
+					endif
+					A(row,col) = A(row,col) - Kdiffusion*Area
+				endif
+			enddo
+		enddo
+	enddo
+enddo
+
+stop
 end subroutine
 			
 end module

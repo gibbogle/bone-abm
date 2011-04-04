@@ -1,4 +1,5 @@
 module global
+use omp_lib
 use defines
 use par_zig_mod
 use winsock
@@ -17,7 +18,6 @@ type(capillary_type), allocatable :: capillary(:)
 type(signal_type) :: signal(MAX_SIGNAL)
 
 logical :: diagonal_jumps, clear_to_send, simulation_start, stopped
-integer :: Mnodes = 1
 
 integer :: istep
 
@@ -55,9 +55,10 @@ real :: FUSING_TIME = 2*60				! mins
 real :: CLAST_LIFETIME = 96*60			! days -> mins
 !real :: CLAST_DWELL_TIME0 = 4*60		! mins
 real :: CLAST_DWELL_TIME = 3*60			! mins
-real :: MAX_RESORPTION_RATE = 0.02		! um/min
+real :: MAX_RESORPTION_RATE = 0.01		! um/min
 real :: MAX_RESORPTION_D = 10			! um
 integer :: MAX_RESORPTION_N = 30
+real :: MAX_PIT_DEPTH = 5				! grids (should be input parameter)
 
 ! Signal parameters (NOT USED)
 real :: SIGNAL_RADIUS					! radius of influence of bone signal (um -> grids) (10)
@@ -72,6 +73,7 @@ real :: cross_prob						! probability (/timestep) of monocyte egress to capillar
 real :: days							! number of days to simulate
 integer :: seed(2)						! seed vector(1) for the RNGs
 integer :: ncpu							! number of threads, not used currently
+integer :: Mnodes
 integer :: NT_GUI_OUT					! interval between GUI outputs (timesteps)
 integer :: SPECIES						! animal species (0=mouse, 1=human)
 
@@ -80,11 +82,12 @@ real :: DELTA_X, PI
 integer :: Nsteps
 integer :: NX,NY,NZ						! size of region
 integer :: NMONO_INITIAL, NSTEM
-integer :: nmono, mono_cnt, nsignal, nclast, nborn, nleft, ncap, nentrysites, nclump
+integer :: nmono, mono_cnt, nsignal, nclast, nborn, nleft, ncap, nentrysites, nclump, nliveclast
 integer, allocatable :: entrysite(:,:)
 type(clump_type), target :: clump(MAX_NCLUMP)
 real :: RANKSIGNAL_decayrate			! from RANKSIGNAL_halflife
 real :: RANKL_KDECAY					! from RANKL_HALFLIFE
+logical :: stuck
 
 contains
 

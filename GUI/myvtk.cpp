@@ -410,7 +410,7 @@ void MyVTK::get_cell_positions(bool fast)
 		MCpos_list.append(cp);
 		if (cp.tag > maxtag) maxtag = cp.tag;
 	}
-//	sprintf(msg,"maxtag: %d",maxtag);
+//	sprintf(msg,"npit_list: %d",npit_list);
 //	LOG_MSG(msg);
 	for (int i=0; i<npit_list; i++) {
 		int j = 4*i;
@@ -771,10 +771,15 @@ void MyVTK::process_tiles()
 		int idx = (x-1)*NZ + z-1;
 //		points->SetPoint(idx, pos[0], pos[1], pos[2]); // set point idx to (x,y,z)
 //		points->GetData();
-		int redval = 255 - (NBY + 0.5 - ypit)*100;
-		if (redval < 0) redval = 0;
-		col[1] = 0; col[2] = 0; col[0] = (unsigned char)redval;
-		colors->SetTupleValue(idx, col);
+		if (ypit == 99) {
+			col[1] = 255; col[2] = 255; col[0] = 255;
+			colors->SetTupleValue(idx, col);
+		} else {
+			int redval = 255 - (NBY + 0.5 - ypit)*50;
+			if (redval < 0) redval = 0;
+			col[1] = 0; col[2] = 0; col[0] = (unsigned char)redval;
+			colors->SetTupleValue(idx, col);
+		}
 		glypher->Modified(); // tell glypher that the data has changed
 	}
 	return;
