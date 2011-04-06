@@ -17,6 +17,7 @@ use, intrinsic :: ISO_C_binding
 use global
 use fields
 use motion
+use omp_lib
 
 implicit none 
 save
@@ -198,7 +199,7 @@ do x = x1,x2
 !				.and. p%region == MARROW .and. p%indx /= 0) then
 			if (p%region == MARROW .and. p%indx /= 0) then
 				cnt = cnt+1
-				pclast%mono(cnt) = p%indx
+!				pclast%mono(cnt) = p%indx
 				mono(p%indx)%iclast = nclast
 				mono(p%indx)%status = FUSING
 				mono(p%indx)%exittime = pclast%entrytime
@@ -547,12 +548,12 @@ real :: d, v(3)
 
 do ipit = 1,pclast%npit
 	v = pclast%pit(ipit)%delta
-	x = pclast%cm(1) + v(1) + 0.5
-	z = pclast%cm(3) + v(3) + 0.5
+	x = pclast%site(1) + v(1)
+	z = pclast%site(3) + v(3)
 	if (surface(x,z)%signal > 0) then
-		v(2) = 0
-		d = sqrt(dot_product(v,v))
-		pclast%pit(ipit)%rate = resorptionRate(pclast%count,d)
+!		v(2) = 0
+!		d = sqrt(dot_product(v,v))
+		pclast%pit(ipit)%rate = pclast%pit(ipit)%fraction*resorptionRate(pclast%count)
 	else
 		pclast%pit(ipit)%rate = 0
 	endif
@@ -825,7 +826,7 @@ real :: totsig
 if (pclast%status == MOVING) then
 	return
 elseif (pclast%status /= RESORBING) then
-	site = pclast%cm + 0.5
+	site = pclast%site
 	totsig = TotalSignal(pclast,site)
 	if (totsig == 0) then
 		return
@@ -847,8 +848,8 @@ do k = 1,pclast%npit
 !			endif
 !		endif
 !	endif
-	x = pclast%cm(1) + pclast%pit(k)%delta(1) + 0.5
-	z = pclast%cm(3) + pclast%pit(k)%delta(3) + 0.5
+	x = pclast%site(1) + pclast%pit(k)%delta(1)
+	z = pclast%site(3) + pclast%pit(k)%delta(3)
 	surface(x,z)%depth =  surface(x,z)%depth + pclast%pit(k)%rate*DELTA_T
 	surface(x,z)%signal = max(0.0,(surface(x,z)%target_depth - surface(x,z)%depth)/MAX_PIT_DEPTH)
 	if (surface(x,z)%depth > 1.1*surface(x,z)%target_depth) then
@@ -953,18 +954,79 @@ call logger(logmsg)
 clast(iclast)%status = ALIVE
 clast(iclast)%movetime = tnow + CLAST_DWELL_TIME 
 clast(iclast)%dietime = tnow + clastLifetime()
-do i = 1,clast(iclast)%count
-	mono(clast(iclast)%mono(i))%status = FUSED
-enddo
+!do i = 1,clast(iclast)%count
+!	mono(clast(iclast)%mono(i))%status = FUSED
+!enddo
 end subroutine
 
 !------------------------------------------------------------------------------------------------
 ! Change pit sites to relative displacements from osteoclast site
 ! Need to redo the pits.  It makes more sense to:
 ! (a) Make OCs circular
-! (b) 
+! (b) Precompute the dissolving rate factor as a function of distance from the OC centre,
+!     and accounting for partial coverage of a grid site.  A site is included if the 
+!     centre is within the radius.
 !------------------------------------------------------------------------------------------------
 subroutine createOsteoclast(pclump)
+type(clump_type), pointer :: pclump
+integer :: bonesite(3,100), i, j, n, npit, dx, dz
+type(osteoclast_type), pointer :: pclast
+real :: tnow, r, fract(100)
+integer :: kpar = 0
+
+tnow = istep*DELTA_T
+nclast = nclast + 1
+nliveclast = nliveclast + 1
+write(logmsg,*) 'createOsteoclast: ',nclast,tnow
+call logger(logmsg)
+pclast => clast(nclast)
+pclast%ID = nclast
+pclast%site = pclump%cm + 0.5
+pclast%site(2) = NBY + 1
+pclast%lastdir = random_int(1,8,kpar)
+pclast%entrytime = tnow
+pclast%status = ALIVE
+pclast%movetime = tnow + CLAST_DWELL_TIME 
+pclast%dietime = tnow + clastLifetime()
+pclast%count = pclump%ncells
+do i = 1,pclump%ncells
+	j = pclump%list(i)
+	mono(j)%iclast = nclast
+	mono(j)%status = OSTEO
+enddo
+! Now need to create the pit list
+pclast%radius = clast_size(pclast%count)
+n = pclast%radius + 1
+npit = 0
+do dx = -n,n
+	do dz = -n,n
+		r = sqrt(real(dx*dx + dz*dz))
+		if (r < pclast%radius) then
+			npit = npit + 1
+			bonesite(:,npit) = pclast%site + (/dx,0,dz/)
+			fract(npit) = 1 - (1-0.5)*r/pclast%radius
+			if (r > pclast%radius - 0.5) then
+				fract(npit) = fract(npit)*(pclast%radius + 0.5 - r)
+			endif
+		endif
+	enddo
+enddo
+pclast%npit = npit
+allocate(pclast%pit(npit))
+! Make pit location an offset from the centre, set dissolving rate fraction
+do i = 1,npit
+	pclast%pit(i)%delta = bonesite(:,i) - pclast%site
+	pclast%pit(i)%fraction = fract(i)
+enddo
+pclump%status = DEAD
+call pitrates(pclast)
+write(logmsg,'(a,3f6.1,2i4)') 'clast site, count, npit: ',pclast%site,pclast%count,pclast%npit
+call logger(logmsg)
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+subroutine createOsteoclast1(pclump)
 type(clump_type), pointer :: pclump
 integer :: bonesite(3,100), i, j, npit, ocsite(3)
 logical :: inlist
@@ -1000,7 +1062,7 @@ do i = 1,pclump%ncells
 		bonesite(:,npit) = mono(j)%site
 !		write(*,*) 'createOsteoclast: pit: ',npit,bonesite(:,npit)
 	endif
-	pclast%mono(i) = j
+!	pclast%mono(i) = j
 	mono(j)%iclast = nclast
 	mono(j)%status = OSTEO
 enddo
@@ -1031,18 +1093,19 @@ end subroutine
 ! The nominal maximum rate, MAX_RESORPTION_RATE, is scaled by the distance factor and
 ! by the monocyte count (relative to a nominal max MAX_RESORPTION_N).
 ! MAX_RESORPTION_RATE is in um/min, it is converted into grids/min by /DELTA_X
+! Note: removed d dependence, now use fraction
 !------------------------------------------------------------------------------------------------
-real function resorptionRate(n,d)
+real function resorptionRate(n)
 integer :: n
-real :: d
+!real :: d
 real :: df
 
-if (d >= MAX_RESORPTION_D) then
-	df = 0
-else
-	df = 1 - d/MAX_RESORPTION_D
-endif
-resorptionRate = MAX_RESORPTION_RATE*(real(n)/MAX_RESORPTION_N)*df
+!if (d >= MAX_RESORPTION_D) then
+!	df = 0
+!else
+!	df = 1 - d/MAX_RESORPTION_D
+!endif
+resorptionRate = MAX_RESORPTION_RATE*(real(n)/MAX_RESORPTION_N)
 end function
 
 !------------------------------------------------------------------------------------------------
@@ -1063,14 +1126,12 @@ write(logmsg,*) 'clast death: ',i
 call logger(logmsg)
 clast(i)%status = DEAD
 deallocate(clast(i)%pit)
-do k = 1,clast(i)%count
-	kcell = clast(i)%mono(k)
-	site = mono(kcell)%site
-!	write(logmsg,*) 'Mono dies: ',kcell,site
-!	call logger(logmsg)
-	mono(kcell)%status = DEAD
-	occupancy(site(1),site(2),site(3))%indx = 0
-enddo
+!do k = 1,clast(i)%count
+!	kcell = clast(i)%mono(k)
+!	site = mono(kcell)%site
+!	mono(kcell)%status = DEAD
+!	occupancy(site(1),site(2),site(3))%indx = 0
+!enddo
 nliveclast = nliveclast - 1
 end subroutine
 
@@ -1229,7 +1290,7 @@ do x = 1,NX
 			j = 4*(k-1)
 			pit_list(j+1:j+3) = (/x,y,z/)
 			pit_list(j+4) = ypit
-			write(nflog,'(a,3i4,f7.3)') 'P ',x,y,z,ypit
+!			write(nflog,'(a,3i4,f7.3)') 'P ',x,y,z,ypit
 		endif
 	enddo
 enddo
@@ -1241,10 +1302,10 @@ do iclast = 1,nclast
 	pclast => clast(iclast)
 	if (pclast%status == DEAD) cycle
 	k = k+1
-	size = clast_size(pclast)
+	size = pclast%radius
 	j = 7*(k-1)
-	clast_list(j+1:j+3) = pclast%cm
-!	clast_list(j+2) = clast_list(j+2) - 0.5
+	clast_list(j+1:j+3) = pclast%site
+	clast_list(j+2) = clast_list(j+2) - 0.5
 !	clast_list(j+4:j+6) = (/1,0,0/)		! direction unit vector
 	lastjump = dir2D(:,pclast%lastdir)
 	clast_list(j+4:j+6) = lastjump/sqrt(dot_product(lastjump,lastjump))

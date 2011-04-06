@@ -95,7 +95,7 @@ real, parameter :: RANKL_KDIFFUSION = 2		! 1/10 of approx 1000 um^2/min
 real, parameter :: RANKL_HALFLIFE = 12*60
 real, parameter :: RANKSIGNAL_rateconstant = 1.0
 real, parameter :: RANKSIGNAL_halflife = 6*60		! mins
-real, parameter :: RANK_BONE_RATIO = 0.4			! ratio of RANKL secretion to bone signal strength.
+real, parameter :: RANK_BONE_RATIO = 0.2			! ratio of RANKL secretion to bone signal strength.
 real, parameter :: ST1 = 0.3	! -> CHEMOTACTIC
 real, parameter :: ST2 = 0.5	! -> STICKY
 
@@ -118,13 +118,6 @@ real, parameter :: LACUNA_B = 10
 real, parameter :: OC_SIGNAL_SENSING_RANGE = 20	! grids
 real, parameter :: Kattraction = 4
 
-type pit_type
-!	logical :: active
-!	integer :: site(3)
-	integer :: delta(3)
-	real :: rate
-!	real :: fraction
-end type
 
 type monocyte_type
     integer :: ID
@@ -155,10 +148,18 @@ type osteoblast_type
     real :: dietime             ! time cell will die
 end type
 
+type pit_type
+!	logical :: active
+!	integer :: site(3)
+	integer :: delta(3)
+	real :: rate
+	real :: fraction
+end type
+
 type osteoclast_type
     integer :: ID
-!    integer :: site(3)
-    real :: cm(3)
+    integer :: site(3)
+    real :: cm(3), radius
 	real :: normal(3)
     integer(2) :: status
     integer(2) :: lastdir
@@ -168,7 +169,7 @@ type osteoclast_type
     real :: blocktime			! time that the cell became blocked
     real :: dietime             ! time cell will die
 	integer :: count
-	integer :: mono(100)
+!	integer :: mono(100)
 	integer :: targetsite(3)
 	integer :: npit
 	type(pit_type), allocatable :: pit(:)
