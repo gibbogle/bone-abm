@@ -49,7 +49,7 @@ res = 0
 site = pclast%cm + 0.5
 totsig(0) = TotalSignal(pclast,site)
 nsig = 0
-size0 = clast_size(pclast)
+size0 = pclast%radius
 if (dbug) write(*,'(a,i4,4f8.1)') 'move_clast: ',pclast%ID,pclast%cm,size0
 pmax = 0
 do kdir = 1,8
@@ -85,7 +85,7 @@ do kdir = 1,8
 		pclast1 => clast(iclast)
 		if (associated(pclast,pclast1)) cycle
 		if (pclast1%status == DEAD) cycle
-		size1 = clast_size(pclast1)
+		size1 = pclast1%radius
 		v = pclast1%cm - pclast%cm
 		d = sqrt(dot_product(v,v))
 		if (d < (size0 + size1)) then	! we don't want to move in the direction of v
@@ -220,14 +220,14 @@ write(*,*) 'clast moves: kdir: ',pclast%ID,kdir,jump
 !pclast%site = pclast%site + jump
 pclast%cm = pclast%cm + jump
 pclast%lastdir = kdir
-do i = 1,pclast%count
-	imono = pclast%mono(i)
-	site = mono(imono)%site
-	occupancy(site(1),site(2),site(3))%indx = 0
-	site = site + jump
-	mono(imono)%site = site
-	occupancy(site(1),site(2),site(3))%indx = imono
-enddo
+!do i = 1,pclast%count
+!	imono = pclast%mono(i)
+!	site = mono(imono)%site
+!	occupancy(site(1),site(2),site(3))%indx = 0
+!	site = site + jump
+!	mono(imono)%site = site
+!	occupancy(site(1),site(2),site(3))%indx = imono
+!enddo
 res = abs(res)
 end subroutine
 
@@ -263,7 +263,7 @@ do k = 1,pclast%npit
 	do iclast = 1,nclast
 		if (clast(iclast)%ID == pclast%ID) cycle
 		if (clast(iclast)%status /= RESORBING) cycle
-		site1 = clast(iclast)%cm + 0.5		! site of another resorbing OC
+		site1 = clast(iclast)%site		! site of another resorbing OC
 		do k1 = 1,clast(iclast)%npit
 			x1 = site1(1) + clast(iclast)%pit(k1)%delta(1)
 			z1 = site1(3) + clast(iclast)%pit(k1)%delta(3)
@@ -327,7 +327,7 @@ res = 0
 ! at a distance approx equal to the long axis dimension of the osteoclast, i.e.
 ! sqrt(count).
 
-ocsite = pclast%cm + 0.5
+ocsite = pclast%site
 if (pclast%status == MOVING) then	! special case, OC moving fast, possibly over other cells
 	targetsite = pclast%targetsite
 	if (ocsite(1) == targetsite(1) .and. ocsite(3) == targetsite(3)) then	! OC has reached the target site
@@ -357,7 +357,7 @@ endif
 
 totsig(0) = TotalSignal(pclast,ocsite)
 nsig = 0
-size0 = clast_size(pclast)
+size0 = pclast%radius
 !if (dbug) write(*,'(a,i4,4f8.1)') 'move_clast: ',pclast%ID,pclast%cm,size0
 do kdir = 1,8
 	jump = dir2D(:,kdir)
@@ -378,8 +378,8 @@ do kdir = 1,8
 		pclast1 => clast(iclast)
 		if (pclast%ID == pclast1%ID) cycle
 		if (pclast1%status == DEAD) cycle
-		size1 = clast_size(pclast1)
-		v = pclast1%cm - pclast%cm
+		size1 = pclast1%radius
+		v = pclast1%site - pclast%site
 		d = sqrt(dot_product(v,v))
 		if (d < (size0 + size1)) then	! we don't want to move in the direction of v
 			proj = dot_product(v,real(jump))
@@ -554,7 +554,7 @@ integer :: targetsite(3)
 integer :: ocsite0(3), ocsite1(3), x, z
 real :: v(3), d, sig, amp, amax
 
-ocsite0 = pclast%cm + 0.5
+ocsite0 = pclast%site
 targetsite = 0
 amax = 0
 do x = 1,NX
@@ -591,16 +591,16 @@ if (pclast%ID == 1) then
 	write(logmsg,'(a,5i4)') 'clast moves: kdir: ',pclast%ID,kdir,jump
 	call logger(logmsg)
 endif
-pclast%cm = pclast%cm + jump
+pclast%site = pclast%site + jump
 pclast%lastdir = kdir
-do i = 1,pclast%count
-	imono = pclast%mono(i)
-	site = mono(imono)%site
-	occupancy(site(1),site(2),site(3))%indx = 0
-	site = site + jump
-	mono(imono)%site = site
-	occupancy(site(1),site(2),site(3))%indx = imono
-enddo
+!do i = 1,pclast%count
+!	imono = pclast%mono(i)
+!	site = mono(imono)%site
+!	occupancy(site(1),site(2),site(3))%indx = 0
+!	site = site + jump
+!	mono(imono)%site = site
+!	occupancy(site(1),site(2),site(3))%indx = imono
+!enddo
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -1637,10 +1637,9 @@ end subroutine
 
 !---------------------------------------------------------------------
 !---------------------------------------------------------------------
-real function clast_size(pclast)
-type(osteoclast_type), pointer :: pclast
-
-clast_size = CLAST_RADIUS_FACTOR*sqrt(real(pclast%count))
+real function clast_size(count)
+integer :: count
+clast_size = CLAST_RADIUS_FACTOR*sqrt(real(count))
 end function
 
 !---------------------------------------------------------------------

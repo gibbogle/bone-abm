@@ -293,8 +293,8 @@ MyVTK::~MyVTK()
 //-----------------------------------------------------------------------------------------
 // The ellipsoidal surface of the osteoclast is defined by three parameters.
 //	a = length in the x direction
-//	b = width in the z direction
-//	c = height in the y direction
+//	b = height in the y direction
+//	c = width in the z direction
 // The equation for the surface is:
 //	x^2/a^2 + y^2/b^2 + z^2/c^2 = 1
 // To discretize:
@@ -309,7 +309,7 @@ void MyVTK::makeEllipsoid()
 	static const int M = 6;	// number of divisions of a segment
 	double a = 1.0;
 	double b = 0.2;
-	double c = 0.7;
+	double c = 1.0;
 	int pt_id[4*N+1][M+1];
 	double beta[M+1];	// this is the fractional distance along the slice to a node
 	int i, islice, id;
