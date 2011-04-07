@@ -45,6 +45,7 @@ integer, parameter :: neumann(3,6) = reshape((/ -1,0,0, 1,0,0, 0,-1,0, 0,1,0, 0,
 integer, parameter :: NBY = 8
 integer, parameter :: MAX_MONO = 50000
 integer, parameter :: MAX_CLAST = 100
+integer, parameter :: MAX_BLAST = 200
 integer, parameter :: MAX_CAP = 100
 integer, parameter :: MAX_SIGNAL = 10000
 integer, parameter :: MAX_NCLUMP = 50
@@ -95,13 +96,13 @@ real, parameter :: RANKL_KDIFFUSION = 2		! 1/10 of approx 1000 um^2/min
 real, parameter :: RANKL_HALFLIFE = 12*60
 real, parameter :: RANKSIGNAL_rateconstant = 1.0
 real, parameter :: RANKSIGNAL_halflife = 6*60		! mins
-real, parameter :: RANK_BONE_RATIO = 0.2			! ratio of RANKL secretion to bone signal strength.
+real, parameter :: RANK_BONE_RATIO = 0.3			! ratio of RANKL secretion to bone signal strength.
 real, parameter :: ST1 = 0.3	! -> CHEMOTACTIC
 real, parameter :: ST2 = 0.5	! -> STICKY
 
 logical, parameter :: RANKL_chemotaxis = .true.
-real, parameter :: RANKL_CHEMOLEVEL = 0.1
-real, parameter :: RANKL_GRADLIM = 0.0005
+real, parameter :: RANKL_CHEMOLEVEL = 0.3
+!real, parameter :: RANKL_GRADLIM = 0.0005
 
 ! Clump parameters
 integer, parameter :: CLUMP_THRESHOLD = 25
@@ -115,9 +116,11 @@ real, parameter :: CLAST_RADIUS_FACTOR = 0.5	! relates OC radius to the sqrt of 
 ! Pit parameters
 real, parameter :: LACUNA_A = 20		! Parameters of the elliptical region to be excavated
 real, parameter :: LACUNA_B = 10
+real, parameter :: MAX_PIT_DEPTH = 3	! grids (should be input parameter)
 real, parameter :: OC_SIGNAL_SENSING_RANGE = 20	! grids
 real, parameter :: Kattraction = 4
-
+! Osteoblast parameters
+real, parameter :: BLAST_PER_UM3 = 7.0e-6
 
 type monocyte_type
     integer :: ID
@@ -208,6 +211,7 @@ type surface_type
 	real :: target_depth	! desired excavation depth (units of grids)
 	real :: signal			! current bone signal strength
 	real :: depth			! current excavation depth (units of grids)
+	integer :: iclast
 end type
 
 type signal_type
@@ -233,6 +237,12 @@ type clump_type
 	real :: starttime
 	real :: fusetime
 	real :: cm(3)
+end type
+
+type patch_type
+	integer :: x0, z0
+	real :: a, b
+	real :: volume
 end type
 
 end module

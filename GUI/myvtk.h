@@ -95,6 +95,12 @@ struct clast_pos {
 };
 typedef clast_pos CLAST_POS;
 
+struct blast_pos {
+	double pos[3];
+	int state;
+};
+typedef blast_pos BLAST_POS;
+
 class MyVTK
 {
 public:
@@ -117,6 +123,7 @@ public:
 	void oldcreateTileList();
 	void createTileList();
 	void process_osteoclasts();
+	void process_osteoblasts();
 	int inTileList(SURFACE_TILE *tile);
 	bool startPlayer(QString, QTimer *, bool);
 	bool nextFrame();
@@ -133,6 +140,7 @@ public:
 	QList<CAPILLARY_SEGMENT> capillary_list;
 	QList<PIT_POS > pitpos_list;
 	QList<CLAST_POS > clastpos_list;
+	QList<BLAST_POS > blastpos_list;
 	QList<SURFACE_TILE> tile_list;
 	QList<VERT_TILE> verttile_list;
 	QList<vtkActor *> M_Actor_list;
@@ -141,6 +149,7 @@ public:
 	QList<vtkActor *> B_Actor_list;
 	QList<vtkActor *> C_Actor_list;
 	QList<vtkActor *> OC_Actor_list;
+	QList<vtkActor *> OB_Actor_list;
 	QList<vtkActor *> Tile_Actor_list;
 
 	BONE **bone_array;
@@ -157,6 +166,7 @@ public:
 	vtkPolyDataMapper *cylMapper;
 	vtkPolyDataMapper *tileMapper;
 	vtkPolyDataMapper *clastMapper;
+	vtkPolyDataMapper *blastMapper;
 	vtkPolyDataMapper *textMapper;
 
 	vtkSmartPointer<vtkPolyData> polygonPolyData;
