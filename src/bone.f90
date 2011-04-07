@@ -453,25 +453,32 @@ entrysite(:,1:na) = templist(:,1:na)
 deallocate(templist)
 nentrysites = na
 
-RANKSIGNAL_decayrate = log(2.0)/(RANKSIGNAL_HALFLIFE)    ! rate/min
-RANKL_KDECAY = log(2.0)/(RANKL_HALFLIFE)    ! rate/min
-
-call createPatch
-call init_fields
+call CreatePatch
 
 NMONO_INITIAL = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*MONO_PER_MM3	! domain as fraction of 1 mm3 x rate of monocytes
 !NSTEM = (PI*NX*CAPILLARY_DIAMETER*DELTA_X**2/1.0e6)*STEM_PER_MM2	! capillary surface area as fraction of 1 mm2 x rate of stem cells
 NSTEM = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*STEM_PER_MM3	! domain as fraction of 1 mm3 x rate of monocytes
-write(logmsg,*) 'NSTEM, NMONO_INITIAL: ',NSTEM,NMONO_INITIAL
+NBLAST_INITIAL = (patch%volume*DELTA_X**3)*BLAST_PER_UM3
+!write(*,*) 'Lacuna volume: ',patch%volume,NBLAST_INITIAL
+!write(logmsg,*) 'NSTEM, NMONO_INITIAL: ',NSTEM,NMONO_INITIAL
 call logger(logmsg)
+
+allocate(mono(MAX_MONO))
+allocate(clast(MAX_CLAST))
+allocate(blast(MAX_BLAST))
+call InitialBlastPlacement
+
+RANKSIGNAL_decayrate = log(2.0)/(RANKSIGNAL_HALFLIFE)    ! rate/min
+RANKL_KDECAY = log(2.0)/(RANKL_HALFLIFE)    ! rate/min
+call init_fields
+call logger('Did init_fields')
+
 nclast = 0
 nliveclast = 0
 nmono = 0
 nborn = 0
 nleft = 0
 mono_cnt = 0
-allocate(mono(MAX_MONO))
-allocate(clast(MAX_CLAST))
 do while (nmono < NMONO_INITIAL)
 	x = random_int(1,NX,kpar)
 	y = random_int(NBY+1,NY,kpar)
@@ -506,24 +513,26 @@ end subroutine
 
 !------------------------------------------------------------------------------------------------
 ! An elliptical patch of bone surface is identified by osteocyte-generated bone signal.
+! Returns the total volume (in grid cells) of the expected lacuna. 
 !------------------------------------------------------------------------------------------------
-subroutine createPatch
+subroutine CreatePatch
+real :: vol
 integer :: x, z
-real :: x0, z0, c
-real :: a, b
+real :: c
 
-call logger('createPatch:')
-a = LACUNA_A
-b = LACUNA_B
-x0 = NX/2
-z0 = NZ/2
+call logger('CreatePatch:')
+patch%a = LACUNA_A
+patch%b = LACUNA_B
+patch%x0 = NX/2
+patch%z0 = NZ/2
 nsignal = 0
+vol = 0
 do x = 1,NX
 	do z = 1,NZ
 		surface(x,z)%signal = 0
 		surface(x,z)%depth = 0
 		surface(x,z)%target_depth = 0
-		c = ((x-x0)/a)**2 + ((z-z0)/b)**2
+		c = ((x-patch%x0)/patch%a)**2 + ((z-patch%z0)/patch%b)**2
 		if (c < 1) then
 			surface(x,z)%target_depth = (1 - c)*MAX_PIT_DEPTH
 			surface(x,z)%signal = (surface(x,z)%target_depth - surface(x,z)%depth)/MAX_PIT_DEPTH
@@ -531,9 +540,73 @@ do x = 1,NX
 			signal(nsignal)%site = (/ x,NBY,z /)
 !			write(logmsg,'(2i5,f8.4)') x,z,surface(x,z)%target_depth
 !			call logger(logmsg)
+			vol = vol + surface(x,z)%target_depth
 		endif
 	enddo
 enddo
+patch%volume = vol
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+! The initial placement of OBs is determined by: 
+!  attraction to signal, 
+!  mutual repulsion,
+!  randomness.
+!------------------------------------------------------------------------------------------------
+subroutine InitialBlastPlacement
+integer :: xmin, xmax, zmin, zmax, x, z, ib, site(3)
+real(8) :: R
+real :: sig, d2, dfactor, prob, prob0 = 0.1
+integer :: kpar=0
+real :: d2min = 15
+
+xmin = patch%x0 - patch%a
+xmax = patch%x0 + patch%a
+zmin = patch%z0 - patch%b
+zmax = patch%z0 + patch%b
+nblast = 0
+do
+	R = par_uni(kpar)
+	x = xmin + R*(xmax-xmin) + 0.5
+	R = par_uni(kpar)
+	z = zmin + R*(zmax-zmin) + 0.5
+	sig = surface(x,z)%signal
+	if (sig == 0) cycle
+	dfactor = 0
+	do ib = 1,nblast
+		d2 = (x-blast(ib)%site(1))**2 + (z-blast(ib)%site(3))**2
+		if (d2 == 0) then
+			dfactor = 1.0
+			exit
+		else
+			dfactor = dfactor + d2min/d2
+		endif
+	enddo
+	if (dfactor >= 1) cycle
+	prob = prob0*sig*(1-dfactor)
+	R = par_uni(kpar)
+	if (R < prob) then
+		site = (/ x, NBY+1, z /)
+		call CreateOsteoblast(site)
+		if (nblast == NBLAST_INITIAL) exit
+	endif
+enddo
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+subroutine CreateOsteoblast(site)
+integer :: site(3)
+
+nblast = nblast + 1
+if (nblast > MAX_BLAST) then
+	call logger('CreateOsteoblast: array dimension exceeded')
+	stop
+endif
+blast(nblast)%ID = nblast
+blast(nblast)%status = ALIVE
+blast(nblast)%site = site
+!write(*,*) 'blast: ',nblast,blast(nblast)%site
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -553,7 +626,7 @@ do ipit = 1,pclast%npit
 	if (surface(x,z)%signal > 0) then
 !		v(2) = 0
 !		d = sqrt(dot_product(v,v))
-		pclast%pit(ipit)%rate = pclast%pit(ipit)%fraction*resorptionRate(pclast%count)
+		pclast%pit(ipit)%rate = pclast%pit(ipit)%fraction*resorptionRate(pclast%count,pclast%npit)
 	else
 		pclast%pit(ipit)%rate = 0
 	endif
@@ -971,7 +1044,7 @@ subroutine createOsteoclast(pclump)
 type(clump_type), pointer :: pclump
 integer :: bonesite(3,100), i, j, n, npit, dx, dz
 type(osteoclast_type), pointer :: pclast
-real :: tnow, r, fract(100)
+real :: tnow, r, fract(100), fsum
 integer :: kpar = 0
 
 tnow = istep*DELTA_T
@@ -998,6 +1071,7 @@ enddo
 pclast%radius = clast_size(pclast%count)
 n = pclast%radius + 1
 npit = 0
+fsum = 0
 do dx = -n,n
 	do dz = -n,n
 		r = sqrt(real(dx*dx + dz*dz))
@@ -1008,6 +1082,7 @@ do dx = -n,n
 			if (r > pclast%radius - 0.5) then
 				fract(npit) = fract(npit)*(pclast%radius + 0.5 - r)
 			endif
+			fsum = fsum + fract(npit)
 		endif
 	enddo
 enddo
@@ -1016,12 +1091,13 @@ allocate(pclast%pit(npit))
 ! Make pit location an offset from the centre, set dissolving rate fraction
 do i = 1,npit
 	pclast%pit(i)%delta = bonesite(:,i) - pclast%site
-	pclast%pit(i)%fraction = fract(i)
+	pclast%pit(i)%fraction = fract(i)*(npit/fsum)		! normalize %fraction to sum to npit
 enddo
 pclump%status = DEAD
 call pitrates(pclast)
 write(logmsg,'(a,3f6.1,2i4)') 'clast site, count, npit: ',pclast%site,pclast%count,pclast%npit
 call logger(logmsg)
+call UpdateSurface
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -1086,26 +1162,29 @@ call logger(logmsg)
 end subroutine
 
 !------------------------------------------------------------------------------------------------
-! The bone resorption rate at a given (x,z) depends on:
-!	n = the number of monocytes that fused to make the osteoclast
-!	d = the distance of the target bone site from the osteoclast centre
-! The depth factor df decreases linearly to zero as d goes from 0 to MAX_RESORPTION_D
-! The nominal maximum rate, MAX_RESORPTION_RATE, is scaled by the distance factor and
-! by the monocyte count (relative to a nominal max MAX_RESORPTION_N).
-! MAX_RESORPTION_RATE is in um/min, it is converted into grids/min by /DELTA_X
-! Note: removed d dependence, now use fraction
+! The bone resorption rate at a given pit site (x,z) depends on:
+!	Nm = the number of monocytes that fused to make the osteoclast
+!   Np = number of pit sites that the osteoclast covers
+!	(d = the distance of the target bone site from the osteoclast centre
+!   The depth factor df decreases linearly to zero as d goes from 0 to MAX_RESORPTION_D)
+! The volume rate of resorption per pit site is:
+!   (MAX_RESORPTION_RATE/MAX_RESORPTION)*(Nm/Np) um^3/day
+! which is converted to grids/min, /(24*60*DELTA_X^3)
+! Note: currently not using d dependence, using %fraction
 !------------------------------------------------------------------------------------------------
-real function resorptionRate(n)
-integer :: n
+real function resorptionRate(Nm,Np)
+integer :: Nm, Np
 !real :: d
-real :: df
+!real :: df
 
 !if (d >= MAX_RESORPTION_D) then
 !	df = 0
 !else
 !	df = 1 - d/MAX_RESORPTION_D
 !endif
-resorptionRate = MAX_RESORPTION_RATE*(real(n)/MAX_RESORPTION_N)
+resorptionRate = (MAX_RESORPTION_RATE*Nm)/(MAX_RESORPTION_N*Np*24*60*DELTA_X**3)
+!write(*,*) 'resorptionRate: ',Nm,Np,resorptionRate
+!write(*,*) MAX_RESORPTION_RATE,Nm,MAX_RESORPTION_N,Np,24*60,DELTA_X
 end function
 
 !------------------------------------------------------------------------------------------------
@@ -1191,14 +1270,16 @@ end subroutine
 
 !--------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------
-subroutine get_scene(ncap_list,cap_list,nmono_list,mono_list,npit_list,pit_list,nclast_list,clast_list) BIND(C)
+subroutine get_scene(ncap_list,cap_list,nmono_list,mono_list,npit_list,pit_list, &
+					nclast_list,clast_list,nblast_list,blast_list) BIND(C)
 !DEC$ ATTRIBUTES DLLEXPORT :: get_scene
 use, intrinsic :: iso_c_binding
-integer(c_int) :: nmono_list, mono_list(*), ncap_list, npit_list, nclast_list
+integer(c_int) :: nmono_list, mono_list(*), ncap_list, npit_list, nclast_list, nblast_list, blast_list(*)
 real(c_float) :: cap_list(*), pit_list(*), clast_list(*)
-integer :: k, j, kcell, iclump, site(3), nfused, x, y, z, status, mono_state, icap, iclast
+integer :: k, j, kcell, iclump, site(3), nfused, x, y, z, status, mono_state, icap, iclast, iblast
 real :: tnow, t1, t2, fraction, ypit, size, lastjump(3)
 type(osteoclast_type), pointer :: pclast
+type(osteoblast_type), pointer :: pblast
 real :: clast_diam = 0.9
 real :: mono_diam = 0.5
 
@@ -1281,11 +1362,12 @@ do x = 1,NX
 !		if (surface(x,z)%depth > 0) then
 !			ypit = y + 0.5 - surface(x,z)%depth
 		if (surface(x,z)%target_depth > 0) then
-			if (surface(x,z)%signal == 0) then
-				ypit = 99
-			else
-				ypit = y + 0.5 - surface(x,z)%target_depth
-			endif
+!			if (surface(x,z)%signal == 0) then
+!				ypit = 99
+!			else
+!				ypit = y + 0.5 - surface(x,z)%target_depth
+!			endif
+			ypit = surface(x,z)%signal
 			k = k+1
 			j = 4*(k-1)
 			pit_list(j+1:j+3) = (/x,y,z/)
@@ -1312,7 +1394,21 @@ do iclast = 1,nclast
 	clast_list(j+7) = size
 enddo
 nclast_list = k
-!write(logmsg,'(a,4i6)') '# of mono, cap, pit, clast: ',nmono_list, ncap_list, npit_list, nclast_list
+
+! Osteoblast section
+k = 0
+do iblast = 1,nblast
+	pblast => blast(iblast)
+	if (pblast%status == DEAD) cycle
+	k = k+1
+	j = 5*(k-1)
+	blast_list(j+1) = pblast%ID-1
+	blast_list(j+2:j+4) = pblast%site
+	blast_list(j+5) = pblast%status
+!	write(nflog,*) 'OB: ',blast_list(j+1:j+5)
+enddo
+nblast_list = k
+!write(logmsg,'(a,5i6)') '# of mono, cap, pit, OC, OB: ',nmono_list, ncap_list, npit_list, nclast_list, nblast_list
 !call logger(logmsg)
 end subroutine
 
@@ -1418,7 +1514,7 @@ CAPILLARY_DIAMETER = CAPILLARY_DIAMETER/DELTA_X		! convert um -> grids
 !chemo_radius = chemo_radius/DELTA_X					! convert um -> grids
 STEM_CYCLETIME = 60*STEM_CYCLETIME					! convert hours -> minutes
 CLAST_LIFETIME = CLAST_LIFETIME*24*60				! convert days -> minutes
-MAX_RESORPTION_RATE = MAX_RESORPTION_RATE/DELTA_X	! convert um/min -> grids/min
+!MAX_RESORPTION_RATE = MAX_RESORPTION_RATE/DELTA_X	! convert um/min -> grids/min
 MAX_RESORPTION_D = MAX_RESORPTION_D/DELTA_X			! convert um -> grids
 SIGNAL_RADIUS = SIGNAL_RADIUS/DELTA_X				! convert um -> grids
 S1P1_BASERATE = 1./(60.*S1P1_RISETIME)				! convert time (hours) to rate (/min)
@@ -1655,6 +1751,7 @@ if (allocated(occupancy)) deallocate(occupancy)
 if (allocated(surface)) deallocate(surface)
 if (allocated(mono)) deallocate(mono)
 if (allocated(clast)) deallocate(clast)
+if (allocated(blast)) deallocate(blast)
 if (allocated(stem)) deallocate(stem)
 if (allocated(capillary)) deallocate(capillary)
 if (allocated(entrysite)) deallocate(entrysite)

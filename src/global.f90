@@ -11,7 +11,7 @@ type(occupancy_type), allocatable, target :: occupancy(:,:,:)
 type(surface_type), allocatable, target :: surface(:,:)
 type(monocyte_type), allocatable, target :: mono(:)
 type(osteoclast_type), allocatable, target :: clast(:)
-type(osteoblast_type), allocatable :: blast(:)
+type(osteoblast_type), allocatable, target :: blast(:)
 type(stem_type), allocatable :: stem(:)
 
 type(capillary_type), allocatable :: capillary(:)
@@ -58,7 +58,6 @@ real :: CLAST_DWELL_TIME = 3*60			! mins
 real :: MAX_RESORPTION_RATE = 0.01		! um/min
 real :: MAX_RESORPTION_D = 10			! um
 integer :: MAX_RESORPTION_N = 30
-real :: MAX_PIT_DEPTH = 5				! grids (should be input parameter)
 
 ! Signal parameters (NOT USED)
 real :: SIGNAL_RADIUS					! radius of influence of bone signal (um -> grids) (10)
@@ -81,12 +80,14 @@ integer :: SPECIES						! animal species (0=mouse, 1=human)
 real :: DELTA_X, PI
 integer :: Nsteps
 integer :: NX,NY,NZ						! size of region
-integer :: NMONO_INITIAL, NSTEM
-integer :: nmono, mono_cnt, nsignal, nclast, nborn, nleft, ncap, nentrysites, nclump, nliveclast
+type(patch_type) :: patch
+integer :: NMONO_INITIAL, NSTEM, NBLAST_INITIAL
+integer :: nmono, mono_cnt, nsignal, nclast, nblast, nborn, nleft, ncap, nentrysites, nclump, nliveclast
 integer, allocatable :: entrysite(:,:)
 type(clump_type), target :: clump(MAX_NCLUMP)
 real :: RANKSIGNAL_decayrate			! from RANKSIGNAL_halflife
 real :: RANKL_KDECAY					! from RANKL_HALFLIFE
+real :: RANKL_GRADLIM					! equal to the initial max RANKL gradient at NBY+3
 logical :: stuck
 
 contains
@@ -164,6 +165,31 @@ end function
 real function inorm(v)
 integer :: v(3)
 inorm = sqrt(real(dot_product(v,v)))
+end function
+
+!------------------------------------------------------------------------------------------------
+! Compute the signal that an OB is receiving from neighbouring bone sites.
+!------------------------------------------------------------------------------------------------
+real function BlastSignal(pblast)
+type(osteoblast_type), pointer :: pblast
+integer :: bsite(3), dx, dz, x, z
+real :: d2, r2, sum
+real :: OB_SIGNAL_RADIUS = 5
+
+bsite = pblast%site
+r2 = OB_SIGNAL_RADIUS**2
+sum = 0
+do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
+	x = bsite(1) + dx
+	do dz = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
+		z = bsite(3) + dz
+		d2 = dx**2 + dz**2
+		if (d2 > r2) cycle
+		if (surface(x,z)%iclast > 0) cycle
+		sum = sum + surface(x,z)%signal
+	enddo
+enddo
+BlastSignal = RANK_BONE_RATIO*sum
 end function
 
 end module

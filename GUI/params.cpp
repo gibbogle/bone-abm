@@ -115,7 +115,7 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 [hours]"},
 
 
-{"X_SIZE", 1000, 0, 0,
+{"X_SIZE", 500, 0, 0,
 "Bone patch size",
 "Dimension of the modelled bone region (in X and Z directions).\n\
 [um]"},
@@ -130,11 +130,11 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "(Currently we consider only a single capillary with a fixed diameter)\n\
 [um]"},
 
-{"MONO_PER_MM3", 2100, 100, 5000,
+{"MONO_PER_MM3", 500, 0, 0,
 "Monocytes/mm3",
 "Average number of monocytes per cubic mm of marrow (initial)."},
 
-{"IN_PER_HOUR", 18, 0, 0,
+{"IN_PER_HOUR", 5, 0, 0,
 "Monocyte influx",
 "Rate of influx pf osteoclast-precursor monocytes from the blood.\n\
 [/hour]"},
@@ -158,7 +158,7 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Time taken for a group of monocytes to form an osteoclast, after they have aggregated\n\
 [mins]"},
 
-{"CLAST_LIFETIME", 5.0, 1.0, 20.0,
+{"CLAST_LIFETIME", 30.0, 0, 0,
 "Osteoclast lifetime",
 "Length of time that an osteoclast remains active\n\
 [days]"},
@@ -168,10 +168,10 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Length of time that an osteoclast remains in one spot, before moving one grid\n\
 [days]"},
 
-{"MAX_RESORPTION_RATE", 0.02, 0.0, 0.0,
+{"MAX_RESORPTION_RATE", 4000, 0.0, 0.0,
 "Maximum resorption rate",
 "Maximum rate of bone removal by an osteoclast\n\
-[um/min]"},
+[um3/day]"},
 
 {"MAX_RESORPTION_D", 50, 0, 0,
 "Maximum resorption D",
@@ -230,7 +230,7 @@ is given by: probability = (Max capillary egress probability)*(S1P1 - S1P1_THRES
 "Strength of chemotactic influence on T cell motion towards DCs."},
 */
 
-{"NDAYS", 8.0, 0.0, 30.0,
+{"NDAYS", 30.0, 0, 0,
 "Number of days",
 "Length of the simulation.\n\
 [days]"},
@@ -243,7 +243,7 @@ is given by: probability = (Max capillary egress probability)*(S1P1 - S1P1_THRES
 "Second RNG seed",
 "The random number generator is seeded by a pair of integers.  Changing the seed generates a different Monte Carlo realization."},
 
-{"NCPU", 1, 1, 8,
+{"NCPU", 6, 1, 8,
 "Number of CPUs",
 "Number of CPUs to use for the simulation."},
 

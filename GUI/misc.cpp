@@ -208,7 +208,7 @@ void ExecThread::snapshot()
 {
 //	LOG_MSG("snapshot");
 	mutex2.lock();
-	get_scene(&ncap_list,cap_list,&nmono_list,mono_list,&npit_list,pit_list,&nclast_list,clast_list);
+	get_scene(&ncap_list,cap_list,&nmono_list,mono_list,&npit_list,pit_list,&nclast_list,clast_list,&nblast_list,blast_list);
 //	sprintf(msg,"got: ncap %d nmono %d npit %d nclast %d",ncap_list,nmono_list,npit_list,nclast_list);
 //	LOG_MSG(msg);
 	if (ncap_list > MAX_CAP) {
@@ -225,6 +225,10 @@ void ExecThread::snapshot()
 	}
 	if (nclast_list > MAX_CLAST) {
 		LOG_MSG("Error: MAX_CLAST exceeded");
+		exit(1);
+	}
+	if (nblast_list > MAX_BLAST) {
+		LOG_MSG("Error: MAX_BLAST exceeded");
 		exit(1);
 	}
 	mutex2.unlock();

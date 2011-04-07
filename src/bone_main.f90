@@ -26,7 +26,7 @@ program main
 use bone_mod
 integer :: nt = 10000
 real :: simdays = 2
-character*(64) :: infile = 'test30.inp'
+character*(64) :: infile = 'basecase.inp'
 integer :: res, nlen
 
 use_tcp = .false.

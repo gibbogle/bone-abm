@@ -152,9 +152,10 @@ end subroutine
 !----------------------------------------------------------------------------------------
 !----------------------------------------------------------------------------------------
 subroutine init_RANKL
-integer :: isignal, site(3), x, y, z, it, nt, isig
+integer :: isignal, site(3), x, y, z, it, nt, isig, iblast
 real :: dt, sum
 real :: g(3), gamp, gmax
+type(osteoblast_type), pointer :: pblast
 !real, parameter :: Kdecay = 0.00001, Kdiffusion = 0.001
 
 write(logmsg,*) 'Initializing RANKL: KDECAY: ', RANKL_KDECAY
@@ -173,15 +174,18 @@ do x = 1,NX
 		enddo
 	enddo
 enddo
-!do isignal = 1,nsignal
-!	site = signal(isignal)%site
-!	influx(site(1),site(2)+1,site(3)) = RANK_BONE_RATIO*signal(isignal)%intensity
-!enddo
 y = NBY+1
-do x = 1,NX
-	do z = 1,NZ
-		RANKLinflux(x,y,z) = RANK_BONE_RATIO*surface(x,z)%signal
-	enddo
+!do x = 1,NX
+!	do z = 1,NZ
+!		RANKLinflux(x,y,z) = RANK_BONE_RATIO*surface(x,z)%signal
+!	enddo
+!enddo
+do iblast = 1,nblast
+	pblast => blast(iblast)
+	x = pblast%site(1)
+	z = pblast%site(3)
+	RANKLinflux(x,y,z) = BlastSignal(pblast)
+!	write(*,*) iblast,x,z,RANKLinflux(x,y,z)
 enddo
 call steadystate(RANKLinflux,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc)
 call gradient(RANKLinflux,RANKL_conc,RANKL_grad)
@@ -203,37 +207,60 @@ do it = 1,nt
 	write(logmsg,*) 'Mean patch RANKL: ',sum/nsignal
 	call logger(logmsg)
 enddo
+y = NBY + 3
 gmax = 0
 do x = 1,NX
-	do y = NBY+1,NY
+!	do y = NBY+1,NY
 		do z = 1,NZ
 			g = RANKL_grad(:,x,y,z)
 			gamp = sqrt(dot_product(g,g))
 			gmax = max(gamp,gmax)
 		enddo
-	enddo
+!	enddo
 enddo
-write(logmsg,*) 'Max RANKL gradient: ',gmax
+write(logmsg,*) 'Max RANKL gradient at y=NBY+3: ',gmax
 call logger(logmsg)
+RANKL_GRADLIM = gmax
 end subroutine
 
 !----------------------------------------------------------------------------------------
+! Need to suppress osteocyte signal from surface sites covered by OCs 
 !----------------------------------------------------------------------------------------
 subroutine EvolveRANKL(nt,totsig)
 integer :: nt
 real :: totsig
 !real, allocatable :: influx(:,:,:)
-integer :: x, y, z, site(3), isig
+!real, allocatable :: factor(:,:)
+integer :: x, y, z, site(3), isig, i, iblast
 real :: dt, sum
+!type(osteoclast_type), pointer :: pclast
+type(osteoblast_type), pointer :: pblast
 
 dt = nt*DELTA_T
+!allocate(factor(NX,NZ))
+!factor = 1
+!do iclast = 1,nclast
+!	pclast => clast(iclast)
+!	if (pclast%status == DEAD) cycle
+!	do i = 1,pclast%npit
+!		site = pclast%site + pclast%pit(i)%delta
+!		factor(site(1),site(3)) = 0
+!	enddo
+!enddo
 totsig = 0
 y = NBY+1
-do x = 1,NX
-	do z = 1,NZ
-		RANKLinflux(x,y,z) = RANK_BONE_RATIO*surface(x,z)%signal
-		totsig = totsig + RANKLinflux(x,y,z)
-	enddo
+!do x = 1,NX
+!	do z = 1,NZ
+!		RANKLinflux(x,y,z) = RANK_BONE_RATIO*factor(x,z)*surface(x,z)%signal
+!		totsig = totsig + RANKLinflux(x,y,z)
+!	enddo
+!enddo
+do iblast = 1,nblast
+	pblast => blast(iblast)
+	x = pblast%site(1)
+	z = pblast%site(3)
+	RANKLinflux(x,y,z) = BlastSignal(pblast)
+	totsig = totsig + RANKLinflux(x,y,z)
 enddo
 call evolve(RANKLinflux,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc,dt)
 call gradient(RANKLinflux,RANKL_conc,RANKL_grad)
@@ -244,6 +271,7 @@ do isig = 1,nsignal
 enddo
 !write(logmsg,*) 'Mean patch RANKL: ',sum/nsignal, totsig
 !call logger(logmsg)
+!deallocate(factor)
 end subroutine
 
 !----------------------------------------------------------------------------------------
@@ -538,7 +566,7 @@ end subroutine
 ! The index of the vector entry corresponding to C at site (x,y,z) is precomputed as
 ! vindex(x,y,z).  This is a positive integer for (x,y,z) a marrow site.
 ! Otherwise (a site is in a capillary) it is 0.
-! 
+! NOT USED
 !----------------------------------------------------------------------------------------
 subroutine formulate(Kdiffusion,Kdecay)
 real :: Kdiffusion, Kdecay

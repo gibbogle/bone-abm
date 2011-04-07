@@ -396,6 +396,7 @@ void MyVTK::get_cell_positions(bool fast)
 	capillary_list.clear();
 	pitpos_list.clear();
 	clastpos_list.clear();
+	blastpos_list.clear();
 	int maxtag = 0;
 	for (int i=0; i<nmono_list; i++) {
 		int j = 5*i;
@@ -444,6 +445,15 @@ void MyVTK::get_cell_positions(bool fast)
 		oc.dir[2] = clast_list[j+5];
 		oc.size = clast_list[j+6];
 		clastpos_list.append(oc);
+	}
+	for (int i=0; i<nblast_list; i++) {
+		int j = 5*i;
+		BLAST_POS ob;
+		ob.pos[0] = blast_list[j+1];
+		ob.pos[1] = blast_list[j+2];
+		ob.pos[2] = blast_list[j+3];
+		ob.state = blast_list[j+4];
+		blastpos_list.append(ob);
 	}
 //	LOG_MSG("VTK: did get_cell_positions");
 }
@@ -636,6 +646,8 @@ void MyVTK::process_tiles()
 //	double v[3];
 //	char msg[256];
 	unsigned char col[3];
+	unsigned char white[3] = {255,255,255};
+	unsigned char red[3] = {255,0,0};
 	/*
 	double boneColor[] = {0.9,0.9,0.5};
 	double pitColor[] = {1.0,0.3,0.1};
@@ -761,6 +773,7 @@ void MyVTK::process_tiles()
 		int x = pitpos_list[i].pos[0];
 		int z = pitpos_list[i].pos[2];
 		double ypit = pitpos_list[i].ypit;
+// NOT USED?
 		bone_array[x][z].y = ypit;
 		pos[0] = x;
 		pos[1] = ypit;
@@ -771,15 +784,21 @@ void MyVTK::process_tiles()
 		int idx = (x-1)*NZ + z-1;
 //		points->SetPoint(idx, pos[0], pos[1], pos[2]); // set point idx to (x,y,z)
 //		points->GetData();
-		if (ypit == 99) {
-			col[1] = 255; col[2] = 255; col[0] = 255;
-			colors->SetTupleValue(idx, col);
+
+		bool USE_SIGNAL = true;
+		if (USE_SIGNAL) {	// Red intensity shows signal
+			for (int ic=0; ic<3; ic++)
+				col[ic] = ypit*red[ic] + (1-ypit)*white[ic];
 		} else {
-			int redval = 255 - (NBY + 0.5 - ypit)*50;
-			if (redval < 0) redval = 0;
-			col[1] = 0; col[2] = 0; col[0] = (unsigned char)redval;
-			colors->SetTupleValue(idx, col);
+			if (ypit == 99) {
+				col[1] = 255; col[2] = 255; col[0] = 255;
+			} else {
+				int redval = 255 - (NBY + 0.5 - ypit)*50;
+				if (redval < 0) redval = 0;
+				col[1] = 0; col[2] = 0; col[0] = (unsigned char)redval;
+			}
 		}
+		colors->SetTupleValue(idx, col);
 		glypher->Modified(); // tell glypher that the data has changed
 	}
 	return;
@@ -906,6 +925,13 @@ void MyVTK::cleanup()
 			actor->Delete();
 		}
 	}
+	for (i = 0; i<B_Actor_list.length(); i++) {
+		actor = B_Actor_list[i];
+		if (actor != 0) {
+			ren->RemoveActor(actor);
+			actor->Delete();
+		}
+	}
 	for (i = 0; i<Tile_Actor_list.length(); i++) {
 		actor = Tile_Actor_list[i];
 		if (actor != 0) {
@@ -962,6 +988,7 @@ void MyVTK::renderCells()
 	process_capillaries();
 	process_tiles();
 	process_osteoclasts();
+	process_osteoblasts();
 
 	if (first_VTK) {
 		LOG_MSG("Initializing the renderer");
@@ -1247,6 +1274,43 @@ void MyVTK::process_osteoclasts()
 	}
 }
 
+//---------------------------------------------------------------------------------------------
+void MyVTK::process_osteoblasts()
+{
+	int iblast, k;
+	BLAST_POS ob;
+	vtkActor *actor;
+	double theta;
+	double blastColor[] = {0.0,0.5,1.0};
+
+	int na = OB_Actor_list.length();
+	int np = blastpos_list.length();
+
+	// First remove all old blasts (strictly speaking we should remove only those not in the new list)
+
+	for (k=0; k<na; k++) {
+		actor = OB_Actor_list[k];
+		ren->RemoveActor(actor);
+		actor->Delete();
+		OB_Actor_list[k] = 0;
+	}
+
+	OB_Actor_list.clear();
+
+	for (iblast=0; iblast<np; iblast++) {
+		ob = blastpos_list[iblast];
+		actor = vtkActor::New();
+		actor->SetMapper(McellMapper);
+		actor->SetScale(1.5);
+		actor->GetProperty()->SetColor(blastColor);
+//		sprintf(msg,"OB, pos: %d %f %f %f\n",iblast,ob.pos[0],ob.pos[1],ob.pos[2]);
+//		LOG_MSG(msg);
+		actor->SetPosition(ob.pos);
+		ren->AddActor(actor);
+		OB_Actor_list.append(actor);
+	}
+}
+
 //-----------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------
 bool MyVTK::startPlayer(QString posfile, QTimer *theTimer, bool save)
@@ -1333,10 +1397,13 @@ bool MyVTK::nextFrame()
 				cp.state = s[5].toInt();
 				MCpos_list.append(cp);
 			} else if (s[0].compare("B") == 0) {
-				BOND_POS cp;
-				cp.TCtag = s[1].toInt();
-				cp.DCtag = s[2].toInt();
-				bondpos_list.append(cp);
+				CELL_POS cp;
+				cp.tag = s[1].toInt();
+				cp.x = s[2].toInt();
+				cp.y = s[3].toInt();
+				cp.z = s[4].toInt();
+				cp.state = s[5].toInt();
+//				bondpos_list.append(cp);
 			} else if (s[0].compare("E") == 0) {
 				break;
 			}

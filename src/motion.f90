@@ -311,7 +311,7 @@ logical :: covered, bdryhit, nearclast, freshbone, possible(8)
 type(osteoclast_type), pointer :: pclast1
 integer, save :: count = 0
 logical :: dbug
-real, parameter :: SIGNAL_EXCESS = 1.1
+real, parameter :: SIGNAL_EXCESS = 1.05
 
 if (pclast%ID == -1) then
 	dbug = .true.
@@ -601,6 +601,31 @@ pclast%lastdir = kdir
 !	mono(imono)%site = site
 !	occupancy(site(1),site(2),site(3))%indx = imono
 !enddo
+call UpdateSurface
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+! Refresh the locations of OCs on the surface.
+!------------------------------------------------------------------------------------------------
+subroutine UpdateSurface
+type(osteoclast_type), pointer :: pclast
+integer :: iclast, i, site(3), x, z
+
+surface%iclast = 0
+do iclast = 1,nclast
+	pclast => clast(iclast)
+	if (pclast%status == DEAD) cycle 
+	do i = 1,pclast%npit
+		site = pclast%site + pclast%pit(i)%delta
+		x = site(1)
+		z = site(3)
+		if (surface(x,z)%iclast == 0) then
+			surface(x,z)%iclast = iclast
+		elseif (surface(x,z)%iclast < 100) then
+			surface(x,z)%iclast = 100*surface(x,z)%iclast + iclast
+		endif
+	enddo
+enddo
 end subroutine
 
 !------------------------------------------------------------------------------------------------
