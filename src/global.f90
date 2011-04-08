@@ -65,10 +65,21 @@ real :: SIGNAL_THRESHOLD				! defines the high-signal region, near the source (0
 real :: SIGNAL_AFACTOR					! field amplification factor (0.4)
 integer :: MTHRESHOLD					! number of monocytes in the high-signal region that triggers fusing (25)
 
+! Motion variables
+integer :: MODEL = MOORE26_MODEL
+integer :: reldir(6,26)
+integer :: njumpdirs, nreldir
+integer :: jumpvec(3,MAXRELDIR+1)
+real :: unitjump(3,MAXRELDIR+1)
+real :: dirprob(0:MAXRELDIR)
+logical :: vn_adjacent(MAXRELDIR+1)
+integer :: dir2D(3,8) = reshape((/ -1,0,-1, -1,0,0, -1,0,1, 0,0,1, 1,0,1, 1,0,0, 1,0,-1, 0,0,-1/),(/3,8/))
+
 integer :: in_per_hour					! rate of influx of OP monocytes from the blood (cells/hour)
 integer :: exit_rule					! 1 = no chemotaxis, 2 = chemotaxis
 integer :: exit_region					! region for cell exits 1 = capillary, 2 = sinusoid
 real :: cross_prob						! probability (/timestep) of monocyte egress to capillary
+
 real :: days							! number of days to simulate
 integer :: seed(2)						! seed vector(1) for the RNGs
 integer :: ncpu							! number of threads, not used currently
@@ -174,7 +185,6 @@ real function BlastSignal(pblast)
 type(osteoblast_type), pointer :: pblast
 integer :: bsite(3), dx, dz, x, z
 real :: d2, r2, sum
-real :: OB_SIGNAL_RADIUS = 5
 
 bsite = pblast%site
 r2 = OB_SIGNAL_RADIUS**2
