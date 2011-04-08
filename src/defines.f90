@@ -113,14 +113,19 @@ real, parameter :: CLUMP_FALL_PROB = 0.001	! arbitrary
 real, parameter :: CLAST_STOP_TIME = 12*60	! max time for an OC to be blocked
 real, parameter :: DT_FAST_MOVE = 10.0
 real, parameter :: CLAST_RADIUS_FACTOR = 0.5	! relates OC radius to the sqrt of the number of monocytes
+
 ! Pit parameters
 real, parameter :: LACUNA_A = 20		! Parameters of the elliptical region to be excavated
 real, parameter :: LACUNA_B = 10
 real, parameter :: MAX_PIT_DEPTH = 3	! grids (should be input parameter)
 real, parameter :: OC_SIGNAL_SENSING_RANGE = 20	! grids
 real, parameter :: Kattraction = 4
+
 ! Osteoblast parameters
 real, parameter :: BLAST_PER_UM3 = 7.0e-6
+real, parameter :: OB_SIGNAL_RADIUS = 5		! radius of disk over which OB integrates signal
+real, parameter :: OB_REACH = 40			! to make contact with a monocyte (microns)
+real, parameter :: BLAST_DWELL_TIME = 2*60
 
 type monocyte_type
     integer :: ID
@@ -137,23 +142,21 @@ type monocyte_type
     real :: exittime			! time that the cell left the marrow (for the blood, or to form an osteoclast)
     real :: dietime             ! time cell will die
     integer :: lastmovestep
-!    type(clump_type), pointer :: clump
-!    type(O_type),    pointer :: optr    ! because NULL is used by winsock (from ifwinty).  NULLIFY() instead.
 end type
 
 type osteoblast_type
     integer :: ID
     integer :: site(3)
+    integer :: iclump
     integer :: step
     integer(2) :: status
 	integer(2) :: lastdir
+    real :: movetime			! time that the cell will be checked for move
     real :: entrytime			! time that the cell entered the marrow (from blood or stem cell division)
     real :: dietime             ! time cell will die
 end type
 
 type pit_type
-!	logical :: active
-!	integer :: site(3)
 	integer :: delta(3)
 	real :: rate
 	real :: fraction
@@ -231,6 +234,7 @@ end type
 
 type clump_type
 	integer :: ID
+	integer :: iblast
 	integer :: ncells
 	integer :: list(MAX_CLUMP_CELLS)
 	integer :: status

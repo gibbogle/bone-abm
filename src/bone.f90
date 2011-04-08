@@ -27,229 +27,6 @@ integer(c_int),BIND(C) :: success = 12345
 
 contains
 
-!================================================================================================
-! OLD CODE
-!================================================================================================
-!------------------------------------------------------------------------------------------------
-! To avoid problems with wrapping, no signal site is allowed to occur near the boundary.
-! The bone normal is used to give higher preference to sites near the bone. 
-! NOT USED
-!------------------------------------------------------------------------------------------------
-subroutine setSignal(isig,onoff,ok)
-logical :: ok
-integer :: isig, onoff
-integer :: site(3)
-integer :: x1, x2, y1, y2, z1, z2
-integer :: x, y, z
-real :: R2, d2, vn(3), v(3)
-
-ok = .true.
-site = signal(isig)%site
-x1 = site(1) - (SIGNAL_RADIUS+1)
-x2 = site(1) + (SIGNAL_RADIUS+1)
-y1 = site(2) - (SIGNAL_RADIUS+1)
-y2 = site(2) + (SIGNAL_RADIUS+1)
-z1 = site(3) - (SIGNAL_RADIUS+1)
-z2 = site(3) + (SIGNAL_RADIUS+1)
-R2 = SIGNAL_RADIUS**2
-if (onoff == ON) then
-	if (x1 < 1 .or. x2 > NX .or. z1 < 1 .or. z2 > NZ) then
-		write(logmsg,*) 'Error: setSignal: signal site too close to boundary: ',site
-		call logger(logmsg)
-		ok = .false.
-		return
-	endif
-	signal(isig)%active = .true.
-	signal(isig)%site = site
-	call boneNormal(site,vn)
-	signal(isig)%normal = vn
-else
-	signal(isig)%active = .false.
-	signal(isig)%site = (/0,0,0/)
-endif
-do x = x1,x2
-	do y = y1, y2
-		do z = z1,z2
-			d2 = (x-site(1))**2 + (y-site(2))**2 + (z-site(3))**2
-			if (d2 <= R2) then
-				if (occupancy(x,y,z)%region == MARROW) then
-					if (onoff == ON) then
-						v = (/x,y,z/) - site
-!						occupancy(x,y,z)%signal = isig
-!						occupancy(x,y,z)%intensity = 1/(d2 + dot_product(v,vn))
-					else
-!						occupancy(x,y,z)%signal = 0
-!						occupancy(x,y,z)%intensity = 0
-					endif
-				endif
-			endif
-		enddo
-	enddo
-enddo
-end subroutine
-
-!------------------------------------------------------------------------------------------------
-! Each osteocyte(?) signal is checked to see if the number of monocytes that have gathered is
-! sufficient to initiate osteoclastogenesis.  Currently only the number of monocytes within
-! a specified volume is used to determine the initiation.  It would be better to employ some
-! idea of stickiness.
-! When the number of monocytes within the region defined by (signal intensity > SIGNAL_THRESHOLD)
-! exceeds MTHRESHOLD, monocyte fusing is initiated.
-! NOTE: This was the first crude model for fusing initiation
-! NOT USED
-!------------------------------------------------------------------------------------------------
-subroutine checkSignals(ok)
-logical :: ok
-integer :: isig
-integer :: site(3)
-integer :: x1, x2, y1, y2, z1, z2
-integer :: x, y, z, n, nt
-!real :: R2, d2
-type(occupancy_type), pointer :: p
-
-ok = .true.
-!R2 = 0.33*(SIGNAL_RADIUS)**2
-do isig = 1,nsignal
-	if (.not.signal(isig)%active) cycle
-	site = signal(isig)%site
-	x1 = site(1) - (SIGNAL_RADIUS+1)
-	x2 = site(1) + (SIGNAL_RADIUS+1)
-	y1 = site(2) - (SIGNAL_RADIUS+1)
-	y2 = site(2) + (SIGNAL_RADIUS+1)
-	z1 = site(3) - (SIGNAL_RADIUS+1)
-	z2 = site(3) + (SIGNAL_RADIUS+1)
-	n = 0
-	nt = 0
-	do x = x1,x2
-		do y = y1, y2
-			do z = z1,z2
-				p => occupancy(x,y,z)
-!				if (p%signal == isig .and. p%intensity >= SIGNAL_THRESHOLD) then
-!					if (p%region == MARROW) then
-!						nt = nt + 1
-!						if (p%indx /= 0) then
-!							n = n+1
-!						endif
-!					endif
-!				endif
-			enddo
-		enddo
-	enddo
-!	write(*,*) 'Total near sites: ',nt
-! Was using 0.8*nt
-	if (n >= MTHRESHOLD) then
-		write(logmsg,*) 'fusing monocytes: ',n,nt
-		call logger(logmsg)
-		call startFusing(isig,n,ok)
-		if (.not.ok) return
-		call setSignal(isig,OFF,ok)
-		if (.not.ok) return
-		signal(isig)%active = .false.
-	endif
-enddo
-end subroutine
-
-!------------------------------------------------------------------------------------------------
-! For now it is assumed, for simplicity, that the bone surface lies in an X-Z plane,
-! i.e. that it is normal to the Y axis.  This makes it easy to determine which
-! bone sites are subject to resorption.
-! All monocytes within the high-signal zone (signal intensity >= SIGNAL_THRESHOLD) are joined
-! to make an osteoclast.  
-! The list of grid sites below the monocytes is created, and used  to make the list of pits 
-! associated with the osteoclast.
-! NOT USED
-!------------------------------------------------------------------------------------------------
-subroutine startFusing(isig,n,ok)
-integer :: isig,n
-logical :: ok
-integer :: site(3)
-integer :: x1, x2, y1, y2, z1, z2
-integer :: x, y, z, cnt, imin, npit, i, yb
-real :: tnow, d
-integer :: bonesite(3,100)
-logical :: inlist
-type(occupancy_type), pointer :: p
-type(osteoclast_type), pointer :: pclast
-
-ok = .true.
-tnow = istep*DELTA_T
-site = signal(isig)%site
-nclast = nclast + 1
-pclast => clast(nclast)
-pclast%ID = nclast
-!pclast%site = site
-pclast%normal = signal(isig)%normal
-pclast%status = FUSING
-pclast%fusetime = tnow
-pclast%entrytime = tnow + FUSING_TIME
-pclast%movetime = BIGTIME
-x1 = site(1) - (SIGNAL_RADIUS+1)
-x2 = site(1) + (SIGNAL_RADIUS+1)
-y1 = site(2) - (SIGNAL_RADIUS+1)
-y2 = site(2) + (SIGNAL_RADIUS+1)
-z1 = site(3) - (SIGNAL_RADIUS+1)
-z2 = site(3) + (SIGNAL_RADIUS+1)
-cnt = 0
-npit = 0
-do x = x1,x2
-	do y = y1, y2
-		do z = z1,z2
-			p => occupancy(x,y,z)
-!			if (p%signal == isig .and. p%intensity >= SIGNAL_THRESHOLD &
-!				.and. p%region == MARROW .and. p%indx /= 0) then
-			if (p%region == MARROW .and. p%indx /= 0) then
-				cnt = cnt+1
-!				pclast%mono(cnt) = p%indx
-				mono(p%indx)%iclast = nclast
-				mono(p%indx)%status = FUSING
-				mono(p%indx)%exittime = pclast%entrytime
-				
-				yb = y
-				do
-					yb = yb - 1
-					if (yb < 1) then
-						write(logmsg,*) 'Error: startFusing: yb < 1'
-						call logger(logmsg)
-						ok = .false.
-						return
-					endif
-					if (occupancy(x,yb,z)%region == BONE .and. occupancy(x,yb,z)%bone_fraction > 0) then
-						inlist = .false.
-						do i = 1,npit
-							if (bonesite(1,i) == x .and. bonesite(3,i) == z) then
-								inlist = .true.
-								exit
-							endif
-						enddo
-						if (.not.inlist) then
-							npit = npit + 1
-							bonesite(:,npit) = (/x,yb,z/)
-						endif
-						exit
-					endif
-				enddo
-				
-!				write(logmsg,'(5i6)') cnt,p%indx,x,y,z
-!				call logger(logmsg)
-			endif
-		enddo
-	enddo
-enddo
-
-pclast%count = cnt
-pclast%npit = npit
-!allocate(pclast%pit(npit))
-!do i = 1,npit
-!	pclast%pit(i)%site = bonesite(:,i)
-!enddo
-!call pitrates(pclast)
-!	clast(nclast)%pit(i)%fraction = 1.0
-!	d = sqrt(real((bonesite(1,i)-site(1))**2 + (bonesite(2,i)-site(2))**2 + (bonesite(3,i)-site(3))**2))
-!	clast(nclast)%pit(i)%rate = resorptionRate(cnt,d)
-!enddo
-end subroutine
-!================================================================================================
-
 
 !-----------------------------------------------------------------------------------------
 !-----------------------------------------------------------------------------------------
@@ -558,7 +335,7 @@ integer :: xmin, xmax, zmin, zmax, x, z, ib, site(3)
 real(8) :: R
 real :: sig, d2, dfactor, prob, prob0 = 0.1
 integer :: kpar=0
-real :: d2min = 15
+real :: d2min = OB_SIGNAL_RADIUS**2
 
 xmin = patch%x0 - patch%a
 xmax = patch%x0 + patch%a
@@ -606,6 +383,7 @@ endif
 blast(nblast)%ID = nblast
 blast(nblast)%status = ALIVE
 blast(nblast)%site = site
+blast(nblast)%iclump = 0
 !write(*,*) 'blast: ',nblast,blast(nblast)%site
 end subroutine
 
@@ -724,10 +502,10 @@ if (status == MOTILE .and. pmono%RANKSIGNAL > ST1) then
 !	call logger('CHEMOTACTIC')
 endif
 if (status == CHEMOTACTIC .and. pmono%RANKSIGNAL < ST1/2) then
-	pmono%status = DEAD		! MOTILE
+	pmono%status = MOTILE		! DEAD
 endif
 if (status == STICKY .and. pmono%RANKSIGNAL < ST2/2) then
-	pmono%status = DEAD		! CHEMOTACTIC
+	pmono%status = CHEMOTACTIC	! DEAD
 endif
 if (status == CHEMOTACTIC .and. pmono%RANKSIGNAL > ST2 .and. NearOB(pmono)) then
 	pmono%status = STICKY
@@ -744,11 +522,12 @@ end subroutine
 !------------------------------------------------------------------------------------------------
 subroutine updater
 real :: S
-integer :: i, j, k, iclump, iclast, irel, dir, region, kcell, site(3), res, kpar=0
+integer :: i, j, k, iclump, iclast, iblast, irel, dir, region, kcell, site(3), res, kpar=0
 real :: tnow, stickysum
 real(8) :: R
 type(monocyte_type), pointer :: pmono
 type(osteoclast_type), pointer :: pclast
+type(osteoblast_type), pointer :: pblast
 type(clump_type), pointer :: pclump
 logical :: on_surface
 
@@ -784,7 +563,7 @@ do iclump = 1,nclump
 			do i = 1,pclump%ncells
 				mono(pclump%list(i))%status = CHEMOTACTIC
 			enddo
-			pclump%status = DEAD
+			call RemoveClump(pclump)
 			cycle
 		endif
 		if (pclump%ncells > CLUMP_THRESHOLD) then
@@ -835,6 +614,7 @@ do i = 1,NSTEM
 		enddo
 	endif
 enddo
+
 ! Osteoclasts complete fusing, dissolve bone, move, or die.
 do iclast = 1,nclast
 	pclast => clast(iclast)
@@ -851,7 +631,7 @@ do iclast = 1,nclast
 !	endif
 	if (tnow > pclast%movetime) then
 !		write(*,*) 'Move osteoclast: ',tnow,iclast
-		call move_clast(pclast,res)
+		call MoveClast(pclast,res)
 		if (res == 0) then			! no move
 			pclast%movetime = tnow + CLAST_DWELL_TIME
 			pclast%blocktime = 0
@@ -883,6 +663,15 @@ do iclast = 1,nclast
 		endif
 	endif
 	call resorber(pclast)
+enddo
+! Osteoblast motion
+do iblast = 1,nblast
+	pblast => blast(iblast)
+	if (pblast%status == DEAD) cycle
+	if (tnow > pblast%movetime) then
+		call MoveBlast(pblast,res)
+		pblast%movetime = tnow + BLAST_DWELL_TIME
+	endif
 enddo
 end subroutine
 
@@ -1012,8 +801,6 @@ real :: S, C
 rate_RANKSIGNAL = RANKSIGNAL_rateconstant*(1-S)*C
 end function
 
-
-
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
 subroutine completeFusing(iclast)
@@ -1093,73 +880,13 @@ do i = 1,npit
 	pclast%pit(i)%delta = bonesite(:,i) - pclast%site
 	pclast%pit(i)%fraction = fract(i)*(npit/fsum)		! normalize %fraction to sum to npit
 enddo
-pclump%status = DEAD
+call RemoveClump(pclump)
 call pitrates(pclast)
 write(logmsg,'(a,3f6.1,2i4)') 'clast site, count, npit: ',pclast%site,pclast%count,pclast%npit
 call logger(logmsg)
 call UpdateSurface
 end subroutine
 
-!------------------------------------------------------------------------------------------------
-!------------------------------------------------------------------------------------------------
-subroutine createOsteoclast1(pclump)
-type(clump_type), pointer :: pclump
-integer :: bonesite(3,100), i, j, npit, ocsite(3)
-logical :: inlist
-type(occupancy_type), pointer :: p
-type(osteoclast_type), pointer :: pclast
-real :: tnow
-integer :: kpar = 0
-
-tnow = istep*DELTA_T
-nclast = nclast + 1
-nliveclast = nliveclast + 1
-write(logmsg,*) 'createOsteoclast: ',nclast,tnow
-call logger(logmsg)
-pclast => clast(nclast)
-pclast%ID = nclast
-!pclast%site = pclump%cm + 0.5
-!pclast%cm = pclump%cm
-!pclast%site(2) = NBY + 1
-!pclast%cm(2) = NBY + 0.5
-pclast%lastdir = random_int(1,8,kpar)
-!pclast%normal = signal(isig)%normal
-!pclast%fusetime = tnow
-pclast%entrytime = tnow
-pclast%status = ALIVE
-pclast%movetime = tnow + CLAST_DWELL_TIME 
-pclast%dietime = tnow + clastLifetime()
-! Now need to create the pit list
-npit = 0
-do i = 1,pclump%ncells
-	j = pclump%list(i)
-	if (mono(j)%site(2) == NBY+1) then	! site on the bone surface
-		npit = npit+1
-		bonesite(:,npit) = mono(j)%site
-!		write(*,*) 'createOsteoclast: pit: ',npit,bonesite(:,npit)
-	endif
-!	pclast%mono(i) = j
-	mono(j)%iclast = nclast
-	mono(j)%status = OSTEO
-enddo
-pclast%npit = npit
-pclast%count = pclump%ncells
-pclast%cm = 0
-allocate(pclast%pit(npit))
-do i = 1,npit
-	pclast%cm = pclast%cm + bonesite(:,i)
-enddo
-pclast%cm = pclast%cm/npit
-pclast%cm(2) = NBY + 0.5
-! Make pit location an offset from the cm
-do i = 1,npit
-	pclast%pit(i)%delta = bonesite(:,i) - (pclast%cm + 0.5)
-enddo
-pclump%status = DEAD
-call pitrates(pclast)
-write(logmsg,'(a,3f6.1,2i4)') 'clast site, cm, count, npit: ',pclast%cm,pclast%count,pclast%npit
-call logger(logmsg)
-end subroutine
 
 !------------------------------------------------------------------------------------------------
 ! The bone resorption rate at a given pit site (x,z) depends on:
@@ -1489,8 +1216,6 @@ read(nfinp,*) MAX_RESORPTION_N				! number of monos in osteoclast corresponding 
 !read(nfinp,*) SIGNAL_AFACTOR				! field amplification factor (0.4)
 !read(nfinp,*) MTHRESHOLD					! number of monocytes in the high-signal region that triggers fusing (25)
 
-!read(nfinp,*) exit_rule						! 1 = no chemotaxis, 2 = chemotaxis
-!read(nfinp,*) exit_region					! region for cell exits 1 = capillary, 2 = sinusoid
 read(nfinp,*) cross_prob					! probability (/timestep) of monocyte egress to capillary
 !read(nfinp,*) chemo_radius					! radius of chemotactic influence (sites)
 !read(nfinp,*) chemo_K_exit					! level of chemotactic influence towards exits
@@ -1691,8 +1416,8 @@ if (mod(istep,1000) == 0) then
 endif
 !write(nflog,*) 'call updater'
 call updater
-!write(nflog,*) 'call mover: ',nmono
-call mover
+!write(nflog,*) 'call MonoMover: ',nmono
+call MonoMover
 if (mod(istep,NT_EVOLVE) == 0) then
 	call evolveRANKL(NT_EVOLVE,totsig)
 	if (totsig == 0 .and. nclump > 0) then
