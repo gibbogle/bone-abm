@@ -235,7 +235,7 @@ call CreatePatch
 NMONO_INITIAL = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*MONO_PER_MM3	! domain as fraction of 1 mm3 x rate of monocytes
 !NSTEM = (PI*NX*CAPILLARY_DIAMETER*DELTA_X**2/1.0e6)*STEM_PER_MM2	! capillary surface area as fraction of 1 mm2 x rate of stem cells
 NSTEM = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*STEM_PER_MM3	! domain as fraction of 1 mm3 x rate of monocytes
-NBLAST_INITIAL = (patch%volume*DELTA_X**3)*BLAST_PER_UM3
+NBLAST_INITIAL = (patch%volume*DELTA_X**3)*OB_PER_UM3
 !write(*,*) 'Lacuna volume: ',patch%volume,NBLAST_INITIAL
 !write(logmsg,*) 'NSTEM, NMONO_INITIAL: ',NSTEM,NMONO_INITIAL
 call logger(logmsg)
@@ -244,6 +244,8 @@ allocate(mono(MAX_MONO))
 allocate(clast(MAX_CLAST))
 allocate(blast(MAX_BLAST))
 call InitialBlastPlacement
+call logger('did InitialBlastPlacement')
+!call Initiation
 
 RANKSIGNAL_decayrate = log(2.0)/(RANKSIGNAL_HALFLIFE)    ! rate/min
 RANKL_KDECAY = log(2.0)/(RANKL_HALFLIFE)    ! rate/min
@@ -283,6 +285,7 @@ enddo
 
 nclump = 0
 stuck = .false.
+initiated = .false.
 !call setSignal(1,ON,ok)
 !if (.not.ok) return
 
@@ -296,11 +299,16 @@ subroutine CreatePatch
 real :: vol
 integer :: x, z
 real :: c
+logical, parameter :: HALF_ELLIPSE = .false.
 
 call logger('CreatePatch:')
 patch%a = LACUNA_A
 patch%b = LACUNA_B
-patch%x0 = NX/2
+if (HALF_ELLIPSE) then
+	patch%x0 = NX/4
+else
+	patch%x0 = NX/2
+endif
 patch%z0 = NZ/2
 nsignal = 0
 vol = 0
@@ -309,10 +317,12 @@ do x = 1,NX
 		surface(x,z)%signal = 0
 		surface(x,z)%depth = 0
 		surface(x,z)%target_depth = 0
+		surface(x,z)%seal = 1
+		if (HALF_ELLIPSE .and. x < patch%x0) cycle
 		c = ((x-patch%x0)/patch%a)**2 + ((z-patch%z0)/patch%b)**2
 		if (c < 1) then
-			surface(x,z)%target_depth = (1 - c)*MAX_PIT_DEPTH
-			surface(x,z)%signal = (surface(x,z)%target_depth - surface(x,z)%depth)/MAX_PIT_DEPTH
+			surface(x,z)%target_depth = (1 - c/2)*MAX_PIT_DEPTH
+			surface(x,z)%signal = GetSignal(x,z)
 			nsignal = nsignal + 1
 			signal(nsignal)%site = (/ x,NBY,z /)
 !			write(logmsg,'(2i5,f8.4)') x,z,surface(x,z)%target_depth
@@ -321,7 +331,27 @@ do x = 1,NX
 		endif
 	enddo
 enddo
+vol = vol*1000
 patch%volume = vol
+write(logmsg,*) 'Patch volume: ',vol
+call logger(logmsg)
+call logger('did CreatePatch:')
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+subroutine InitialBlastPlacement0
+integer :: site(3), dz
+
+nblast = 0
+dz = patch%b*0.7
+site(1) = patch%x0 + 1
+site(2) = NBY+1
+!site(3) = patch%z0
+!call CreateOsteoblast(site)
+site(3) = patch%z0 - dz
+call CreateOsteoblast(site)
+site(3) = patch%z0 + dz
+call CreateOsteoblast(site)
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -333,22 +363,31 @@ end subroutine
 subroutine InitialBlastPlacement
 integer :: xmin, xmax, zmin, zmax, x, z, ib, site(3)
 real(8) :: R
-real :: sig, d2, dfactor, prob, prob0 = 0.1
+real :: sig, d2, dfactor, prob, prob0 = 0.5
 integer :: kpar=0
-real :: d2min = OB_SIGNAL_RADIUS**2
+real :: d2min = 8	!0.4*OB_SIGNAL_RADIUS**2
+real, parameter :: MINIMUM_SIGNAL = 0.7
 
+!NBLAST_INITIAL = 1
+write(logmsg,*) 'InitialBlastPlacement: ',NBLAST_INITIAL
+call logger(logmsg)
 xmin = patch%x0 - patch%a
 xmax = patch%x0 + patch%a
 zmin = patch%z0 - patch%b
 zmax = patch%z0 + patch%b
 nblast = 0
+if (NBLAST_INITIAL == 1) then
+	site = (/ patch%x0, NBY+1, patch%z0 /)
+	call CreateOsteoblast(site)
+	return
+endif
 do
 	R = par_uni(kpar)
 	x = xmin + R*(xmax-xmin) + 0.5
 	R = par_uni(kpar)
 	z = zmin + R*(zmax-zmin) + 0.5
 	sig = surface(x,z)%signal
-	if (sig == 0) cycle
+	if (sig < MINIMUM_SIGNAL) cycle
 	dfactor = 0
 	do ib = 1,nblast
 		d2 = (x-blast(ib)%site(1))**2 + (z-blast(ib)%site(3))**2
@@ -360,14 +399,77 @@ do
 		endif
 	enddo
 	if (dfactor >= 1) cycle
-	prob = prob0*sig*(1-dfactor)
+	prob = prob0*(sig**2)*(1-dfactor)
 	R = par_uni(kpar)
 	if (R < prob) then
 		site = (/ x, NBY+1, z /)
 		call CreateOsteoblast(site)
+		write(logmsg,'(a,4i4)') 'Placed OB: ',nblast,site
+		call logger(logmsg)
 		if (nblast == NBLAST_INITIAL) exit
 	endif
 enddo
+write(logmsg,*) 'did InitialBlastPlacement'
+call logger(logmsg)
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+! To initiate reformation, the surface seal near one OB is removed.
+! This could be:
+! the highest signal OB
+! the leftmost OB
+!------------------------------------------------------------------------------------------------
+subroutine Initiation
+integer :: x, z, xmin, iblast, ibinit, bsite(3), dx, dz
+real :: d2, r2, sig, sigmax
+logical, parameter :: HIGHEST = .false.
+
+call logger('Initiation')
+r2 = OB_SIGNAL_RADIUS**2
+!xmin = 1.0e10
+!do iblast = 1,nblast
+!	bsite = blast(iblast)%site
+!	if (bsite(1) < xmin) then
+!		xmin = bsite(1)
+!		ibinit = iblast
+!	endif
+!enddo
+if (HIGHEST) then
+	sigmax = 0
+	do iblast = 1,nblast
+		bsite = blast(iblast)%site
+		sig = surface(bsite(1),bsite(3))%signal
+		if (sig > sigmax) then
+			sigmax = sig
+			ibinit = iblast
+		endif
+	enddo
+else
+	xmin = 1.0e10
+	do iblast = 1,nblast
+		bsite = blast(iblast)%site
+		if (bsite(1) < xmin) then
+			xmin = bsite(1)
+			ibinit = iblast
+		endif
+	enddo
+endif
+bsite = blast(ibinit)%site
+do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
+	x = bsite(1) + dx
+	if (x < 1) cycle
+	do dz = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
+		z = bsite(3) + dz
+		d2 = dx**2 + dz**2
+		if (d2 > r2) cycle
+		if (surface(x,z)%target_depth == 0) cycle
+		surface(x,z)%seal = 0
+	enddo
+enddo
+!blast%status = DORMANT
+blast(ibinit)%status = ALIVE
+RANKL_chemotaxis = .true.
+initiated = .true.
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -381,7 +483,7 @@ if (nblast > MAX_BLAST) then
 	stop
 endif
 blast(nblast)%ID = nblast
-blast(nblast)%status = ALIVE
+blast(nblast)%status = DORMANT
 blast(nblast)%site = site
 blast(nblast)%iclump = 0
 !write(*,*) 'blast: ',nblast,blast(nblast)%site
@@ -493,9 +595,6 @@ site = pmono%site
 status = pmono%status
 C = RANKL_conc(site(1),site(2),site(3))
 S = (1-RANKSIGNAL_decayrate)*S + rate_RANKSIGNAL(S,C)*DELTA_T
-!if (pmono%ID == 1) then
-!	write(*,'(2i6,3e12.4)') istep,status,C,S,rate_RANKSIGNAL(S,C)
-!endif
 pmono%RANKSIGNAL = min(S,1.0)
 if (status == MOTILE .and. pmono%RANKSIGNAL > ST1) then
 	pmono%status = CHEMOTACTIC
@@ -507,11 +606,8 @@ endif
 if (status == STICKY .and. pmono%RANKSIGNAL < ST2/2) then
 	pmono%status = CHEMOTACTIC	! DEAD
 endif
-if (status == CHEMOTACTIC .and. pmono%RANKSIGNAL > ST2 .and. NearOB(pmono)) then
+if (status == CHEMOTACTIC .and. pmono%RANKSIGNAL > ST2 .and. NearOB(pmono) > 0) then
 	pmono%status = STICKY
-!	write(logmsg,*) 'First STICKY mono: ',pmono%ID
-!	call logger(logmsg)
-!	stop
 endif
 if (pmono%status == STICKY) then
 	pmono%stickiness = pmono%RANKSIGNAL
@@ -523,7 +619,8 @@ end subroutine
 subroutine updater
 real :: S
 integer :: i, j, k, iclump, iclast, iblast, irel, dir, region, kcell, site(3), res, kpar=0
-real :: tnow, stickysum
+integer :: ir, dx, dz, x, z
+real :: tnow, stickysum, rmargin
 real(8) :: R
 type(monocyte_type), pointer :: pmono
 type(osteoclast_type), pointer :: pclast
@@ -546,7 +643,6 @@ enddo
 do iclump = 1,nclump
 	pclump => clump(iclump)
 	if (pclump%status < 0) cycle
-! TESTING !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	if (pclump%status < FUSED) then
 		call consolidate_clump(pclump)
 	endif
@@ -560,12 +656,14 @@ do iclump = 1,nclump
 		enddo
 		if (stickysum/pclump%ncells < ST2) then	! clump breaks up
 			write(logmsg,*) 'Clump breaks up: ',iclump
+			call logger(logmsg)
 			do i = 1,pclump%ncells
 				mono(pclump%list(i))%status = CHEMOTACTIC
 			enddo
 			call RemoveClump(pclump)
 			cycle
 		endif
+!		call detacher(pclump)
 		if (pclump%ncells > CLUMP_THRESHOLD) then
 			pclump%status = FUSING
 			pclump%starttime = tnow
@@ -573,22 +671,22 @@ do iclump = 1,nclump
 			do i = 1,pclump%ncells
 				mono(pclump%list(i))%status = FUSING
 			enddo
-!			write(logmsg,*) 'Started FUSING: ',iclump,pclump%cm
-!			call logger(logmsg)
+			write(logmsg,*) 'Started FUSING: ',iclump
+			call logger(logmsg)
 		endif
 	elseif (pclump%status == FUSING) then
 		if (tnow >= pclump%fusetime) then
-!			write(logmsg,*) '***fuse clump: ',iclump,pclump%fusetime,tnow,pclump%cm
-			call logger(logmsg)
+!			write(logmsg,*) '***fuse clump: ',iclump,pclump%fusetime,tnow,pclump%cm 
+!			call logger(logmsg)
 			call fuse_clump(pclump)
+			write(logmsg,*) 'FUSED: ',iclump
+			call logger(logmsg)
 		endif
 	elseif (pclump%status == FUSED) then
-!		write(logmsg,*) 'FUSED, lowering: ',iclump,istep,pclump%cm
-!		call logger(logmsg)
 		call lower_clump(pclump,on_surface)
 		if (on_surface) then
-!			write(logmsg,*) 'On surface: ',iclump,pclump%cm
-!			call logger(logmsg)
+			write(logmsg,*) 'On surface: ',iclump
+			call logger(logmsg)
 			call createOsteoclast(pclump)
 		endif
 	endif
@@ -620,7 +718,7 @@ do iclast = 1,nclast
 	pclast => clast(iclast)
 	if (pclast%status == DEAD) cycle
 	if (tnow > pclast%dietime) then
-		call clastDeath(iclast)
+		call ClastDeath(iclast)
 		cycle
 	endif
 !	if (pclast%status == FUSING) then
@@ -629,6 +727,26 @@ do iclast = 1,nclast
 !			cycle
 !		endif
 !	endif
+
+	! The seal on uneroded bone under and near the OC is gradually removed.
+	rmargin = pclast%radius + OC_MARGIN
+	ir = rmargin + 0.5
+!	write(*,*) 'eraode seal: ',pclast%radius,OC_MARGIN,rmargin,ir
+	do dx = -ir, ir
+		do dz = -ir,ir
+			if (dx**2 + dz**2 > rmargin**2) cycle
+			x = pclast%site(1) + dx
+			z = pclast%site(3) + dz
+!			if (surface(x,z)%target_depth == 0) cycle
+			if (surface(x,z)%depth > 0) then
+				surface(x,z)%seal = 0
+			else
+!				write(*,*) dx,dz,x,z
+				surface(x,z)%seal = max(0.0,surface(x,z)%seal - SEAL_REMOVAL_RATE*DELTA_T)
+			endif
+		enddo
+	enddo
+	
 	if (tnow > pclast%movetime) then
 !		write(*,*) 'Move osteoclast: ',tnow,iclast
 		call MoveClast(pclast,res)
@@ -640,38 +758,50 @@ do iclast = 1,nclast
 			pclast%movetime = tnow + CLAST_DWELL_TIME
 			pclast%blocktime = 0
 			pclast%status = RESORBING
-		elseif (res == 2) then		! osteoclast blocked, turn off resorption	
-			if (pclast%blocktime == 0) then
-				write(logmsg,*) 'OC blocked: ',iclast,tnow
-				call logger(logmsg)
-				pclast%blocktime = tnow
-			elseif (tnow - pclast%blocktime > CLAST_STOP_TIME) then
-				write(logmsg,*) 'OC blocked too long: ',iclast,tnow
-				call logger(logmsg)
-				call clastDeath(iclast)
-				cycle
-			endif
-			! osteoclast needs to be checked more often for possible move
-			pclast%movetime = tnow + CLAST_DWELL_TIME/10
-			pclast%status = ALIVE
-			!write(logmsg,*) 'Blocked osteoclast: ',pclast%movetime,iclast
-			!call logger(logmsg)
+		elseif (res == 2) then		! osteoclast blocked	
+			call unblocker
+			pclast%movetime = tnow + CLAST_DWELL_TIME
+			pclast%blocktime = 0
+			pclast%status = RESORBING
+
+!			if (pclast%blocktime == 0) then
+!				write(logmsg,*) 'OC blocked: ',iclast,tnow
+!				call logger(logmsg)
+!				pclast%blocktime = tnow
+!			elseif (tnow - pclast%blocktime > CLAST_STOP_TIME) then
+!				write(logmsg,*) 'OC blocked too long: ',iclast,tnow
+!				call logger(logmsg)
+!				call clastDeath(iclast)
+!				cycle
+!			endif
+!			! osteoclast needs to be checked more often for possible move
+!			pclast%movetime = tnow + CLAST_DWELL_TIME/10
+!			pclast%status = ALIVE
+			
 		elseif (res == 3) then		
 			call logger('No signal left, OC dies')
-			call clastDeath(iclast)
+			call ClastDeath(iclast)
 			cycle
 		endif
 	endif
 	call resorber(pclast)
 enddo
-! Osteoblast motion
+! Osteoblast state changes and motion
 do iblast = 1,nblast
 	pblast => blast(iblast)
-	if (pblast%status == DEAD) cycle
-	if (tnow > pblast%movetime) then
-		call MoveBlast(pblast,res)
-		pblast%movetime = tnow + BLAST_DWELL_TIME
+	site = pblast%site
+	if (pblast%status == DORMANT .and. surface(site(1),site(3))%seal < 1) then
+		pblast%status = ALIVE
 	endif
+	if (pblast%status == DEAD) cycle
+!	if (tnow > pblast%movetime) then
+!		call MoveBlast(pblast,res)
+!		pblast%movetime = tnow + BLAST_DWELL_TIME
+!	endif
+!	if (mod(istep,60*12) == 0) then
+!		write(logmsg,'(a,i4,f8.4)') 'blastsignal: ',iblast,BlastSignal(pblast)
+!		call logger(logmsg)
+!	endif
 enddo
 end subroutine
 
@@ -713,7 +843,7 @@ do k = 1,pclast%npit
 	x = pclast%site(1) + pclast%pit(k)%delta(1)
 	z = pclast%site(3) + pclast%pit(k)%delta(3)
 	surface(x,z)%depth =  surface(x,z)%depth + pclast%pit(k)%rate*DELTA_T
-	surface(x,z)%signal = max(0.0,(surface(x,z)%target_depth - surface(x,z)%depth)/MAX_PIT_DEPTH)
+	surface(x,z)%signal = max(0.0,GetSignal(x,z))
 	if (surface(x,z)%depth > 1.1*surface(x,z)%target_depth) then
 		write(logmsg,*) 'target_depth exceeded: ',pclast%ID,k,x,z,surface(x,z)%depth,surface(x,z)%target_depth,surface(x,z)%signal
 		call logger(logmsg)
@@ -741,15 +871,17 @@ end subroutine
 !------------------------------------------------------------------------------------------------
 subroutine fuse_clump(pclump)
 type(clump_type) :: pclump
-integer :: i, icm(3)
+integer :: i, iblast
 
-!call logger('fusing') 
+!call logger('fusing')
 pclump%status = FUSED
 do i = 1,pclump%ncells
 	mono(pclump%list(i))%status = FUSED
 enddo
 !icm = pclump%cm + 0.5
 !pclump%cm = icm
+!iblast = pclump%iblast
+!blast(iblast)%status = DORMANT
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -826,10 +958,11 @@ end subroutine
 ! (b) Precompute the dissolving rate factor as a function of distance from the OC centre,
 !     and accounting for partial coverage of a grid site.  A site is included if the 
 !     centre is within the radius.
+! (c) Remove seal from under OCs initial location
 !------------------------------------------------------------------------------------------------
 subroutine createOsteoclast(pclump)
 type(clump_type), pointer :: pclump
-integer :: bonesite(3,100), i, j, n, npit, dx, dz
+integer :: bonesite(3,100), i, j, n, npit, dx, dz, x, z
 type(osteoclast_type), pointer :: pclast
 real :: tnow, r, fract(100), fsum
 integer :: kpar = 0
@@ -846,7 +979,7 @@ pclast%site(2) = NBY + 1
 pclast%lastdir = random_int(1,8,kpar)
 pclast%entrytime = tnow
 pclast%status = ALIVE
-pclast%movetime = tnow + CLAST_DWELL_TIME 
+pclast%movetime = tnow 
 pclast%dietime = tnow + clastLifetime()
 pclast%count = pclump%ncells
 do i = 1,pclump%ncells
@@ -879,10 +1012,13 @@ allocate(pclast%pit(npit))
 do i = 1,npit
 	pclast%pit(i)%delta = bonesite(:,i) - pclast%site
 	pclast%pit(i)%fraction = fract(i)*(npit/fsum)		! normalize %fraction to sum to npit
+	x = bonesite(1,i)
+	z = bonesite(3,i)
+	surface(x,z)%seal = 0
 enddo
 call RemoveClump(pclump)
 call pitrates(pclast)
-write(logmsg,'(a,3f6.1,2i4)') 'clast site, count, npit: ',pclast%site,pclast%count,pclast%npit
+write(logmsg,'(a,7i4)') 'clast site, count, npit: ',pclast%site,pclast%count,pclast%npit
 call logger(logmsg)
 call UpdateSurface
 end subroutine
@@ -911,12 +1047,12 @@ integer :: Nm, Np
 !endif
 resorptionRate = (MAX_RESORPTION_RATE*Nm)/(MAX_RESORPTION_N*Np*24*60*DELTA_X**3)
 !write(*,*) 'resorptionRate: ',Nm,Np,resorptionRate
-!write(*,*) MAX_RESORPTION_RATE,Nm,MAX_RESORPTION_N,Np,24*60,DELTA_X
+!write(*,*) MAX_RESORPTION_RATE,Nm,MAX_RESORPTION_N,Np,24*60,DELTA_X 
 end function
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
-subroutine clastDeath(i)
+subroutine ClastDeath(i)
 integer :: i
 integer :: k, site(3), kcell
 integer :: x,y,z
@@ -939,6 +1075,7 @@ deallocate(clast(i)%pit)
 !	occupancy(site(1),site(2),site(3))%indx = 0
 !enddo
 nliveclast = nliveclast - 1
+call UpdateSurface
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -993,6 +1130,60 @@ use, intrinsic :: iso_c_binding
 integer(c_int) :: summaryData(*)
 
 summaryData(1:4) = (/istep,mono_cnt,nborn,nleft/)
+end subroutine
+
+!--------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------
+subroutine CheckBlast
+integer :: iblast, site(3)
+type(osteoblast_type), pointer :: pblast
+
+do iblast = 4,7,3
+	pblast => blast(iblast)
+	site = pblast%site
+	write(logmsg,'(a,3i4,2f8.4)') 'OB: ',iblast,pblast%status,surface(site(1),site(3))%iclast,BlastSignal(pblast),surface(site(1),site(3))%signal
+	call logger(logmsg)
+enddo
+end subroutine
+
+!--------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------
+subroutine CheckMono
+integer :: imono, stat, cnt(9)
+integer :: clumpcnt(100), iclump, icmax
+
+cnt = 0
+clumpcnt = 0
+icmax = 0
+do imono = 1,nmono
+	stat = mono(imono)%status
+	if (stat < 1) cycle
+	cnt(stat) = cnt(stat) + 1
+	if (stat == CLUMPED) then
+		iclump = mono(imono)%iclump
+		clumpcnt(iclump) = clumpcnt(iclump) + 1
+		icmax = max(icmax,iclump)
+	endif
+	if (stat == FUSING) then
+		iclump = mono(imono)%iclump
+		clumpcnt(iclump) = clumpcnt(iclump) + 1
+		icmax = max(icmax,iclump)
+	endif
+	if (stat == FUSED) then
+		iclump = mono(imono)%iclump
+		clumpcnt(iclump) = clumpcnt(iclump) + 1
+		icmax = max(icmax,iclump)
+	endif
+enddo
+write(logmsg,'(a,i8,6i6,2f8.4,i6)') 'mono: ',istep,icmax,cnt(3:7)
+call logger(logmsg)
+do iclump = 1,icmax
+	if (clumpcnt(iclump) /= clump(iclump)%ncells) then
+		write(logmsg,*) 'ERROR: CheckMono: bad clumpcnt: ',iclump,clumpcnt(iclump),clump(iclump)%ncells
+		call logger(logmsg)
+		stop
+	endif
+enddo
 end subroutine
 
 !--------------------------------------------------------------------------------
@@ -1403,16 +1594,22 @@ use, intrinsic :: iso_c_binding
 integer(c_int) :: res
 logical :: ok
 integer :: error
-real :: totsig
+real :: totsig, tnow
 integer, parameter :: NT_EVOLVE = 20
 
 res = 0
 !call logger("simulate_step")
 ok = .true.
 istep = istep + 1
-if (mod(istep,1000) == 0) then
-	write(logmsg,'(a,i8,6i6)') 'istep: ',istep,mono_cnt,nleft	!,mono(22)%status,mono(22)%site
-	call logger(logmsg)
+tnow = istep*DELTA_T
+if (.not. initiated .and. tnow > STARTUP_TIME*24*60) then
+	call Initiation
+endif
+if (mod(istep,100) == 0) then
+!	write(logmsg,'(a,i8,6i6)') 'istep: ',istep,mono_cnt,nleft	!,mono(22)%status,mono(22)%site
+!	call logger(logmsg)
+!	call CheckMono
+!	call CheckBlast
 endif
 !write(nflog,*) 'call updater'
 call updater
@@ -1420,9 +1617,9 @@ call updater
 call MonoMover
 if (mod(istep,NT_EVOLVE) == 0) then
 	call evolveRANKL(NT_EVOLVE,totsig)
-	if (totsig == 0 .and. nclump > 0) then
-		call break_clumps
-	endif
+!	if (totsig == 0 .and. nclump > 0) then
+!		call break_clumps
+!	endif
 !	nliveOC = 0
 !	do ic = 1,nclast
 !		if (clast(ic)%status /= DEAD) then

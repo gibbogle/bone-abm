@@ -166,6 +166,7 @@ allocate(RANKL_conc(NX,NY,NZ))
 allocate(RANKL_grad(3,NX,NY,NZ))
 allocate(RANKLinflux(NX,NY,NZ))
 
+RANKL_grad = 0
 RANKLinflux = -1
 do x = 1,NX
 	do y = NBY+1,NY
@@ -180,13 +181,17 @@ y = NBY+1
 !		RANKLinflux(x,y,z) = RANK_BONE_RATIO*surface(x,z)%signal
 !	enddo
 !enddo
+sum = 0
 do iblast = 1,nblast
 	pblast => blast(iblast)
 	x = pblast%site(1)
 	z = pblast%site(3)
 	RANKLinflux(x,y,z) = BlastSignal(pblast)
+	sum = sum + RANKLinflux(x,y,z)
 !	write(*,*) iblast,x,z,RANKLinflux(x,y,z)
 enddo
+if (sum == 0) return
+
 call steadystate(RANKLinflux,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc)
 call gradient(RANKLinflux,RANKL_conc,RANKL_grad)
 !write(*,*) 'RANKL gradient: ',RANKL_grad(:,25,25,25)
@@ -232,7 +237,7 @@ real :: totsig
 !real, allocatable :: influx(:,:,:)
 !real, allocatable :: factor(:,:)
 integer :: x, y, z, site(3), isig, i, iblast
-real :: dt, sum
+real :: dt, sum, sig
 !type(osteoclast_type), pointer :: pclast
 type(osteoblast_type), pointer :: pblast
 
@@ -255,11 +260,16 @@ y = NBY+1
 !		totsig = totsig + RANKLinflux(x,y,z)
 !	enddo
 !enddo
+RANKLinflux(:,y,:) = 0
 do iblast = 1,nblast
 	pblast => blast(iblast)
+	if (pblast%status /= ALIVE) cycle
 	x = pblast%site(1)
 	z = pblast%site(3)
-	RANKLinflux(x,y,z) = BlastSignal(pblast)
+	sig = BlastSignal(pblast)
+	if (sig > OB_SIGNAL_THRESHOLD) then
+		RANKLinflux(x,y,z) = sig
+	endif
 	totsig = totsig + RANKLinflux(x,y,z)
 enddo
 call evolve(RANKLinflux,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc,dt)

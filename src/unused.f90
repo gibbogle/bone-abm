@@ -545,6 +545,276 @@ pclast%lastdir = kdir
 res = abs(res)
 end subroutine
 
+!---------------------------------------------------------------------
+! The osteoclast is moved one lattice jump, and the locations of active
+! pit sites are recomputed, together with their resorption rates.
+! Chemotaxis
+! When osteoclast motion is influenced by the bone signal, the jump 
+! probabilities depend on the relative signal strengths of the 
+! neighbour sites.
+! There are two cases:
+! (1) OC is on or near sites needing excavation (signal > 0)
+! (2) OC is not near sites needing excavation.  In this case the OC 
+!     must first move towards sites with signal.  It's probably safe to
+!     assume that the OC has a range for detection of signal.
+!
+! Result values (res):
+!     0 = prefer to stay, continue resorbing
+!     1 = prefer or need to move, move possible
+!     2 = move necessary (no signal), move blocked
+!     3 = no signal in patch
+!---------------------------------------------------------------------
+subroutine MoveClast2(pclast,res)
+type(osteoclast_type), pointer :: pclast
+integer :: res
+integer :: ipit, iy, x, y, z, site(3), i, imono, kdir, dx, dz, dirmax, iclast
+integer :: ddir, nsig, ocsite(3), kmax, targetsite(3), kmin
+real :: prob(0:4) = (/ 0.5, 0.15, 0.07, 0.025, 0.01 /)
+integer :: jump(3), lastjump(3), kpar=0
+real :: d, bf, v(3), proj, size0, size1, djump, dsum, depth
+real :: totsig(0:8), siglim, sig, patchtot, amp(8), cosa, amax, tnow, dmin
+real(8) :: psum, pmax, R, dp, p(8), ptemp(8)
+!real :: p(3) = (/0.25,0.5,0.25/)	! arbitrary, interim
+logical :: covered, bdryhit, nearclast, freshbone, possible(8)
+type(osteoclast_type), pointer :: pclast1
+integer, save :: count = 0
+logical :: dbug
+real, parameter :: SIGNAL_EXCESS = 1.05
+
+if (pclast%ID == -1) then
+	dbug = .true.
+else
+	dbug = .false.
+endif
+
+tnow = istep*DELTA_T
+possible = .true.
+freshbone = .false.
+res = 0
+! First choose a direction.  Quantify the new bone available in each direction
+! at a distance approx equal to the long axis dimension of the osteoclast, i.e.
+! sqrt(count).
+
+ocsite = pclast%site
+if (pclast%status == MOVING) then	! special case, OC moving fast, possibly over other cells
+	targetsite = pclast%targetsite
+	if (ocsite(1) == targetsite(1) .and. ocsite(3) == targetsite(3)) then	! OC has reached the target site
+		pclast%status = RESORBING
+		res = 0
+		return
+	endif
+	dmin = 1.0e10
+	do kdir = 1,8
+		jump = dir2D(:,kdir)
+		site = ocsite + jump
+		v = targetsite - site
+		v(2) = 0
+		d = sqrt(dot_product(v,v))
+		if (d < dmin) then
+			dmin = d
+			kmin = kdir
+		endif
+	enddo
+	call ocmove(pclast,kmin)
+	if (dmin == 0) then
+		pclast%status = RESORBING
+	endif
+	res = 1
+	return
+endif
+
+totsig(0) = TotalSignal(pclast,ocsite)
+nsig = 0
+size0 = pclast%radius
+!if (dbug) write(*,'(a,i4,4f8.1)') 'move_clast: ',pclast%ID,pclast%cm,size0
+do kdir = 1,8
+	jump = dir2D(:,kdir)
+	site = ocsite + jump
+	totsig(kdir) = TotalSignal(pclast,site)
+	if (totsig(kdir) > 0) nsig = nsig + 1
+!	if (dbug) write(*,*) 'kdir,i,site: ',kdir,i,site
+	bdryhit = .false.
+	if ((site(1) <= 1 .or. site(1) >= NX) .or. (site(3) <= 1 .or. site(3) >= NZ)) then
+		bdryhit = .true.
+		possible(kdir) = .false.
+		cycle
+	endif
+	! Check for nearby osteoclasts.
+	! Treat osteoclast footprint as a circle with radius = clast_size
+	nearclast = .false.
+	do iclast = 1,nclast
+		pclast1 => clast(iclast)
+		if (pclast%ID == pclast1%ID) cycle
+		if (pclast1%status == DEAD) cycle
+		size1 = pclast1%radius
+		v = pclast1%site - pclast%site
+		d = sqrt(dot_product(v,v))
+		if (d < (size0 + size1)) then	! we don't want to move in the direction of v
+			proj = dot_product(v,real(jump))
+			if (proj > 0) then
+!				write(*,*) 'Too close: ', iclast
+				nearclast = .true.
+				exit
+!				possible(kdir) = .false.
+			endif
+		endif
+	enddo	
+	if (nearclast) then
+		if (dbug) write(*,*) 'nearclast: ',kdir,iclast,size0,size1
+		possible(kdir) = .false.
+		cycle
+	endif
+enddo
+
+if (dbug) write(*,'(9f8.2)') totsig
+if (sum(totsig) == 0) then	
+	! OC is not near sites needing excavation.
+	! Try to move towards a signalling site within range.
+	! If no such movement is possible, turn off resorption
+!	write(*,*) 'sum(totsig): ',sum(totsig)
+	patchtot = 0
+	amp = 0
+	dmin = 999
+	do i = 1,nsignal
+		site = signal(i)%site
+		sig = surface(site(1),site(3))%signal
+		patchtot = patchtot + sig
+		if (sig > 0) then
+			v = site - ocsite
+			d = sqrt(dot_product(v,v))
+			dmin = min(d,dmin)
+			if (d <= OC_SIGNAL_SENSING_RANGE) then
+				v = v/d		! unit offset vector
+				! Look at jump directions that reduce distance to the signalling site
+				do kdir = 1,8
+!					if (.not.possible(kdir)) cycle
+					cosa = dot_product(v,dir2D(:,kdir))
+					if (stuck) then
+						write(logmsg,'(3i5,L2,2f8.4)') pclast%ID,i,kdir,possible(kdir),sig,cosa
+						call logger(logmsg)
+					endif
+					if (possible(kdir) .and. cosa > 0) then
+						amp(kdir) = amp(kdir) + cosa*sig/d
+					endif
+				enddo
+			endif
+		endif
+	enddo
+	if (dmin < OC_SIGNAL_SENSING_RANGE .and. sum(amp) == 0) then
+		stuck = .true.
+		write(logmsg,'(a,2f8.3)') 'stuck: patchtot,dmin: ',patchtot,dmin
+		call logger(logmsg)
+		write(logmsg,'(a,8f8.4)') 'amp: ',amp
+		call logger(logmsg)
+	endif
+	if (patchtot == 0) then		! Excavation is complete
+		res = 3
+		return
+	endif
+	amax = 0
+	kmax = 0
+	do kdir = 1,8
+		if (amp(kdir) > amax) then
+			amax = amp(kdir)
+			kmax = kdir
+		endif
+	enddo
+	if (kmax == 0) then		! No useful movement is currently possible.  Need to climb over.
+		call ChooseTarget(pclast,targetsite)
+		if (targetsite(1) == 0) then
+			res = 2
+			return
+		else
+			pclast%targetsite = targetsite
+			pclast%status = MOVING
+			pclast%movetime = tnow + DT_FAST_MOVE
+			res = 0
+			return
+		endif
+	endif
+	call ocmove(pclast,kmax)
+	res = 1
+	return
+endif
+
+! An OC can move to a new site if the move is possible and if the total signal at the new site
+! exceeds (sufficiently) that at the current site, or if the current total signal = 0.  
+! The probability of the move is proportional to the signal excess.
+! If the current total signal and all neighbour site total signals are zero, the osteoclast dies. 
+
+if (totsig(0) == 0) then	! any level of signal is attractive
+	siglim = 0
+else						! need sufficient signal to force a move
+	siglim = max(totsig(0)*SIGNAL_EXCESS,1.0)
+endif
+if (dbug) write(*,*) 'siglim: ',siglim,' possible: ',possible
+p = 0
+pmax = 0
+do kdir = 1,8
+	if (possible(kdir) .and. (totsig(kdir) > siglim)) then
+		p(kdir) = totsig(kdir)
+		if (p(kdir) > pmax) then
+			pmax = p(kdir)
+			kmax = kdir
+		endif
+	endif
+enddo
+
+if (totsig(0) == 0) then	! need to move
+	if (pmax == 0) then		! no useful move is possible, try a random move
+		do kdir = 1,8
+			if (possible(kdir)) then
+				R = par_uni(kpar)
+				if (R < 0.1) then
+					call ocmove(pclast,kdir)
+					res = 1
+					return
+				endif
+			endif
+		enddo
+		call ChooseTarget(pclast,targetsite)
+		if (targetsite(1) == 0) then
+			res = 2
+			return
+		else
+			pclast%targetsite = targetsite
+			pclast%status = MOVING
+			pclast%movetime = tnow + DT_FAST_MOVE
+			res = 0
+			return		
+		endif
+	else					! make a move
+		call ocmove(pclast,kmax)
+		res = 1
+		return
+	endif
+elseif (pmax == 0) then		! do not move
+	res = 0
+	return
+endif	
+
+! Now filter out direction probs that are too small in comparison with the prob of the most preferred direction
+do kdir = 1,8
+	if (p(kdir) < 0.2*pmax) then
+		p(kdir) = 0
+	endif
+enddo
+psum = sum(p)
+if (psum > 0) then
+	p = p/psum
+endif
+
+R = par_uni(kpar)
+psum = 0
+do kdir = 1,8
+	psum = psum + p(kdir)
+	if (psum >= R) exit
+enddo
+call ocmove(pclast,kdir)
+res = 1
+end subroutine
+
+
 !----------------------------------------------------------------------------------------
 ! Solve for steady-state concentration field for a constituent that is defined by:
 !	influx(:,:,:)	if > 0, the rate of influx into grid cell (x,y,z)

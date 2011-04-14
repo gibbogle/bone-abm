@@ -34,10 +34,44 @@ save
 contains
 
 !---------------------------------------------------------------------
+! Not working yet
+!---------------------------------------------------------------------
+subroutine detacher(pclump)
+type(monocyte_type), pointer :: pmono
+type(clump_type), pointer :: pclump
+integer :: imono, k, site(3)
+real(8) :: R
+integer :: kpar = 0
+real, parameter :: DETACH_PROB = 0.01
+
+R = par_uni(kpar)
+if (R > DELTA_T/60) then
+	return
+endif
+imono = pclump%list(pclump%ncells)	! look at last monocyte added to the clump
+pmono => mono(imono)
+site = pmono%site
+R = par_uni(kpar)
+if (R < DETACH_PROB) then	! try to release this mono
+	do k = 3,5
+		if (occupancy(site(1),site(2)+k,site(3))%indx == 0) then	! to this site
+			pclump%ncells = pclump%ncells - 1
+			if (pclump%ncells == 0) then	! remove the clump
+				call RemoveClump(pclump)
+			endif
+			pmono%site(2) = site(2)+k
+			pmono%status = MOTILE
+			pmono%iclump = 0
+		endif
+	enddo
+endif
+end subroutine
+
+!---------------------------------------------------------------------
 !---------------------------------------------------------------------
 logical function canstick(stick1,stick2)
 real :: stick1, stick2
-real :: R
+real(8) :: R
 integer :: kpar = 0
 
 R = par_uni(kpar)
@@ -51,6 +85,9 @@ end function
 !---------------------------------------------------------------------
 ! mono(icell1) is sticky, may stick to an adjacent sticky cell to
 ! either join a clump or initiate a new clump.
+! NOTE:  Need to ensure that an OB is associated with only one clump!!!
+! After a clump has transformed into an OC the OB is available to
+! start another clump.
 !---------------------------------------------------------------------
 subroutine sticker(icell1,iblast)
 integer :: icell1, iblast
@@ -119,18 +156,22 @@ cell2 => mono(icell2)
 tnow = istep*DELTA_T
 if (cell1%iclump > 0) then
 	if (cell2%iclump > 0) then
-		! both cell1 and cell2!
-!		write(logmsg,*) 'stick: did this really happen? ',icell1,icell2,cell1%iclump,cell2%iclump
+		! both cell1 and cell2 are in a clump - these clumps are too close together!
+!		write(logmsg,*) 'stick: did this really happen? ',icell1,icell2,cell1%iclump,cell2%iclump, &
+!			clump(cell1%iclump)%iblast,clump(cell2%iclump)%iblast
 !		call logger(logmsg)
+		return
 		if (clump(cell1%iclump)%ncells + clump(cell2%iclump)%ncells <= MAX_CLUMP_CELLS) then
-			call join_clump(icell1,icell2)
+			if (clump(cell1%iclump)%iblast == clump(cell2%iclump)%iblast) then
+				call join_clump(icell1,icell2)
+			endif
 		endif
 	else
-		! just cell1
+		! just cell1 is in a clump
 		pclump => clump(cell1%iclump)
 		if (pclump%ncells == MAX_CLUMP_CELLS) then
-!			write(logmsg,*) 'Too many cells in clump (1)'
-!			call logger(logmsg)
+			write(logmsg,*) 'Too many cells in clump (1)'
+			call logger(logmsg)
 			return
 !			stop
 		endif
@@ -146,11 +187,11 @@ if (cell1%iclump > 0) then
 !		call logger(logmsg)
 	endif
 elseif (cell2%iclump > 0) then
-		! just cell2
+		! just cell2 is in a clump
 	pclump => clump(cell2%iclump)
 	if (pclump%ncells == MAX_CLUMP_CELLS) then
-!		write(logmsg,*) 'Too many cells in clump (2)'
-!		call logger(logmsg)
+		write(logmsg,*) 'Too many cells in clump (2)'
+		call logger(logmsg)
 		return
 !		stop
 	endif
@@ -165,7 +206,11 @@ elseif (cell2%iclump > 0) then
 !	write(logmsg,*) 'Cell added to clump: status: ',cell2%iclump,pclump%status,pclump%ncells
 !	call logger(logmsg)
 else
-		! neither cell is in a clump
+	! neither cell is in a clump
+	if (blast(iblast)%iclump /= 0) then
+		! This OB already has a clump attached
+		return
+	endif
 	nclump = nclump + 1
 	if (nclump > MAX_NCLUMP) then
 		write(logmsg,*) 'Too many clumps'
@@ -221,6 +266,7 @@ do i = 1,pclump2%ncells
 enddo
 call centre_of_mass(pclump1)
 pclump2%status = -1
+pclump2%ncells = 0
 end subroutine
 
 !---------------------------------------------------------------------
@@ -576,9 +622,16 @@ end subroutine
 !------------------------------------------------------------------------------------------------
 subroutine RemoveClump(pclump)
 type(clump_type), pointer :: pclump
-integer :: iblast
+integer :: iblast, k, kcell
+
+! Is this OK?
+!do k = 1,pclump%ncells
+!	kcell = pclump%list(k)
+!	mono(kcell)%status = DEAD
+!enddo
 
 pclump%status = DEAD
+pclump%ncells = 0
 iblast = pclump%iblast
 blast(iblast)%iclump = 0
 end subroutine

@@ -103,13 +103,13 @@ S1P influence factor = (Level of S1P chemotaxis)*min(1.0,(S1P gradient)/(Referen
 "S1P gradient is scaled by this to arrive at the gradient influence factor.  The overall S1P chemotaxis influence factor is given by:\n\
 S1P influence factor = (Level of S1P chemotaxis)*min(1.0,(S1P gradient)/(Reference S1P gradient))*(cell S1P1 level)"},
 
-{"S1P1_THRESHOLD", 0.5, 0.0, 0.0,
+{"S1P1_THRESHOLD", 0.4, 0.0, 0.0,
 "S1P1 threshold for egress",
 "Monocyte egress is possible when the cell's S1P1 level exceeds this threshold.  The probability of egress (in a time step) of a monocyte in contact with a capillary is then given by:\n\
 probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1P1_THRESHOLD)\n\
 [0-1]"},
 
-{"S1P1_RISETIME", 6, 0.0, 0.0,
+{"S1P1_RISETIME", 12, 0.0, 0.0,
 "S1P1 rise time",
 "Time required for monocyte S1P1 level to rise from 0 to 1. (Currently the rate of increase is treated as constant).\n\
 [hours]"},
@@ -130,7 +130,7 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "(Currently we consider only a single capillary with a fixed diameter)\n\
 [um]"},
 
-{"MONO_PER_MM3", 500, 0, 0,
+{"MONO_PER_MM3", 1500, 0, 0,
 "Monocytes/mm3",
 "Average number of monocytes per cubic mm of marrow (initial)."},
 
@@ -158,17 +158,17 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Time taken for a group of monocytes to form an osteoclast, after they have aggregated\n\
 [mins]"},
 
-{"CLAST_LIFETIME", 30.0, 0, 0,
+{"CLAST_LIFETIME", 12.0, 0, 0,
 "Osteoclast lifetime",
 "Length of time that an osteoclast remains active\n\
 [days]"},
 
-{"CLAST_DWELL_TIME", 60.0, 10.0, 500.0,
+{"CLAST_DWELL_TIME", 360.0, 0.0, 0.0,
 "Osteoclast dwell time",
-"Length of time that an osteoclast remains in one spot, before moving one grid\n\
+"Minimum length of time that an osteoclast remains in one spot, before moving one grid\n\
 [days]"},
 
-{"MAX_RESORPTION_RATE", 4000, 0.0, 0.0,
+{"MAX_RESORPTION_RATE", 6000, 0.0, 0.0,
 "Maximum resorption rate",
 "Maximum rate of bone removal by an osteoclast\n\
 [um3/day]"},
@@ -182,34 +182,7 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Maximum resorption N",
 "Number of osteoclast monocytes corresponding to maximum resorption rate."},
 
-/*
-{"SIGNAL_RADIUS", 50, 0, 0,
-"Signal range",
-"Range of the signal that attracts monocytes to the bone surface (inverse square law applies within this range)\n\
-[um]"},
-
-{"SIGNAL_THRESHOLD", 0.14, 0, 0,
-"Signal threshold",
-"Strength of the signal defining the high-signal region near the source."},
-
-{"SIGNAL_AFACTOR", 0.2, 0, 0,
-"Chemotactic strength factor",
-"Chemotactic influence of the signal is controlled by this parameter."},
-
-{"MTHRESHOLD", 25, 0, 0,
-"Fusing threshold",
-"Number of monocytes in the high-signal region required to trigger fusing."},
-
-{"EXIT_RULE", 1, 1, 2,
-"Exit rule",
-"T cell exit rule.  1 = use NGEN_EXIT, 2 = use EXIT_THRESHOLD, 3 = no restriction."},
-
-{"EXIT_REGION", 1, 1, 2,
-"Exit region",
-"Determines blob region for cell exits: 1 = everywhere, 2 = lower half of blob, 3 = by chemotaxis, via discrete exits."},
-*/
-
-{"CROSS_PROB", 0.02, 0.0, 1.0,
+{"CROSS_PROB", 0.1, 0.0, 1.0,
 "Max capillary egress probability",
 "The probability (per time step) of a monocyte beginning to cross the endothelium into the capillary, while next to a capillary site\n\
 is given by: probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1P1_THRESHOLD)\n\
@@ -230,7 +203,7 @@ is given by: probability = (Max capillary egress probability)*(S1P1 - S1P1_THRES
 "Strength of chemotactic influence on T cell motion towards DCs."},
 */
 
-{"NDAYS", 30.0, 0, 0,
+{"NDAYS", 90.0, 0, 0,
 "Number of days",
 "Length of the simulation.\n\
 [days]"},
