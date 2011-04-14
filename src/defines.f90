@@ -31,6 +31,7 @@ integer, parameter :: FUSED = 6
 integer, parameter :: OSTEO = 7
 integer, parameter :: CROSSING = 8
 integer, parameter :: LEFT = 9
+integer, parameter :: DORMANT = 10
 
 integer, parameter :: RESORBING = 2
 integer, parameter :: MOVING = 3
@@ -49,10 +50,11 @@ integer, parameter :: MAX_BLAST = 200
 integer, parameter :: MAX_CAP = 100
 integer, parameter :: MAX_SIGNAL = 10000
 integer, parameter :: MAX_NCLUMP = 50
-integer, parameter :: MAX_CLUMP_CELLS = 40
+integer, parameter :: MAX_CLUMP_CELLS = 50
 real, parameter :: DELTA_T = 0.25		! minutes
 real, parameter :: BIGTIME = 1.0e10
 logical, parameter :: FAST_DISPLAY = .false.
+real, parameter :: STARTUP_TIME = 1		! days
 
 ! GUI parameters
 character*(12), parameter :: stopfile = 'stop_dll'
@@ -94,47 +96,49 @@ real, parameter :: RANKL_KDIFFUSION = 2		! 1/10 of approx 1000 um^2/min
 ! http://www.math.ubc.ca/~ais/website/status/diffuse.html
 !real, parameter :: RANKL_KDECAY = 0.00001	! <=== compute from RANKL_HALFLIFE
 real, parameter :: RANKL_HALFLIFE = 12*60
-real, parameter :: RANKSIGNAL_rateconstant = 1.0
-real, parameter :: RANKSIGNAL_halflife = 6*60		! mins
-real, parameter :: RANK_BONE_RATIO = 0.3			! ratio of RANKL secretion to bone signal strength.
-real, parameter :: ST1 = 0.3	! -> CHEMOTACTIC
+real, parameter :: RANKSIGNAL_rateconstant = 0.3
+real, parameter :: RANKSIGNAL_halflife = 12*60		! mins
+real, parameter :: RANK_BONE_RATIO = 0.6			! ratio of RANKL secretion to bone signal strength.
+real, parameter :: ST1 = 0.2	! -> CHEMOTACTIC
 real, parameter :: ST2 = 0.5	! -> STICKY
 
-logical, parameter :: RANKL_chemotaxis = .true.
 real, parameter :: RANKL_CHEMOLEVEL = 0.3
 !real, parameter :: RANKL_GRADLIM = 0.0005
 
 ! Clump parameters
-integer, parameter :: CLUMP_THRESHOLD = 25
-real, parameter :: CLUMP_SEPARATION = 6
+integer, parameter :: CLUMP_THRESHOLD = 15	!25
+real, parameter :: CLUMP_SEPARATION = 4
 real, parameter :: CLUMP_FALL_PROB = 0.001	! arbitrary
 
 ! Osteoclast parameters
 real, parameter :: CLAST_STOP_TIME = 12*60	! max time for an OC to be blocked
 real, parameter :: DT_FAST_MOVE = 10.0
 real, parameter :: CLAST_RADIUS_FACTOR = 0.5	! relates OC radius to the sqrt of the number of monocytes
-
+real, parameter :: OC_SIGNAL_THRESHOLD = 0.5
+real, parameter :: OC_MARGIN = 2
+real, parameter :: SEAL_REMOVAL_RATE = 0.0001
 ! Pit parameters
-real, parameter :: LACUNA_A = 20		! Parameters of the elliptical region to be excavated
-real, parameter :: LACUNA_B = 10
+real, parameter :: LACUNA_A = 24		! Parameters of the elliptical region to be excavated
+real, parameter :: LACUNA_B = 7
 real, parameter :: MAX_PIT_DEPTH = 3	! grids (should be input parameter)
 real, parameter :: OC_SIGNAL_SENSING_RANGE = 20	! grids
 real, parameter :: Kattraction = 4
 
 ! Osteoblast parameters
-real, parameter :: BLAST_PER_UM3 = 7.0e-6
-real, parameter :: OB_SIGNAL_RADIUS = 5		! radius of disk over which OB integrates signal
+real, parameter :: OB_PER_UM3 = 1.0e-8
+real, parameter :: OB_SIGNAL_RADIUS = 4		! radius of disk over which OB integrates signal
+real, parameter :: OB_SIGNAL_THRESHOLD = 5
 real, parameter :: OB_REACH = 40			! to make contact with a monocyte (microns)
 real, parameter :: BLAST_DWELL_TIME = 2*60
 
 type monocyte_type
     integer :: ID
     integer(2) :: site(3)
+	integer(2) :: iclump
+	integer(2) :: iclast
 	integer(1) :: region
-	integer(1) :: iclast
     integer(1) :: status
 	integer(1) :: lastdir
-	integer(1) :: iclump
 	real :: S1P1				! level of S1P1 expression
 	real :: RANKSIGNAL			! integrated RANK signal
 	real :: stickiness
@@ -214,6 +218,8 @@ type surface_type
 	real :: target_depth	! desired excavation depth (units of grids)
 	real :: signal			! current bone signal strength
 	real :: depth			! current excavation depth (units of grids)
+	real :: seal			! there is a sealing layer on the bone surface that is eroded by proximity to an OC
+	real :: convexity
 	integer :: iclast
 end type
 

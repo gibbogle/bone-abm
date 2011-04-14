@@ -54,7 +54,7 @@ real :: CROSSING_TIME = 2*60
 real :: FUSING_TIME = 2*60				! mins
 real :: CLAST_LIFETIME = 96*60			! days -> mins
 !real :: CLAST_DWELL_TIME0 = 4*60		! mins
-real :: CLAST_DWELL_TIME = 3*60			! mins
+real :: CLAST_DWELL_TIME = 60			! mins
 real :: MAX_RESORPTION_RATE = 0.01		! um/min
 real :: MAX_RESORPTION_D = 10			! um
 integer :: MAX_RESORPTION_N = 30
@@ -74,6 +74,7 @@ real :: unitjump(3,MAXRELDIR+1)
 real :: dirprob(0:MAXRELDIR)
 logical :: vn_adjacent(MAXRELDIR+1)
 integer :: dir2D(3,8) = reshape((/ -1,0,-1, -1,0,0, -1,0,1, 0,0,1, 1,0,1, 1,0,0, 1,0,-1, 0,0,-1/),(/3,8/))
+logical :: RANKL_chemotaxis = .false.
 
 integer :: in_per_hour					! rate of influx of OP monocytes from the blood (cells/hour)
 integer :: exit_rule					! 1 = no chemotaxis, 2 = chemotaxis
@@ -98,8 +99,10 @@ integer, allocatable :: entrysite(:,:)
 type(clump_type), target :: clump(MAX_NCLUMP)
 real :: RANKSIGNAL_decayrate			! from RANKSIGNAL_halflife
 real :: RANKL_KDECAY					! from RANKL_HALFLIFE
-real :: RANKL_GRADLIM					! equal to the initial max RANKL gradient at NBY+3
+real :: RANKL_GRADLIM = 5.0e-4			! was equal to the initial max RANKL gradient at NBY+3
+										! Now need to guess the value to use!!!!!!!!
 logical :: stuck
+logical :: initiated
 
 contains
 
@@ -179,15 +182,46 @@ inorm = sqrt(real(dot_product(v,v)))
 end function
 
 !------------------------------------------------------------------------------------------------
+! Changed to make signal proportional to fraction of target depth left to remove.
+! This still is not satisfactory!!!
+!------------------------------------------------------------------------------------------------
+real function GetSignal(x,z)
+integer :: x, z
+
+!GetSignal = (surface(x,z)%target_depth - surface(x,z)%depth)/MAX_PIT_DEPTH
+if (surface(x,z)%target_depth > 0) then
+!	GetSignal = 2*(surface(x,z)%target_depth - surface(x,z)%depth)/(surface(x,z)%target_depth + MAX_PIT_DEPTH)
+	GetSignal = (surface(x,z)%target_depth - surface(x,z)%depth)/(MAX_PIT_DEPTH)
+else
+	GetSignal = 0
+endif
+!write(*,*) 'GetSignal: ',x,z,surface(x,z)%target_depth,surface(x,z)%depth
+end function
+
+!------------------------------------------------------------------------------------------------
 ! Compute the signal that an OB is receiving from neighbouring bone sites.
+! The OB should be kept out of the pit.  How?  It should always keep its distance from all OCs,
+! and avoid sites with depth > 0, while trying to be near high signal.
+! Try making blast signal on/off.
 !------------------------------------------------------------------------------------------------
 real function BlastSignal(pblast)
 type(osteoblast_type), pointer :: pblast
 integer :: bsite(3), dx, dz, x, z
-real :: d2, r2, sum
+real :: d2, r2, sum, factor
 
+!if (pblast%status /= ALIVE) then
+!	BlastSignal = 0
+!else
+!	BlastSignal = 30
+!endif
+!return
+
+BlastSignal = 0
+if (pblast%status /= ALIVE) return
 bsite = pblast%site
+if (surface(bsite(1),bsite(3))%seal == 1) return
 r2 = OB_SIGNAL_RADIUS**2
+factor = 1.0
 sum = 0
 do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
 	x = bsite(1) + dx
@@ -195,8 +229,11 @@ do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
 		z = bsite(3) + dz
 		d2 = dx**2 + dz**2
 		if (d2 > r2) cycle
-		if (surface(x,z)%iclast > 0) cycle
-		sum = sum + surface(x,z)%signal
+		if (surface(x,z)%iclast > 0) then
+			factor = 0.5
+		endif
+!		sum = sum + surface(x,z)%signal*(1-surface(x,z)%seal)
+		sum = sum + factor*surface(x,z)%signal
 	enddo
 enddo
 BlastSignal = RANK_BONE_RATIO*sum
