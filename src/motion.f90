@@ -471,7 +471,7 @@ type (monocyte_type), pointer :: pmono
 integer :: kcell, status, iblast
 logical :: go
 integer :: kpar = 0
-integer :: kdbug = -1
+integer :: kdbug = -300
 integer :: site(3)
 real :: tnow
 
@@ -496,11 +496,11 @@ do kcell = 1,nmono
 		endif
 	elseif (status >= MOTILE .and. pmono%iclump == 0) then	! interim criterion
 		call MonoJumper(kcell,go,kpar)
-		if (kcell == kdbug) then
-			write(*,'(3i4)') pmono%site
-		endif
 	endif
 	iblast = NearOB(pmono)
+	if (kcell == kdbug) then
+		write(nflog,'(2i6,6i4)') istep,kcell,pmono%site,iblast,status
+	endif
 	if (iblast == 0) cycle
 	if (blast(iblast)%status == CROSSING) cycle
 !	if (pmono%stickiness > 0 .and. pmono%status < FUSED .and. NearOB(pmono)) then
@@ -517,6 +517,7 @@ end subroutine
 ! the site.  When close enough to the signal site (intensity above a threshold)
 ! the jump probabilities are determined solely by the relative intensities.
 ! This is to ensure that monocytes cluster.
+! Note: now CXCL12 chemotaxis does not depend on S
 !--------------------------------------------------------------------------------
 subroutine MonoJumper(kcell,go,kpar)
 integer :: kpar,kcell
@@ -526,10 +527,11 @@ integer :: site1(3),site2(3)
 integer :: region, kcell2
 integer :: irel,dir1,lastdir1,status
 integer :: savesite2(3,26), jmpdir(26)
-real(8) :: psum, p(26), R, wS1P(27), g(3), gamp, S1Pfactor, wRANKL(27), RANKLfactor
+real(8) :: psum, p(26), R, wS1P(27), g(3), gamp, S1Pfactor, wCXCL12(27), CXCL12factor
 real :: f0, f, motility_factor
 logical :: free, cross, field
 
+!write(*,*) 'istep,kcell: ',istep,kcell
 cell => mono(kcell)
 status = cell%status
 if (status == MOTILE) then
@@ -578,19 +580,29 @@ if (S1P_chemotaxis) then
 !	write(*,*) 'wS1P: ',wS1P
 !	write(*,*) 'S1P1: ',cell%S1P1
 endif
-! Set up weights in the 6 principal axis directions corresponding to RANKL_grad(:,:,:,:)
-if (RANKL_chemotaxis) then
-	g = RANKL_grad(:,site1(1),site1(2),site1(3))
-	gamp = sqrt(dot_product(g,g))	! Magnitude of RANKL gradient
-	g = g/gamp
-	call chemo_weights(g,wRANKL)		! w(:) now holds the normalized gradient vector components
-	RANKLfactor = RANKL_CHEMOLEVEL*min(1.0,gamp/RANKL_GRADLIM)*cell%RANKSIGNAL
-!	RANKLfactor = RANKL_CHEMOLEVEL*min(1.0,gamp/RANKL_GRADLIM)
-!	write(*,*) 'g,gamp: ',g,gamp
-!	write(*,*) 'wRANKL: ',wRANKL
-!	write(*,*) 'RANK: ',cell%RANKSIGNAL
+! Set up weights in the 6 principal axis directions corresponding to CXCL12_grad(:,:,:,:)
+if (CXCL12_chemotaxis .and. initiated) then
+	g = CXCL12_grad(:,site1(1),site1(2),site1(3))
+	gamp = dot_product(g,g)	! Magnitude of CXCL12 gradient
+	if (gamp < 1.0e-6) then		!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! check threshold !!!!!!!!!
+		CXCL12factor = 0
+		wCXCL12 = 0
+	else
+		g = g/gamp
+		call chemo_weights(g,wCXCL12)		! w(:) now holds the normalized gradient vector components
+	!	CXCL12factor = CXCL12_CHEMOLEVEL*min(1.0,gamp/CXCL12_GRADLIM)*cell%RANKSIGNAL
+		CXCL12factor = CXCL12_CHEMOLEVEL*min(1.0,gamp/CXCL12_GRADLIM)
+		if (istep >= 5760 .and. kcell == 300) then
+			write(nflog,*) 'g,gamp: ',g,gamp,CXCL12_GRADLIM
+			write(nflog,*) 'wCXCL12: ',wCXCL12
+			write(nflog,*) 'CXCL12factor: ',CXCL12factor
+		endif
+	endif
+else
+	CXCL12factor = 0
+	wCXCL12 = 0
 endif
-!write(*,*) 'S1Pfactor, RANKLfactor: ',S1Pfactor, RANKLfactor
+!write(*,*) 'S1Pfactor, CXCL12factor: ',S1Pfactor, CXCL12factor
 !stop
 lastdir1 = cell%lastdir
 p = 0
@@ -599,6 +611,13 @@ do irel = 1,nreldir
     p(irel) = 0
 	dir1 = reldir(lastdir1,irel)
 	site2 = site1 + jumpvec(:,dir1)
+	if (site2(1) < 1 .or. site2(1) > NX) cycle
+	if (site2(2) < NBY+2 .or. site2(2) > NY) cycle
+	if (site2(3) < 1 .or. site2(3) > NZ) cycle
+	if (site2(3) > NZ) then
+		write(*,*) 'Error: MonoJumper: ',kcell,site1,irel,dir1,jumpvec(:,dir1),site2
+		stop
+	endif
 	! With the call to free_site() returning region and kcell, decisions can be made
 	! about transition to BLOOD, for example.
 	free = free_site(site2,region,kcell2)
@@ -618,9 +637,9 @@ do irel = 1,nreldir
 			! the increment to the probability depends on S1Pfactor and wS1P(dir1)
 			p(irel) = p(irel) + S1Pfactor*wS1P(dir1)
 		endif
-		if (RANKL_chemotaxis) then
-			! the increment to the probability depends on RANKLfactor and wRANKL(dir1)
-			p(irel) = p(irel) + RANKLfactor*wRANKL(dir1)
+		if (CXCL12_chemotaxis) then
+			! the increment to the probability depends on CXCL12factor and wCXCL12(dir1)
+			p(irel) = p(irel) + CXCL12factor*wCXCL12(dir1)
 		endif
 		jmpdir(irel) = dir1
 		psum = psum + p(irel)
@@ -681,7 +700,7 @@ occupancy(site1(1),site1(2),site1(3))%indx = 0
 end subroutine
 
 !---------------------------------------------------------------------
-! Use for both S1P and RANKL chemotaxis
+! Use for both S1P and CXCL12 chemotaxis
 !---------------------------------------------------------------------
 subroutine chemo_weights(g,w)
 real(8) :: g(3), w(27)
