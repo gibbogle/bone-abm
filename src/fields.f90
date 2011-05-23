@@ -6,7 +6,7 @@ implicit none
 save
 
 real, allocatable :: S1P_conc(:,:,:), S1P_grad(:,:,:,:)
-real, allocatable :: RANKL_conc(:,:,:), RANKL_grad(:,:,:,:), RANKLinflux(:,:,:)
+real, allocatable :: CXCL12_conc(:,:,:), CXCL12_grad(:,:,:,:), CXCL12_influx(:,:,:)
 
 contains
 
@@ -36,8 +36,8 @@ end function
 !----------------------------------------------------------------------------------------
 subroutine init_fields
 
-if (use_RANK) then
-	call init_RANKL
+if (use_CXCL12) then
+	call init_CXCL12
 endif
 if (S1P_chemotaxis) then
 	call init_S1P
@@ -151,34 +151,34 @@ end subroutine
 
 !----------------------------------------------------------------------------------------
 !----------------------------------------------------------------------------------------
-subroutine init_RANKL
+subroutine init_CXCL12
 integer :: isignal, site(3), x, y, z, it, nt, isig, iblast
 real :: dt, sum
 real :: g(3), gamp, gmax
 type(osteoblast_type), pointer :: pblast
 !real, parameter :: Kdecay = 0.00001, Kdiffusion = 0.001
 
-write(logmsg,*) 'Initializing RANKL: KDECAY: ', RANKL_KDECAY
-!call formulate(RANKL_KDIFFUSION,RANKL_KDECAY)
+write(logmsg,*) 'Initializing CXCL12: KDECAY: ', CXCL12_KDECAY
+!call formulate(CXCL12_KDIFFUSION,CXCL12_KDECAY)
 
 call logger(logmsg)
-allocate(RANKL_conc(NX,NY,NZ))
-allocate(RANKL_grad(3,NX,NY,NZ))
-allocate(RANKLinflux(NX,NY,NZ))
+allocate(CXCL12_conc(NX,NY,NZ))
+allocate(CXCL12_grad(3,NX,NY,NZ))
+allocate(CXCL12_influx(NX,NY,NZ))
 
-RANKL_grad = 0
-RANKLinflux = -1
+CXCL12_grad = 0
+CXCL12_influx = -1
 do x = 1,NX
 	do y = NBY+1,NY
 		do z = 1,NZ
-			if (occupancy(x,y,z)%region == MARROW .or. occupancy(x,y,z)%region == LAYER) RANKLinflux(x,y,z) = 0
+			if (occupancy(x,y,z)%region == MARROW .or. occupancy(x,y,z)%region == LAYER) CXCL12_influx(x,y,z) = 0
 		enddo
 	enddo
 enddo
 y = NBY+1
 !do x = 1,NX
 !	do z = 1,NZ
-!		RANKLinflux(x,y,z) = RANK_BONE_RATIO*surface(x,z)%signal
+!		CXCL12_influx(x,y,z) = RANK_BONE_RATIO*surface(x,z)%signal
 !	enddo
 !enddo
 sum = 0
@@ -186,30 +186,30 @@ do iblast = 1,nblast
 	pblast => blast(iblast)
 	x = pblast%site(1)
 	z = pblast%site(3)
-	RANKLinflux(x,y,z) = BlastSignal(pblast)
-	sum = sum + RANKLinflux(x,y,z)
-!	write(*,*) iblast,x,z,RANKLinflux(x,y,z)
+	CXCL12_influx(x,y,z) = BlastSignal(pblast)
+	sum = sum + CXCL12_influx(x,y,z)
+!	write(*,*) iblast,x,z,CXCL12_influx(x,y,z)
 enddo
 if (sum == 0) return
 
-call steadystate(RANKLinflux,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc)
-call gradient(RANKLinflux,RANKL_conc,RANKL_grad)
-!write(*,*) 'RANKL gradient: ',RANKL_grad(:,25,25,25)
-write(logmsg,*) 0,RANKL_conc(NX/2,NBY+2,NZ/2)
+call steadystate(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc)
+call gradient(CXCL12_influx,CXCL12_conc,CXCL12_grad)
+!write(*,*) 'CXCL12 gradient: ',CXCL12_grad(:,25,25,25)
+write(logmsg,*) 0,CXCL12_conc(NX/2,NBY+2,NZ/2)
 call logger(logmsg)
 ! Testing convergence
 nt = 10
 dt = 100*DELTA_T
 do it = 1,nt
-	call evolve(RANKLinflux,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc,dt)
-	write(logmsg,*) it,RANKL_conc(NX/2,NBY+2,NZ/2)
+	call evolve(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc,dt)
+	write(logmsg,*) it,CXCL12_conc(NX/2,NBY+2,NZ/2)
 	call logger(logmsg)
 	sum = 0
 	do isig = 1,nsignal
 		site = signal(isig)%site
-		sum = sum + RANKL_conc(site(1),NBY+1,site(3))
+		sum = sum + CXCL12_conc(site(1),NBY+1,site(3))
 	enddo
-	write(logmsg,*) 'Mean patch RANKL: ',sum/nsignal
+	write(logmsg,*) 'Mean patch CXCL12: ',sum/nsignal
 	call logger(logmsg)
 enddo
 y = NBY + 3
@@ -217,21 +217,21 @@ gmax = 0
 do x = 1,NX
 !	do y = NBY+1,NY
 		do z = 1,NZ
-			g = RANKL_grad(:,x,y,z)
+			g = CXCL12_grad(:,x,y,z)
 			gamp = sqrt(dot_product(g,g))
 			gmax = max(gamp,gmax)
 		enddo
 !	enddo
 enddo
-write(logmsg,*) 'Max RANKL gradient at y=NBY+3: ',gmax
+write(logmsg,*) 'Max CXCL12 gradient at y=NBY+3: ',gmax
 call logger(logmsg)
-RANKL_GRADLIM = gmax
+CXCL12_GRADLIM = gmax
 end subroutine
 
 !----------------------------------------------------------------------------------------
 ! Need to suppress osteocyte signal from surface sites covered by OCs 
 !----------------------------------------------------------------------------------------
-subroutine EvolveRANKL(nt,totsig)
+subroutine EvolveCXCL12(nt,totsig)
 integer :: nt
 real :: totsig
 !real, allocatable :: influx(:,:,:)
@@ -256,30 +256,34 @@ totsig = 0
 y = NBY+1
 !do x = 1,NX
 !	do z = 1,NZ
-!		RANKLinflux(x,y,z) = RANK_BONE_RATIO*factor(x,z)*surface(x,z)%signal
-!		totsig = totsig + RANKLinflux(x,y,z)
+!		CXCL12_influx(x,y,z) = RANK_BONE_RATIO*factor(x,z)*surface(x,z)%signal
+!		totsig = totsig + CXCL12_influx(x,y,z)
 !	enddo
 !enddo
-RANKLinflux(:,y,:) = 0
+CXCL12_influx(:,y,:) = 0
 do iblast = 1,nblast
 	pblast => blast(iblast)
 	if (pblast%status /= ALIVE) cycle
 	x = pblast%site(1)
 	z = pblast%site(3)
 	sig = BlastSignal(pblast)
+	write(nflog,*) 'sig: ',iblast,sig
 	if (sig > OB_SIGNAL_THRESHOLD) then
-		RANKLinflux(x,y,z) = sig
+		CXCL12_influx(x,y,z) = sig
 	endif
-	totsig = totsig + RANKLinflux(x,y,z)
+	totsig = totsig + CXCL12_influx(x,y,z)
 enddo
-call evolve(RANKLinflux,RANKL_KDIFFUSION,RANKL_KDECAY,RANKL_conc,dt)
-call gradient(RANKLinflux,RANKL_conc,RANKL_grad)
-sum = 0
-do isig = 1,nsignal
-	site = signal(isig)%site
-	sum = sum + RANKL_conc(site(1),NBY+1,site(3))
-enddo
-!write(logmsg,*) 'Mean patch RANKL: ',sum/nsignal, totsig
+!write(nflog,*) 'evolveCXCL12: totsig: ',istep,totsig
+if (totsig > 0) then
+	call evolve(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc,dt)
+	call gradient(CXCL12_influx,CXCL12_conc,CXCL12_grad)
+!	y = NBY+4
+!	do x = 20,30
+!		write(nflog,'(i4,9e12.3)') x,(CXCL12_grad(:,x,y,z),z=20,22)
+!	enddo
+endif
+
+!write(logmsg,*) 'Mean patch CXCL12: ',sum/nsignal, totsig
 !call logger(logmsg)
 !deallocate(factor)
 end subroutine

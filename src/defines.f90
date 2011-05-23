@@ -91,19 +91,19 @@ logical, parameter :: S1P_chemotaxis = .true.
 !real, parameter :: S1P1_BASERATE = 1.0/(6*60)	! 6 hours 
 
 ! RANKL parameters
-logical, parameter :: use_RANK = .true.
-real, parameter :: RANKL_KDIFFUSION = 2		! 1/10 of approx 1000 um^2/min
+logical, parameter :: use_CXCL12 = .true.
+real, parameter :: CXCL12_KDIFFUSION = 2		! 1/10 of approx 1000 um^2/min
 ! http://www.math.ubc.ca/~ais/website/status/diffuse.html
-!real, parameter :: RANKL_KDECAY = 0.00001	! <=== compute from RANKL_HALFLIFE
-real, parameter :: RANKL_HALFLIFE = 12*60
+!real, parameter :: CXCL12_KDECAY = 0.00001	! <=== compute from CXCL12_HALFLIFE
+real, parameter :: CXCL12_HALFLIFE = 12*60
 real, parameter :: RANKSIGNAL_rateconstant = 0.3
 real, parameter :: RANKSIGNAL_halflife = 12*60		! mins
-real, parameter :: RANK_BONE_RATIO = 0.6			! ratio of RANKL secretion to bone signal strength.
-real, parameter :: ST1 = 0.2	! -> CHEMOTACTIC
+real, parameter :: OB_SIGNAL_FACTOR = 0.5			! ratio of CXCL12 secretion to bone signal strength.
+real, parameter :: ST1 = 0.0	! -> CHEMOTACTIC (now cells are always chemotactic)
 real, parameter :: ST2 = 0.5	! -> STICKY
 
-real, parameter :: RANKL_CHEMOLEVEL = 0.3
-!real, parameter :: RANKL_GRADLIM = 0.0005
+real, parameter :: CXCL12_CHEMOLEVEL = 1.0	! 0.3
+!real, parameter :: CXCL12_GRADLIM = 0.0005
 
 ! Clump parameters
 integer, parameter :: CLUMP_THRESHOLD = 15	!25
@@ -118,7 +118,8 @@ real, parameter :: OC_SIGNAL_THRESHOLD = 0.5
 real, parameter :: OC_MARGIN = 2
 real, parameter :: SEAL_REMOVAL_RATE = 0.0001
 ! Pit parameters
-real, parameter :: LACUNA_A = 24		! Parameters of the elliptical region to be excavated
+logical, parameter :: HALF_ELLIPSE = .true.
+real, parameter :: LACUNA_A = 40		! Parameters of the elliptical region to be excavated
 real, parameter :: LACUNA_B = 7
 real, parameter :: MAX_PIT_DEPTH = 3	! grids (should be input parameter)
 real, parameter :: OC_SIGNAL_SENSING_RANGE = 20	! grids
@@ -127,7 +128,7 @@ real, parameter :: Kattraction = 4
 ! Osteoblast parameters
 real, parameter :: OB_PER_UM3 = 1.0e-8
 real, parameter :: OB_SIGNAL_RADIUS = 4		! radius of disk over which OB integrates signal
-real, parameter :: OB_SIGNAL_THRESHOLD = 5
+real, parameter :: OB_SIGNAL_THRESHOLD = 1.0	! 5
 real, parameter :: OB_REACH = 40			! to make contact with a monocyte (microns)
 real, parameter :: BLAST_DWELL_TIME = 2*60
 
@@ -140,6 +141,7 @@ type monocyte_type
     integer(1) :: status
 	integer(1) :: lastdir
 	real :: S1P1				! level of S1P1 expression
+	real :: CXCL12SIGNAL		! integrated CXCL12 signal
 	real :: RANKSIGNAL			! integrated RANK signal
 	real :: stickiness
     real :: entrytime			! time that the cell entered the marrow (from blood or stem cell division)
@@ -240,6 +242,7 @@ end type
 
 type clump_type
 	integer :: ID
+	integer :: site(3)
 	integer :: iblast
 	integer :: ncells
 	integer :: list(MAX_CLUMP_CELLS)

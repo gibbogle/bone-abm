@@ -34,6 +34,39 @@ save
 contains
 
 !---------------------------------------------------------------------
+! Set up list of offsets from (0,0,0) in the order of increasing distance.
+!---------------------------------------------------------------------
+subroutine MakeClumpOrder
+logical :: done(-2:2,0:4,-2:2)
+integer :: x, y, z, n, site(3)
+real :: d2, d2min
+
+done = .false.
+n = 0
+do
+	d2min = 1.0e10
+	do y = 0,4
+		do x = -2,2
+			do z = -2,2
+				if (done(x,y,z)) cycle
+				d2 = x*x + y*y + z*z
+				if (d2 < d2min) then
+					d2min = d2
+					site = (/x,y,z/)
+				endif
+			enddo
+		enddo
+	enddo
+	n = n+1
+	clumpoffset(:,n) = site
+	done(site(1),site(2),site(3)) = .true.
+!	write(logmsg,*) 'clumpoffset: ',n,site
+!	call logger(logmsg)
+	if (n == MAX_NCLUMP) exit
+enddo
+end subroutine
+
+!---------------------------------------------------------------------
 ! Not working yet
 !---------------------------------------------------------------------
 subroutine detacher(pclump)
@@ -42,7 +75,7 @@ type(clump_type), pointer :: pclump
 integer :: imono, k, site(3)
 real(8) :: R
 integer :: kpar = 0
-real, parameter :: DETACH_PROB = 0.01
+real, parameter :: DETACH_PROB = 0.1
 
 R = par_uni(kpar)
 if (R > DELTA_T/60) then
@@ -59,9 +92,14 @@ if (R < DETACH_PROB) then	! try to release this mono
 			if (pclump%ncells == 0) then	! remove the clump
 				call RemoveClump(pclump)
 			endif
+			occupancy(site(1),site(2),site(3))%indx = 0
+			occupancy(site(1),site(2)+k,site(3))%indx = imono
 			pmono%site(2) = site(2)+k
 			pmono%status = MOTILE
 			pmono%iclump = 0
+!			write(logmsg,'(a,i4,i6)') 'Detached: ',pclump%ID,imono
+!			call logger(logmsg)
+			exit
 		endif
 	enddo
 endif
@@ -96,10 +134,12 @@ type(monocyte_type), pointer :: cell1, cell2
 integer :: site1(3), site2(3), i, icell2, iclump1, iclump2
 !logical :: isclump1, isclump2
 
+!write(*,*) 'sticker: ',icell1,iblast
 cell1 => mono(icell1)
 site1 = cell1%site
 if (site1(2) == NBY+1) then
-	write(*,*) 'sticker (a): ',cell1%ID,site1
+	write(logmsg,*) 'sticker (a) y = NBY+1: ',cell1%ID,site1
+	call logger(logmsg)
 	stop
 endif
 iclump1 = cell1%iclump
@@ -116,6 +156,7 @@ do i = 1,27
 		if (cell2%stickiness > 0 .and. cell2%status < FUSED) then
 			iclump2 = cell2%iclump
 			if ((iclump1 > 0) .and. (iclump1 == iclump2)) cycle		! already stuck together
+!			write(*,*) 'stickiness: ',cell1%stickiness,cell2%stickiness
 			if (canstick(cell1%stickiness,cell2%stickiness)) then
 				call stick(icell1,icell2,iblast)
 				iclump1 = cell1%iclump
@@ -127,6 +168,43 @@ if (cell1%site(2) == NBY+1) then
 	write(*,*) 'sticker (b): ',cell1%ID,site1
 	stop
 endif
+end subroutine
+
+!------------------------------------------------------------------------------------------------
+! A monocyte is added to the clump at the location determined by it's entering order, which
+! is stored in clumpoffset(:,:).
+! If there is a cell at the site, it must be moved.
+!------------------------------------------------------------------------------------------------
+subroutine PlaceInClump(pclump,icell)
+type(monocyte_type), pointer :: pmono
+integer :: icell
+type(clump_type), pointer :: pclump
+integer :: site1(3), site2(3), kcell
+
+pclump%ncells = pclump%ncells + 1
+pmono =>  mono(icell)
+site1 = pmono%site
+site2 = pclump%site + clumpoffset(:,pclump%ncells)
+!write(logmsg,'(a,i6,8i4)') 'PlaceInClump: ',icell,pclump%ID,pclump%ncells,site1,site2
+!call logger(logmsg)
+pmono%site = site2
+occupancy(site1(1),site1(2),site1(3))%indx = 0
+kcell = occupancy(site2(1),site2(2),site2(3))%indx
+if (kcell /= 0) then
+	if (mono(kcell)%status == CLUMPED) then
+		write(*,*) 'PlaceInClump: a clumped cell at the clump site.  This should never happen!'
+		write(*,*) pclump%ID,kcell,site2,mono(kcell)%status,mono(kcell)%iclump
+		stop
+	endif
+	! Move this cell to where the incoming cell was, since we know this site is available
+	mono(kcell)%site = site1
+	occupancy(site1(1),site1(2),site1(3))%indx = kcell
+else
+	occupancy(site2(1),site2(2),site2(3))%indx = icell
+endif
+pclump%list(pclump%ncells) = icell
+pmono%status = CLUMPED
+pmono%iclump = pclump%ID
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -151,6 +229,7 @@ type(monocyte_type), pointer :: cell1, cell2
 type(clump_type), pointer :: pclump
 real :: tnow
 
+!write(*,*) 'stick: ',icell1,icell2
 cell1 => mono(icell1)
 cell2 => mono(icell2)
 tnow = istep*DELTA_T
@@ -175,11 +254,8 @@ if (cell1%iclump > 0) then
 			return
 !			stop
 		endif
-		cell2%status = CLUMPED
-		cell2%iclump = cell1%iclump
-		pclump%ncells = pclump%ncells + 1
-		pclump%list(pclump%ncells) = icell2
-		call centre_of_mass(pclump)
+		call PlaceInClump(pclump,icell2)
+!		call centre_of_mass(pclump)
 		if (pclump%status >= FUSING) then
 			cell2%status = pclump%status
 		endif
@@ -195,11 +271,8 @@ elseif (cell2%iclump > 0) then
 		return
 !		stop
 	endif
-	cell1%status = CLUMPED
-	cell1%iclump = cell2%iclump
-	pclump%ncells = pclump%ncells + 1
-	pclump%list(pclump%ncells) = icell1
-	call centre_of_mass(pclump)
+	call PlaceInClump(pclump,icell1)
+!	call centre_of_mass(pclump)
 	if (pclump%status >= FUSING) then
 		cell1%status = pclump%status
 	endif
@@ -219,16 +292,14 @@ else
 	endif
 	pclump => clump(nclump)
 	pclump%ID = nclump
+	pclump%ncells = 0
 	pclump%iblast = iblast			! create correspondence between clump and OB
 	blast(iblast)%iclump = nclump
-	cell1%status = CLUMPED
-	cell2%status = CLUMPED
-	cell1%iclump = nclump
-	cell2%iclump = nclump
-	pclump%ncells = 2
-	pclump%list(1) = icell1
-	pclump%list(2) = icell2
-	call centre_of_mass(pclump)
+	pclump%site = blast(iblast)%site
+	pclump%site(2) = NBY+2
+	call PlaceInClump(pclump,icell1)
+	call PlaceInClump(pclump,icell2)
+!	call centre_of_mass(pclump)
 	pclump%starttime = tnow
 	pclump%status = ALIVE
 !	write(logmsg,*) 'New clump'
@@ -260,11 +331,11 @@ do i = 1,pclump2%ncells
 		endif
 	enddo
 	! Now add the cell to pclump1
-	pclump1%ncells = pclump1%ncells + 1
-	pclump1%list(pclump1%ncells) = kcell
-	mono(kcell)%iclump = mono(icell1)%iclump
+	call PlaceInClump(pclump1,kcell)
+!	pclump1%list(pclump1%ncells) = kcell
+!	mono(kcell)%iclump = mono(icell1)%iclump
 enddo
-call centre_of_mass(pclump1)
+!call centre_of_mass(pclump1)
 pclump2%status = -1
 pclump2%ncells = 0
 end subroutine
@@ -272,10 +343,10 @@ end subroutine
 !---------------------------------------------------------------------
 ! The cells in a clump are encouraged to aggregate more closely together.
 !---------------------------------------------------------------------
-subroutine consolidate_clump(pclump)
+subroutine consolidate_clump1(pclump)
 type(clump_type), pointer :: pclump
 real :: cm(3), dist2(MAX_CLUMP_CELLS), r(3), d2, d2min
-integer :: i, k, kmin, kcell, site1(3), site2(3)
+integer :: i, k, kmin, kcell, site1(3), site2(3), iblast
 type(monocyte_type), pointer :: pmono
 
 !cm = 0
@@ -283,12 +354,15 @@ type(monocyte_type), pointer :: pmono
 !	cm = cm + mono(pclump%list(i))%site
 !enddo
 !cm = cm/pclump%ncells
+iblast = pclump%iblast
+!call centre_of_mass(pclump)
 cm = pclump%cm
 do i = 1,pclump%ncells
 	r = cm - mono(pclump%list(i))%site
 	dist2(i) = dot_product(r,r)
 enddo
 do i = 1,pclump%ncells
+	cm = pclump%cm
 	kcell = pclump%list(i)
 	site1 = mono(kcell)%site
 	d2min = dist2(i)
@@ -301,6 +375,7 @@ do i = 1,pclump%ncells
 		if (site2(3) < 1 .or. site2(3) > NZ) cycle
 		if (occupancy(site2(1),site2(2),site2(3))%indx == 0) then	! this site is available
 			r = cm - site2
+!			r = blast(iblast)%site - site2
 			d2 = dot_product(r,r)
 			if (d2 < d2min) then
 				d2min = d2
@@ -310,20 +385,74 @@ do i = 1,pclump%ncells
 	enddo
 	if (kmin /= 0) then		! move the cell to this site
 		site2 = site1 + jumpvec(:,kmin)
-!		if (pclump%list(i) == 138) then
-!			write(*,'(a,7i5)') 'consolidate mono(138): ',i,site1,site2
-!		endif
+		call logger(logmsg)
+		write(logmsg,'(a,i6,7i4)') 'consolidate_clump: move: ',kcell,pclump%ID,site1,site2
 		mono(kcell)%site = site2
 		occupancy(site1(1),site1(2),site1(3))%indx = 0
 		occupancy(site2(1),site2(2),site2(3))%indx = kcell
+!		call centre_of_mass(pclump)
 	endif
 	if (mono(kcell)%site(2) == NBY+1) then
 		write(*,*) 'consolidate_clump: ',mono(kcell)%ID,mono(kcell)%site
 		stop
 	endif
 enddo
-call centre_of_mass(pclump)
+call MoveClump(pclump,blast(iblast)%site(1),blast(iblast)%site(3))		! ensure that the clump is centred over the OB
 			
+end subroutine
+
+
+!---------------------------------------------------------------------
+! Make sure the clump is as close as possible to (x0,z0).
+!---------------------------------------------------------------------
+subroutine MoveClump(pclump,x0,z0)
+type(clump_type), pointer :: pclump
+integer :: x0, z0
+integer :: dx, dy, dz, del(3), k, i, imono, ymin, mmin
+real :: rx, rz
+
+dx = 0
+rx = pclump%cm(1) - x0
+if (abs(rx) > 1) then
+	dx = -rx
+endif
+dz = 0
+rz = pclump%cm(3) - z0
+if (abs(rz) > 1) then
+	dz = -rz
+endif
+ymin = 100
+mmin = 0
+do k = 1,pclump%ncells
+	imono = pclump%list(k)
+	if (mono(imono)%site(2) < ymin) then
+		ymin = mono(imono)%site(2)
+		mmin = imono
+	endif
+enddo
+dy = 0
+if (ymin > NBY+2) then
+	dy = NBY+2-ymin
+endif
+if (dx /= 0 .or. dy /= 0 .or. dz /= 0) then
+	del = (/ dx, dy, dz /)
+	write(logmsg,*) 'MoveClump: ',pclump%ID,del
+	call logger(logmsg)
+	pclump%cm = pclump%cm + del
+	do k = 1,pclump%ncells
+		imono = pclump%list(k)
+		mono(imono)%site = mono(imono)%site + del
+		if (mono(imono)%site(2) == NBY+1) then
+			write(logmsg,'(a,10i5)') 'MoveClump: y = NBY+1: ',imono,mono(imono)%site,del,mmin,ymin,pclump%ncells
+			call logger(logmsg)
+			do i = 1,pclump%ncells
+				write(logmsg,'(i6,3i4)') pclump%list(i),mono(pclump%list(i))%site
+				call logger(logmsg)
+			enddo
+			stop
+		endif
+	enddo
+endif
 end subroutine
 
 !---------------------------------------------------------------------
@@ -474,6 +603,11 @@ do i = 1,pclump%ncells
 	site = mono(j)%site
 	occupancy(site(1),site(2),site(3))%indx = 0
 	mono(j)%site(2) = site(2) - 1
+	if (mono(j)%site(2) <= NBY) then
+		write(logmsg,*) 'lower_clump: y <= NBY: ',istep,pclump%ID,i,j,mono(j)%site
+		call logger(logmsg)
+		stop
+	endif
 enddo
 do i = 1,pclump%ncells
 	j = pclump%list(i)
@@ -584,8 +718,8 @@ type(clump_type), pointer :: pclump
 integer :: y, site(3)
 integer :: x0, z0, dx, dz, x, z, d2, d2min
 
-x0 = pclump%cm(1)
-z0 = pclump%cm(3)
+x0 = pclump%site(1)
+z0 = pclump%site(3)
 d2min = 99999
 do dx = -4,4
 	do dz = -4,4

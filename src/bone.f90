@@ -133,6 +133,7 @@ Mnodes = ncpu
 call rng_initialisation
 PI = 4*atan(1.0)
 call make_reldir
+call MakeClumpOrder
 
 write(logmsg,*) 'NX,NY,NZ: ',NX,NY,NZ
 call logger(logmsg)
@@ -248,7 +249,7 @@ call logger('did InitialBlastPlacement')
 !call Initiation
 
 RANKSIGNAL_decayrate = log(2.0)/(RANKSIGNAL_HALFLIFE)    ! rate/min
-RANKL_KDECAY = log(2.0)/(RANKL_HALFLIFE)    ! rate/min
+CXCL12_KDECAY = log(2.0)/(CXCL12_HALFLIFE)    ! rate/min
 call init_fields
 call logger('Did init_fields')
 
@@ -299,13 +300,12 @@ subroutine CreatePatch
 real :: vol
 integer :: x, z
 real :: c
-logical, parameter :: HALF_ELLIPSE = .false.
 
 call logger('CreatePatch:')
 patch%a = LACUNA_A
 patch%b = LACUNA_B
 if (HALF_ELLIPSE) then
-	patch%x0 = NX/4
+	patch%x0 = NX/10
 else
 	patch%x0 = NX/2
 endif
@@ -339,39 +339,28 @@ call logger('did CreatePatch:')
 end subroutine
 
 !------------------------------------------------------------------------------------------------
-subroutine InitialBlastPlacement0
-integer :: site(3), dz
-
-nblast = 0
-dz = patch%b*0.7
-site(1) = patch%x0 + 1
-site(2) = NBY+1
-!site(3) = patch%z0
-!call CreateOsteoblast(site)
-site(3) = patch%z0 - dz
-call CreateOsteoblast(site)
-site(3) = patch%z0 + dz
-call CreateOsteoblast(site)
-end subroutine
-
-!------------------------------------------------------------------------------------------------
 ! The initial placement of OBs is determined by: 
 !  attraction to signal, 
 !  mutual repulsion,
 !  randomness.
 !------------------------------------------------------------------------------------------------
 subroutine InitialBlastPlacement
-integer :: xmin, xmax, zmin, zmax, x, z, ib, site(3)
+integer :: xmin, xmax, zmin, zmax, x, z, ib, site(3), dx
 real(8) :: R
 real :: sig, d2, dfactor, prob, prob0 = 0.5
 integer :: kpar=0
-real :: d2min = 8	!0.4*OB_SIGNAL_RADIUS**2
+real :: d2min = 10	!0.4*OB_SIGNAL_RADIUS**2
 real, parameter :: MINIMUM_SIGNAL = 0.7
+logical, parameter :: REGULAR = .false.
 
 !NBLAST_INITIAL = 1
 write(logmsg,*) 'InitialBlastPlacement: ',NBLAST_INITIAL
 call logger(logmsg)
-xmin = patch%x0 - patch%a
+if (HALF_ELLIPSE) then
+	xmin = patch%x0
+else
+	xmin = patch%x0 - patch%a
+endif
 xmax = patch%x0 + patch%a
 zmin = patch%z0 - patch%b
 zmax = patch%z0 + patch%b
@@ -381,34 +370,48 @@ if (NBLAST_INITIAL == 1) then
 	call CreateOsteoblast(site)
 	return
 endif
-do
-	R = par_uni(kpar)
-	x = xmin + R*(xmax-xmin) + 0.5
-	R = par_uni(kpar)
-	z = zmin + R*(zmax-zmin) + 0.5
-	sig = surface(x,z)%signal
-	if (sig < MINIMUM_SIGNAL) cycle
-	dfactor = 0
-	do ib = 1,nblast
-		d2 = (x-blast(ib)%site(1))**2 + (z-blast(ib)%site(3))**2
-		if (d2 == 0) then
-			dfactor = 1.0
-			exit
-		else
-			dfactor = dfactor + d2min/d2
-		endif
-	enddo
-	if (dfactor >= 1) cycle
-	prob = prob0*(sig**2)*(1-dfactor)
-	R = par_uni(kpar)
-	if (R < prob) then
+if (REGULAR) then
+	dx = 5
+	do ib = 1,NBLAST_INITIAL
+		x = xmin + 1 + (ib-1)*dx
+		z = patch%z0
+		sig = surface(x,z)%signal
+		if (sig < MINIMUM_SIGNAL) exit
 		site = (/ x, NBY+1, z /)
 		call CreateOsteoblast(site)
 		write(logmsg,'(a,4i4)') 'Placed OB: ',nblast,site
 		call logger(logmsg)
-		if (nblast == NBLAST_INITIAL) exit
-	endif
-enddo
+	enddo
+else
+	do
+		R = par_uni(kpar)
+		x = xmin + R*(xmax-xmin) + 0.5
+		R = par_uni(kpar)
+		z = zmin + R*(zmax-zmin) + 0.5
+		sig = surface(x,z)%signal
+		if (sig < MINIMUM_SIGNAL) cycle
+		dfactor = 0
+		do ib = 1,nblast
+			d2 = (x-blast(ib)%site(1))**2 + (z-blast(ib)%site(3))**2
+			if (d2 == 0) then
+				dfactor = 1.0
+				exit
+			else
+				dfactor = dfactor + d2min/d2
+			endif
+		enddo
+		if (dfactor >= 1) cycle
+		prob = prob0*(sig**2)*(1-dfactor)
+		R = par_uni(kpar)
+		if (R < prob) then
+			site = (/ x, NBY+1, z /)
+			call CreateOsteoblast(site)
+			write(logmsg,'(a,4i4)') 'Placed OB: ',nblast,site
+			call logger(logmsg)
+			if (nblast == NBLAST_INITIAL) exit
+		endif
+	enddo
+endif
 write(logmsg,*) 'did InitialBlastPlacement'
 call logger(logmsg)
 end subroutine
@@ -445,7 +448,7 @@ if (HIGHEST) then
 		endif
 	enddo
 else
-	xmin = 1.0e10
+	xmin = 1000
 	do iblast = 1,nblast
 		bsite = blast(iblast)%site
 		if (bsite(1) < xmin) then
@@ -468,7 +471,7 @@ do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
 enddo
 !blast%status = DORMANT
 blast(ibinit)%status = ALIVE
-RANKL_chemotaxis = .true.
+CXCL12_chemotaxis = .true.
 initiated = .true.
 end subroutine
 
@@ -584,19 +587,27 @@ pmono%S1P1 = min(S,1.0)
 end subroutine
 
 !------------------------------------------------------------------------------------------------
+! This has been changed to allow RANK signalling only when the monocyte is in contact with an OB.
 !------------------------------------------------------------------------------------------------
 subroutine update_RANK(pmono)
 type(monocyte_type), pointer :: pmono
-real :: S, C
-integer :: site(3), status
+real :: S, signal
+integer :: site(3), status, iblast
 
 S = pmono%RANKSIGNAL
 site = pmono%site
 status = pmono%status
-C = RANKL_conc(site(1),site(2),site(3))
-S = (1-RANKSIGNAL_decayrate)*S + rate_RANKSIGNAL(S,C)*DELTA_T
+!C = CXCL12_conc(site(1),site(2),site(3))
+!S = (1-RANKSIGNAL_decayrate)*S + rate_RANKSIGNAL(S,C)*DELTA_T
+iblast = NearOB(pmono)
+if ((iblast > 0 .and. status <= STICKY) .or. status == CLUMPED) then
+	signal = rate_RANKSIGNAL(S)
+else
+	signal = 0
+endif
+S = (1-RANKSIGNAL_decayrate)*S + signal*DELTA_T
 pmono%RANKSIGNAL = min(S,1.0)
-if (status == MOTILE .and. pmono%RANKSIGNAL > ST1) then
+if (status == MOTILE .and. pmono%RANKSIGNAL >= ST1) then
 	pmono%status = CHEMOTACTIC
 !	call logger('CHEMOTACTIC')
 endif
@@ -643,12 +654,12 @@ enddo
 do iclump = 1,nclump
 	pclump => clump(iclump)
 	if (pclump%status < 0) cycle
-	if (pclump%status < FUSED) then
-		call consolidate_clump(pclump)
-	endif
-	if (nclump > 1) then
-		call separate_clump(pclump)
-	endif
+!	if (pclump%status < FUSED) then
+!		call consolidate_clump(pclump)
+!	endif
+!	if (nclump > 1) then
+!		call separate_clump(pclump)
+!	endif
 	if (pclump%status < FUSING) then
 		stickysum = 0
 		do i = 1,pclump%ncells
@@ -663,7 +674,7 @@ do iclump = 1,nclump
 			call RemoveClump(pclump)
 			cycle
 		endif
-!		call detacher(pclump)
+		call detacher(pclump)
 		if (pclump%ncells > CLUMP_THRESHOLD) then
 			pclump%status = FUSING
 			pclump%starttime = tnow
@@ -736,7 +747,9 @@ do iclast = 1,nclast
 		do dz = -ir,ir
 			if (dx**2 + dz**2 > rmargin**2) cycle
 			x = pclast%site(1) + dx
+			if (x < 1 .or. x > NX) cycle
 			z = pclast%site(3) + dz
+			if (z < 1 .or. z > NZ) cycle
 !			if (surface(x,z)%target_depth == 0) cycle
 			if (surface(x,z)%depth > 0) then
 				surface(x,z)%seal = 0
@@ -928,9 +941,18 @@ end function
 ! The rate of RANK signalling depends on the RANKL concentration (C) and the current integrated
 ! signal level (S).
 !------------------------------------------------------------------------------------------------
-real function rate_RANKSIGNAL(S,C)
+real function rate_RANKSIGNAL1(S,C)
 real :: S, C
-rate_RANKSIGNAL = RANKSIGNAL_rateconstant*(1-S)*C
+rate_RANKSIGNAL1 = RANKSIGNAL_rateconstant*(1-S)*C
+end function
+
+!------------------------------------------------------------------------------------------------
+! The rate of RANK signalling depends on the current integrated signal level (S),
+! and possibly on the OB signal strength.  For now just on S - saturating when S = 1.
+!------------------------------------------------------------------------------------------------
+real function rate_RANKSIGNAL(S)
+real :: S
+rate_RANKSIGNAL = RANKSIGNAL_rateconstant*(1-S)
 end function
 
 !------------------------------------------------------------------------------------------------
@@ -974,7 +996,8 @@ write(logmsg,*) 'createOsteoclast: ',nclast,tnow
 call logger(logmsg)
 pclast => clast(nclast)
 pclast%ID = nclast
-pclast%site = pclump%cm + 0.5
+!pclast%site = pclump%cm + 0.5
+pclast%site = pclump%site
 pclast%site(2) = NBY + 1
 pclast%lastdir = random_int(1,8,kpar)
 pclast%entrytime = tnow
@@ -1201,6 +1224,12 @@ type(osteoblast_type), pointer :: pblast
 real :: clast_diam = 0.9
 real :: mono_diam = 0.5
 
+ncap_list = 0
+nmono_list = 0
+npit_list = 0
+nclast_list = 0 
+nblast_list = 0
+
 tnow = istep*DELTA_T
 ! Monocyte section
 if (nmono > 0) then
@@ -1229,7 +1258,7 @@ if (nmono > 0) then
 			nfused = nfused + 1
 		elseif (status == OSTEO) then
 			cycle
-		elseif (status == CHEMOTACTIC .or. status == STICKY) then		! DEBUGGING!!!!!!!!!
+		elseif (status == STICKY) then	
 			mono_state = 2
 		else
             mono_state = 0
@@ -1594,7 +1623,7 @@ use, intrinsic :: iso_c_binding
 integer(c_int) :: res
 logical :: ok
 integer :: error
-real :: totsig, tnow
+real :: totsig, tnow, hour
 integer, parameter :: NT_EVOLVE = 20
 
 res = 0
@@ -1605,9 +1634,10 @@ tnow = istep*DELTA_T
 if (.not. initiated .and. tnow > STARTUP_TIME*24*60) then
 	call Initiation
 endif
-if (mod(istep,100) == 0) then
-!	write(logmsg,'(a,i8,6i6)') 'istep: ',istep,mono_cnt,nleft	!,mono(22)%status,mono(22)%site
-!	call logger(logmsg)
+if (mod(istep,1000) == 0) then
+	hour = istep/240.
+	write(logmsg,'(a,i8,f8.2,6i6)') 'istep: ',istep,hour,mono_cnt,nleft	!,mono(22)%status,mono(22)%site
+	call logger(logmsg)
 !	call CheckMono
 !	call CheckBlast
 endif
@@ -1615,8 +1645,8 @@ endif
 call updater
 !write(nflog,*) 'call MonoMover: ',nmono
 call MonoMover
-if (mod(istep,NT_EVOLVE) == 0) then
-	call evolveRANKL(NT_EVOLVE,totsig)
+if (initiated .and. mod(istep,NT_EVOLVE) == 0) then
+	call evolveCXCL12(NT_EVOLVE,totsig)
 !	if (totsig == 0 .and. nclump > 0) then
 !		call break_clumps
 !	endif
@@ -1677,9 +1707,9 @@ if (allocated(blast)) deallocate(blast)
 if (allocated(stem)) deallocate(stem)
 if (allocated(capillary)) deallocate(capillary)
 if (allocated(entrysite)) deallocate(entrysite)
-if (allocated(RANKL_conc)) deallocate(RANKL_conc)
-if (allocated(RANKL_grad)) deallocate(RANKL_grad)
-if (allocated(RANKLinflux)) deallocate(RANKLinflux)
+if (allocated(CXCL12_conc)) deallocate(CXCL12_conc)
+if (allocated(CXCL12_grad)) deallocate(CXCL12_grad)
+if (allocated(CXCL12_influx)) deallocate(CXCL12_influx)
 if (allocated(S1P_conc)) deallocate(S1P_conc)
 if (allocated(S1P_grad)) deallocate(S1P_grad)
 

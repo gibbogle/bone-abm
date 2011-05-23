@@ -74,7 +74,8 @@ real :: unitjump(3,MAXRELDIR+1)
 real :: dirprob(0:MAXRELDIR)
 logical :: vn_adjacent(MAXRELDIR+1)
 integer :: dir2D(3,8) = reshape((/ -1,0,-1, -1,0,0, -1,0,1, 0,0,1, 1,0,1, 1,0,0, 1,0,-1, 0,0,-1/),(/3,8/))
-logical :: RANKL_chemotaxis = .false.
+integer :: clumpoffset(3,MAX_NCLUMP)
+logical :: CXCL12_chemotaxis = .false.
 
 integer :: in_per_hour					! rate of influx of OP monocytes from the blood (cells/hour)
 integer :: exit_rule					! 1 = no chemotaxis, 2 = chemotaxis
@@ -98,8 +99,8 @@ integer :: nmono, mono_cnt, nsignal, nclast, nblast, nborn, nleft, ncap, nentrys
 integer, allocatable :: entrysite(:,:)
 type(clump_type), target :: clump(MAX_NCLUMP)
 real :: RANKSIGNAL_decayrate			! from RANKSIGNAL_halflife
-real :: RANKL_KDECAY					! from RANKL_HALFLIFE
-real :: RANKL_GRADLIM = 5.0e-4			! was equal to the initial max RANKL gradient at NBY+3
+real :: CXCL12_KDECAY					! from CXCL12_HALFLIFE
+real :: CXCL12_GRADLIM = 5.0e-4			! was equal to the initial max CXCL12 gradient at NBY+3
 										! Now need to guess the value to use!!!!!!!!
 logical :: stuck
 logical :: initiated
@@ -236,7 +237,7 @@ do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
 		sum = sum + factor*surface(x,z)%signal
 	enddo
 enddo
-BlastSignal = RANK_BONE_RATIO*sum
+BlastSignal = OB_SIGNAL_FACTOR*sum
 end function
 
 end module

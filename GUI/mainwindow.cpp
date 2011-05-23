@@ -27,20 +27,20 @@ LOG_USE();
 Params *parm;	// I don't believe this is the right way, but it works
 int showingVTK;
 int VTKbuffer[100];
-//int mono_list[5*MAX_MONO];
-int mono_list[];
+int mono_list[5*MAX_MONO];
+//int mono_list[];			// MSVC++ doesn't like this
 int nmono_list;
-//float cap_list[7*MAX_CAP];
-float cap_list[];
+float cap_list[7*MAX_CAP];
+//float cap_list[];
 int ncap_list;
-//float pit_list[4*MAX_PIT];
-float pit_list[];
+float pit_list[4*MAX_PIT];
+//float pit_list[];
 int npit_list;
-//float clast_list[7*MAX_CLAST];
-float clast_list[];
+float clast_list[7*MAX_CLAST];
+//float clast_list[];
 int nclast_list;
-//int blast_list[5*MAX_BLAST];
-int blast_list[];
+int blast_list[5*MAX_BLAST];
+//int blast_list[];
 int nblast_list;
 QMutex mutex1, mutex2;
 
@@ -881,12 +881,14 @@ void MainWindow::goToOutputs()
 //-------------------------------------------------------------
 void MainWindow::goToVTK()
 {
+	LOG_QMSG("goToVTK");
 	if (started) {
 		stackedWidget->setCurrentIndex(2);
 		action_outputs->setEnabled(true);
 		action_inputs->setEnabled(true);
 		action_VTK->setEnabled(false);
 		showingVTK = 1;
+		LOG_QMSG("showingVTK");
 	}
 }
 
