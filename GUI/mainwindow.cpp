@@ -28,7 +28,7 @@ Params *parm;	// I don't believe this is the right way, but it works
 int showingVTK;
 int VTKbuffer[100];
 int mono_list[5*MAX_MONO];
-//int mono_list[];			// MSVC++ doesn't like this
+int mono_list[5*MAX_MONO];
 int nmono_list;
 float cap_list[7*MAX_CAP];
 //float cap_list[];
