@@ -55,9 +55,9 @@ real :: FUSING_TIME = 2*60				! mins
 real :: CLAST_LIFETIME = 96*60			! days -> mins
 !real :: CLAST_DWELL_TIME0 = 4*60		! mins
 real :: CLAST_DWELL_TIME = 60			! mins
-real :: MAX_RESORPTION_RATE = 0.01		! um/min
+real :: MAX_RESORPTION_RATE = 0.1		! um/min
 real :: MAX_RESORPTION_D = 10			! um
-integer :: MAX_RESORPTION_N = 30
+integer :: MAX_RESORPTION_N = 10
 
 ! Signal parameters (NOT USED)
 real :: SIGNAL_RADIUS					! radius of influence of bone signal (um -> grids) (10)
@@ -104,6 +104,8 @@ real :: CXCL12_GRADLIM = 5.0e-4			! was equal to the initial max CXCL12 gradient
 										! Now need to guess the value to use!!!!!!!!
 logical :: stuck
 logical :: initiated
+
+logical, parameter :: TESTING = .true.
 
 contains
 
@@ -185,6 +187,9 @@ end function
 !------------------------------------------------------------------------------------------------
 ! Changed to make signal proportional to fraction of target depth left to remove.
 ! This still is not satisfactory!!!
+! Signal is now proportional to the remaining bone depth to be removed, normalized by MAX_PIT_DEPTH
+! When the attractiveness of a site to an OC is being computed, the surface seal is taken into
+! account - the effective signal is signal*(1-seal).
 !------------------------------------------------------------------------------------------------
 real function GetSignal(x,z)
 integer :: x, z
@@ -198,6 +203,33 @@ else
 endif
 !write(*,*) 'GetSignal: ',x,z,surface(x,z)%target_depth,surface(x,z)%depth
 end function
+
+!------------------------------------------------------------------------------------------------
+! The bone resorption rate at a given pit site (x,z) depends on:
+!	Nm = the number of monocytes that fused to make the osteoclast
+!   Np = number of pit sites that the osteoclast covers
+!	(d = the distance of the target bone site from the osteoclast centre
+!   The depth factor df decreases linearly to zero as d goes from 0 to MAX_RESORPTION_D)
+! The volume rate of resorption per pit site is:
+!   (MAX_RESORPTION_RATE/MAX_RESORPTION)*(Nm/Np) um^3/day
+! which is converted to grids/min, /(24*60*DELTA_X^3)
+! Note: currently not using d dependence, using %fraction
+!------------------------------------------------------------------------------------------------
+real function resorptionRate(Nm,Np)
+integer :: Nm, Np
+!real :: d
+!real :: df
+
+!if (d >= MAX_RESORPTION_D) then
+!	df = 0
+!else
+!	df = 1 - d/MAX_RESORPTION_D
+!endif
+resorptionRate = (MAX_RESORPTION_RATE*Nm)/(MAX_RESORPTION_N*Np*24*60*DELTA_X**3)
+!write(*,*) 'resorptionRate: ',Nm,Np,resorptionRate
+!write(*,*) MAX_RESORPTION_RATE,Nm,MAX_RESORPTION_N,Np,24*60,DELTA_X 
+end function
+
 
 !------------------------------------------------------------------------------------------------
 ! Compute the signal that an OB is receiving from neighbouring bone sites.

@@ -142,10 +142,10 @@ occupancy%region = MARROW
 occupancy%indx = 0
 !occupancy%signal = 0
 !occupancy%intensity = 0
-occupancy%bone_fraction = 0
+!occupancy%bone_fraction = 0
 do y = 1,NBY
 	occupancy(:,y,:)%region = BONE
-	occupancy(:,y,:)%bone_fraction = 1.0
+!	occupancy(:,y,:)%bone_fraction = 1.0
 enddo
 occupancy(:,NBY+1,:)%region = LAYER
 allocate(surface(NX,NZ))
@@ -742,7 +742,7 @@ do iclast = 1,nclast
 	! The seal on uneroded bone under and near the OC is gradually removed.
 	rmargin = pclast%radius + OC_MARGIN
 	ir = rmargin + 0.5
-!	write(*,*) 'eraode seal: ',pclast%radius,OC_MARGIN,rmargin,ir
+!	write(*,*) 'erode seal: ',pclast%radius,OC_MARGIN,rmargin,ir
 	do dx = -ir, ir
 		do dz = -ir,ir
 			if (dx**2 + dz**2 > rmargin**2) cycle
@@ -1045,33 +1045,6 @@ write(logmsg,'(a,7i4)') 'clast site, count, npit: ',pclast%site,pclast%count,pcl
 call logger(logmsg)
 call UpdateSurface
 end subroutine
-
-
-!------------------------------------------------------------------------------------------------
-! The bone resorption rate at a given pit site (x,z) depends on:
-!	Nm = the number of monocytes that fused to make the osteoclast
-!   Np = number of pit sites that the osteoclast covers
-!	(d = the distance of the target bone site from the osteoclast centre
-!   The depth factor df decreases linearly to zero as d goes from 0 to MAX_RESORPTION_D)
-! The volume rate of resorption per pit site is:
-!   (MAX_RESORPTION_RATE/MAX_RESORPTION)*(Nm/Np) um^3/day
-! which is converted to grids/min, /(24*60*DELTA_X^3)
-! Note: currently not using d dependence, using %fraction
-!------------------------------------------------------------------------------------------------
-real function resorptionRate(Nm,Np)
-integer :: Nm, Np
-!real :: d
-!real :: df
-
-!if (d >= MAX_RESORPTION_D) then
-!	df = 0
-!else
-!	df = 1 - d/MAX_RESORPTION_D
-!endif
-resorptionRate = (MAX_RESORPTION_RATE*Nm)/(MAX_RESORPTION_N*Np*24*60*DELTA_X**3)
-!write(*,*) 'resorptionRate: ',Nm,Np,resorptionRate
-!write(*,*) MAX_RESORPTION_RATE,Nm,MAX_RESORPTION_N,Np,24*60,DELTA_X 
-end function
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
@@ -1820,6 +1793,11 @@ if (ok) then
 	clear_to_send = .true.
 	simulation_start = .true.
 	istep = 0
+	
+	if (TESTING) then
+		call test_OCdynamics
+		stop
+	endif
 	
 	return
 	
