@@ -655,13 +655,14 @@ real(8) :: y(*)
 integer :: n
 real(8) :: F(n,2)
 integer :: iclast0, iclast1, indx0, indx1, nindx, nm0
-integer :: ix, iz, n0, dx, dz, ixx, izz
-real(8) :: x0, z0, x1, z1, r0, r1, v(2), vn(2), d, df, s, fs(2), x, z, ax, az, dfac
-real(8) :: ss(0:1,0:1)
+integer :: ix, iz, n0, idx, idz, ixx, izz, site0(3), site(3)
+real(8) :: x0, z0, x1, z1, r0, r1, v(2), vn(2), d, df, s, fs(2), x, z, ax, az, dfac, dx, dz
+real(8) :: ss(0:1,0:1), tot(-1:1,-1:1), tot0
 type(osteoclast_type), pointer :: pclast0, pclast1
 real, parameter :: K_MUTUAL = 1.0
 real, parameter :: K_SIGNAL = 0.001
 real, parameter :: BS_REACH_FACTOR = 1.5
+integer, parameter :: idea = 2
 
 nindx = OC_NV/4
 do indx0 = 1,nindx
@@ -703,18 +704,41 @@ do indx0 = 1,nindx
 	enddo
 	
 	! Bone signal forces
+	! Need to distinguish between an OC that is JOINING and one that is RESORBING.
+	! A JOINING OC must be responsive to signals that are quite remote, in order
+	! to be able to squeeze into the BMU team.  This is not an issue for a RESORBING OC.
+	! 
+	! First attempt:
 	! Assume that an OC can sample sites within some radius (e.g. 1.5r) and
 	! the attractiveness of each is determined and added vectorially.
+	!
+	! Second idea:
+	! RESORBING OC: two steps
+	! (a) Measure totsignal0 under OC
+	!     If totsignal0 > threshold
+	!         FS = 0
+	!     else
+	!         Choose best direction of movement.  Consider OC located at a set of
+	!         sites nearby, evaluate totsignal at each.  Select maximum = sigmax
+	!         if (sigmax < totsignal)
+	!             FS = 0
+	!         else
+	!             FS magnitude ~ (sigmax-totsignal0)
+	!             FS direction is site-cm
+	!         endif
+	!     endif
+	
+	if (idea == 1) then
 	fs = 0
 	n0 = BS_REACH_FACTOR*r0 + 1
-	do dx = -n0,n0
-		x = x0 + dx
+	do idx = -n0,n0
+		x = x0 + idx
 		if (x < 1 .or. x > NX) cycle
 		
-		do dz = -n0,n0
-			z = z0 + dz
+		do idz = -n0,n0
+			z = z0 + idz
 			if (z < 1 .or. z > NZ) cycle
-			if (dx == 0 .and. dz == 0) cycle
+!			if (dx == 0 .and. dz == 0) cycle
 			v(1) = x - x0
 			v(2) = z - z0
 			d = sqrt(v(1)**2 + v(2)**2)
@@ -749,6 +773,41 @@ do indx0 = 1,nindx
 !			if (dbug .and. dz == 2) write(*,'(4f12.6)') x,z,s,s*vn(1)		!surface(x,z)%signal,surface(x,z)%seal
 		enddo
 	enddo
+	elseif (idea == 2) then
+		tot = -1
+		site0(1) = x0 + 0.5
+		site0(2) = NBY + 1
+		site0(3) = z0 + 0.5
+		tot(0,0) = TotalSignal(pclast0,site0)
+		site = site0
+		dx = x0 - site0(1)
+		dz = z0 - site0(3)
+		if (dx >= 0) then
+			idx = 1
+			ax = dx
+		else
+			idx = -1
+			ax = -dx
+		endif
+		site(1) = site(1) + idx
+		tot(idx,0) = TotalSignal(pclast0,site)
+		site(1) = site0(1)
+		if (dz >= 0) then
+			idz = 1
+			az = dz
+		else
+			idz = -1
+			az = -dz
+		endif
+		site(3) = site(3) + idz
+		tot(0,idz) = TotalSignal(pclast0,site)
+		site(1) = site0(1) + idx
+		site(3) = site0(3) + idz
+		tot(idx,idz) = TotalSignal(pclast0,site)
+		tot0 = (1-ax)*(1-az)*tot(0,0) + ax*(1-az)*tot(idx,0) &
+		     + (1-ax)*az*tot(0,idz)   + ax*az*tot(idx,idz)
+		
+	endif
 	if (dbug .and. iclast0 == 2) then
 		write(*,'(a,i3,4f8.4)') 'iclast0, F_S, F_OC: ',iclast0,fs,F(indx0,:)
 	endif
@@ -847,7 +906,11 @@ endif
 end function
 
 !---------------------------------------------------------------------
-! We now take account of the surface seal.
+! We now take account of the surface seal, and of the presence of
+! another OC.
+! This method computes total signal based on OC centred on a site.
+! Note that %cover is not used, and that the total extent of %delta(:)
+! is summed.
 !---------------------------------------------------------------------
 real function TotalSignal(pclast,site)
 type(osteoclast_type), pointer :: pclast
@@ -859,6 +922,8 @@ TotalSignal = 0
 do k = 1,pclast%npit
 	x = site(1) + pclast%pit(k)%delta(1)
 	z = site(3) + pclast%pit(k)%delta(3)
+	if (x < 1 .or. x > NX) cycle
+	if (z < 1 .or. z > NZ) cycle
 	ic = surface(x,z)%iclast
 	if (ic /= 0 .and. ic /= pclast%ID) cycle
 	sig = surface(x,z)%signal*(1 - surface(x,z)%seal)
