@@ -2,15 +2,849 @@ module motion
 use global
 use fields
 use clumping
+use rkf45
 
 implicit none
 save
 
 real, parameter :: Kchemo = 1.0
 
+! For testing OC dynamics, need lookup tables to translate between
+! OC index and state index (actually (index-1)/4 + 1)
+integer :: OC_NV
+integer :: OC_to_index(100)
+integer :: index_to_OC(100)
+integer, parameter :: NF=100
+real(8) :: F(NF,2)
+logical :: dbug
 
 contains
 
+!---------------------------------------------------------------------
+! Redesign:
+! Taking into account Parfitt 1994, 1996.  The key idea is that the
+! lining cells control the initial placement of an OC.  New OCs are
+! located near the apex of the "hemicutting cone", and move laterally
+! very little, if at all, after finding their position.
+! The rate of arrival of pre-OCs and their clumping and fusion must
+! be synchronized with the rate of removel of lining cells, exposing
+! the bare bone surface.
+! Parfitt's diagrams showing pre-OC ==> OC ==> OB are 2D (X-Z), while
+! we need to think about the location of cells on the Y axis as well.
+! Assuming that it is correct that the leading face of the trench has
+! roughly the shape of a half-cone, we need to put in place the rules
+! and mechanisms that will generate such a shape.
+!
+! Parfitt 1996 data: (based on cortical BMU data: Jaworski1981)
+! Total lifetime of an OC nucleus is about 16 days: 3 1/2 days in
+! the pre-OC stage, and 12 1/2 days in an OC.  Total BMU team has
+! about 80 nuclei (60-100), with a turnover of 8%/day, i.e. 
+! 7 new nuclei/day.  BMU lasts 2-8 months.  Team has ~9 OCs (4-16), 
+! with ~9 nuclei/OC (3-19). 
+! Zallone1984 observed 2-30 nuclei/OC, with most in the range 10-20.
+! Roodman1996 says 2-100, most 10-20, and size up to 100 um diameter.
+! Trench is ~100-200 um across.  In cortical bone, the BMU travels
+! at about 20-40 um/day for a distance of 2-6 mm.
+!
+! How big is an OC?  Assume we know the size of a monocyte: Rm = 5
+! If an OC is made of N monocytes the volume is (4/3)N.Rm^3 = 167.N
+! If we assume the shape is hemispherical then 167.N = (2/3).Rc^3
+! Therefore Rc = (250N)^(1/3)
+! For N = 9, Rc = 2250^(1/3) = 13.1, diameter Dc = 26.2
+! In fact the diameter is more like 50, because the shape is more
+! flattened than a hemisphere.
+!
+! Assume that there are 4 OCs across the trench, and that the speed of 
+! excavation is the same as for cortical bone, i.e. 30 um/d.  If the
+! OCs simply excavate where they sit, and do not move laterally, this
+! implies that about 4 new OCs are needed each day, i.e. 36 pre-OCs
+! to make new OCs.  In addition the rest of the team will need about 
+! 7 new nuclei/d, giving a total pre-OC requirement of 43/d.
+!
+! Letter to Michael Parfitt
+! I've been trying to put the various numbers together to see how rates 
+! of monocyte recruitment, nucleus lifetime and trenching rate are related.
+! In the absence of good data for cancellous bone, I'm currently using the 
+! cortical numbers as a rough first guess.  Let's assume that the BMU team 
+! comprises N monocyte nuclei (where we think N is of the order of 80).  
+! The average count of nuclei/OC is about 9, according to Jaworski 1981,
+! although some others (e.g. Roodman 1996) talk about 10-20 nuclei. 
+! It seems reasonable to assume that the number of nuclei in a new OC 
+! should be greater than the team average, so for the sake of argument 
+! take this number to be 15.  Then if one new OC is created every M days,
+! and if the rate of recruitment of monocytes by the existing BMU team 
+! members is R (/OC/day), and the death rate of nuclei is 8%/day, then
+! under steady-state conditions:
+!
+! (0.08 - R)N = 15/M
+!
+! This implies that the maximum rate of creation of new OCs (the minimum value for M), 
+! which occurs when R = 0, is one OC created every 15/(0.08N) days.  If N = 80,
+! this gives one OC every 2.3 days.  If we take R = 0.04, the interval between 
+! the arrival of new OCs becomes 4.6 days.  The rate of OC creation can be 
+! related to the average speed of the OCs in the direction of trench advance. 
+! I have to make some wild guesses for OC size, trench width and advance rate.
+! If we say the new OCs have a diameter of 50 um, and there are three across 
+! the active face, and the rate of advance is 25 um/day, then three new OCs
+! every two days would seem to be the approximate requirement if the OCs do
+! not move forward.  On the other hand, if R=0 and one new OC arrives every
+! 2.3 days, i.e. very roughly pushing the leading edge of the BMU forward at
+! 50/3 um every 2.3 days, or 50/6.9 = 7 um/day, the team would have to move
+! forward at about 18 um/day.  These are very hand-waving numbers, but the
+! conclusion seems clear that the OCs in the BMU team do move at not much less
+! than the trench advance rate (as implied in Parfitt 1994).  Monocyte recruitment
+! by the team makes the required rate of OC forward motion even closer to the
+! trench advance rate.
+!
+! In the limit of large M, no more OCs are created, and R = 0.08, and all
+! OCs move forward at 25 um/day.
+!
+! Assume that the monocyte-attracting signal from a lining cell is suppressed
+! when a new OC is created in the vicinity?
+!
+! Do the lining cells need to disappear (die) as the trench advances?
+!
+! The addition of a new OC to the team requires a major repositioning,
+! to integrate the OC into the MBU.  The forces acting on OCs are two-fold:
+! (1) attraction to bone replacement signal (osteocyte)
+! (2) mutual attraction - OCs like to be close to each other
+! The combination of these two effects determines OC movement.
+!
+! When a new OC is first created (JOINING), it needs to squeeze itself between the
+! front row of the team, i.e. two OCs need to move apart to make space for
+! the new OC.  This is a challenge to model.  There probably needs to be
+! an active aversion to having the cell surface "exposed", i.e. not 
+! within the BMU cluster of OCs.  For cells at the leading edge, this
+! is balanced by the greater signal strength there.
+! probably need another force:
+! (3) force towards the BMU that depends on the degree of exposure of the OC.
+! The idea is that the force does not just depend on the distance of the OC
+! from the centre of the BMU, it also depends on the proximity of other OCs
+! on all sides.  This could be implemented as an amplifying factor on the 
+! force of attraction (2).
+! Say there are no OCs closer than a threshold distance in the range of
+! angles A1 to A2. Then there is an effective force in the direction
+! (A1+A2)/2 + Pi, i.e. a vector that bisects A1,A2, but with opposite sense.
+! The strength is proportional to the amount by which A2-A1 exceeds Pi.
+! In general, the attractive-repulsive force between two OCs with
+! radii R1 and R2 needs to be increasingly repulsive for decreasing D,
+! D < R1+R2, aapproximately zero near D = R1+R2, increasingly attractive
+! as D increases, with a maximum at D = Dmax, then decreasing asymptotically
+! to zero as D increases further.
+! Note: (3) may not be necessary if bone signal is not turned on beyond
+! the leading edge, i.e. lining cells have not lifted off.
+!
+! With forces (1) and (2), and possibly (3) if needed, we have the makings
+! of a procedure for simulating "steady-state" conditions.  What isn't
+! clear is how to start the BMU.  Perhaps the first few OCs just clump together.
+! How is the direction of advance determined?  As far as we know two BMUs do
+! not start moving in opposite directions along the same osteocyte signal 
+! fault line.  Perhaps the direction of the capillary is somehow (arbitrarily?)
+! determined, then the BMU follows.  In any case, we could ensure that the
+! turning on of bone signal (lifting of lining cells) occurs only on the
+! forward side of the neighbourhood of an OC, after some time.  The turning
+! on could be a continuous variation, up to full turn-on (= 1).
+! In the early stages we have to allow for JOINING OCs that inevitably are
+! located over bone that has not yet been prepared for them.  In this
+! situation the turning-on process may need to be accelerated, as the new
+! OC somehow forces the lining cell to lift off.  This should occur only
+! after the JOINING OC has been incorporated into the BMU, i.e. -> RESORBING.
+! At this point the sites under the OC are turned on.  We just need a criterion 
+! for the completion of incorporation into the team (JOINING), possibly related
+! to the amount of motion of the OC, or alternately based on elapsed time.
+! 
+! OC motion could be simulated in two ways: crude and less crude.
+! Crudely, all the forces on an OC could be computed, then a
+! displacement made that is proportional to the nett force.  In 
+! this case OCs would be processed sequentially.
+! Less crudely, the full equations of motion for all OCs could be
+! solved using Runge-Kutta.  Let's explore this approach.
+!---------------------------------------------------------------------
+
+!---------------------------------------------------------------------
+! Need to:
+!	create some OCs
+!	give them positions
+!	compute forces (initially just attraction-repulsion)
+!	solve for motion
+!---------------------------------------------------------------------
+subroutine test_OCdynamics
+integer :: i
+type(osteoclast_type), pointer :: pclast
+real(8), allocatable :: state(:), statep(:)
+logical, save :: first = .true.
+logical :: changed	! this would be set when an OC is either added or removed (or both)
+real :: t, dt
+real(8) :: d, r0, r1
+
+nclast = nclast+1
+pclast => clast(nclast)
+pclast%ID = nclast
+pclast%cm(1) = 3.3
+pclast%cm(2) = NBY + 1
+pclast%cm(3) = NZ/2 + 2.1
+pclast%radius = 25/DELTA_X
+pclast%count = 10
+pclast%status = RESORBING
+pclast%prevcm = -999
+call MakePits(pclast)
+
+nclast = nclast+1
+pclast => clast(nclast)
+pclast%ID = nclast
+pclast%cm(1) = 3.2
+pclast%cm(2) = NBY + 1
+pclast%cm(3) = NZ/2 - 2.5
+pclast%radius = 25/DELTA_X
+pclast%count = 10
+pclast%status = RESORBING
+pclast%prevcm = -999
+call MakePits(pclast)
+!
+!nclast = nclast+1
+!pclast => clast(nclast)
+!pclast%ID = nclast
+!pclast%cm(1) = 6.2
+!pclast%cm(2) = NBY + 1
+!pclast%cm(3) = NZ/2 + 1.1
+!pclast%radius = 25/DELTA_X
+!pclast%count = 10
+!pclast%status = RESORBING
+!pclast%prevcm = -999
+!call MakePits(pclast)
+
+!nclast = nclast+1
+!pclast => clast(nclast)
+!pclast%ID = nclast
+!pclast%cm(1) = 8.2
+!pclast%cm(2) = NBY + 1
+!pclast%cm(3) = NZ/2 - 3.1
+!pclast%radius = 25/DELTA_X
+!pclast%count = 10
+!pclast%status = RESORBING
+!pclast%prevcm = -999
+!call MakePits(pclast)
+
+call PrepareSurface
+
+OC_NV = 4*nclast
+allocate(state(OC_NV))
+allocate(statep(OC_NV))
+
+! Initialize state, statep
+call InitState(state,statep)
+changed = .false.
+
+dbug = .false.
+dt = DELTA_T
+do istep = 1,1005
+	t = (istep-1)*DELTA_T
+!	if (it == 300) changed = .true.
+	if (changed) then
+		call ReinitState(state,statep)
+		first = .true.
+		changed = .false.
+	endif
+	call OC_mover(OC_NV,t,dt,state,statep,first)
+	first = .false.
+	call MovePits
+	call Resorb
+	call LiftSeal
+	if (mod(istep,100) == 0 .or. istep >= 1000) then	! .or. (istep>640 .and. istep <680)) then
+		dbug = .true.
+		write(*,'(i5,4(2x,2f6.2))') istep,((state(4*i-3),state(4*i-1)),i=1,nclast)
+		if (dbug) then
+			call OCforces(state,F,NF)
+			write(*,'(a,4f10.6)') 'F: ',F(2,1),F(2,2),state(5)
+			write(*,*)
+		endif
+		dbug = .false.
+!		call show
+	endif
+enddo
+!call OCforces1(F,NF)
+!call OCforces(state,F,NF)
+!write(*,*) 'F: ',F(4,1),F(4,2)
+write(*,*) 'state: '
+write(*,'(4f10.6)') state(1:OC_NV)
+write(*,*) 'statep: '
+write(*,'(4f10.6)') statep(1:OC_NV)
+
+r0 = 2.5
+r1 = 2.5
+d = 4.73
+!write(*,*) 'OCattraction(d,r0,r1): ',OCattraction(d,r0,r1)
+
+end subroutine
+
+!--------------------------------------------------------------------------
+!--------------------------------------------------------------------------
+subroutine show
+type(osteoclast_type), pointer :: pclast
+type(surface_type), pointer :: ps
+integer :: iclast, ipit, x0, z0, x, z
+real :: rate
+
+!do iclast = 1,nclast
+do iclast = 4,4
+	pclast => clast(iclast)
+	if (pclast%status /= RESORBING) cycle
+	x0 = pclast%cm(1) + 0.5
+	z0 = pclast%cm(3) + 0.5
+	do ipit = 1,pclast%npit
+		x = x0 + pclast%pit(ipit)%delta(1)
+		z = z0 + pclast%pit(ipit)%delta(3)
+		if (x < 1 .or. x > NX .or. z < 1 .or. z > NZ) cycle
+		ps => surface(x,z)
+!		if (pclast%pit(ipit)%cover > 0) then
+			write(*,'(3i4,5f8.3)') ipit,x,z,ps%depth,ps%target_depth,ps%signal,ps%seal,pclast%pit(ipit)%cover
+!		endif
+	enddo
+enddo
+end subroutine
+
+!--------------------------------------------------------------------------
+! Set up a test surface, with a target line.
+! For initial testing, remove seal wherever there is signal.
+!--------------------------------------------------------------------------
+subroutine PrepareSurface
+integer :: x, z, n0, iclast, dx, dz
+real :: c, x0, z0, xx, zz, r0, d, v(2)
+type(osteoclast_type), pointer :: pclast
+
+patch%b = LACUNA_B
+patch%z0 = NZ/2
+do x = 1,NX
+	do z = 1,NZ
+		surface(x,z)%signal = 0
+		surface(x,z)%depth = 0
+		surface(x,z)%target_depth = 0
+		surface(x,z)%seal = 1
+		c = ((z-patch%z0)/patch%b)**2
+		if (c < 1) then
+			surface(x,z)%target_depth = (1 - c/2)*MAX_PIT_DEPTH
+			surface(x,z)%signal = GetSignal(x,z)
+			surface(x,z)%seal = 1
+		endif
+	enddo
+enddo
+do iclast = 1,nclast
+	pclast => clast(iclast)
+	if (pclast%status /= RESORBING) cycle
+	x0 = pclast%cm(1)
+	z0 = pclast%cm(3)
+	r0 = pclast%radius
+	n0 = r0 + 1
+	do dx = -n0,n0
+		xx = x0 + dx
+		if (xx < 1 .or. xx > NX) cycle
+		do dz = -n0,n0
+			zz = z0 + dz
+			if (zz < 1 .or. zz > NZ) cycle
+			v(1) = xx - x0
+			v(2) = zz - z0
+			d = sqrt(v(1)**2 + v(2)**2)
+			if (d < r0) then
+				x = xx + 0.5
+				z = zz + 0.5
+				surface(x,z)%seal = 0
+			endif
+		enddo
+	enddo
+enddo
+	
+end subroutine
+
+!--------------------------------------------------------------------------
+!--------------------------------------------------------------------------
+subroutine MovePits
+type(osteoclast_type), pointer :: pclast
+integer :: iclast
+real :: dx, dz, d
+
+do iclast = 1,nclast
+	pclast => clast(iclast)
+	if (pclast%status /= RESORBING) cycle
+	dx = pclast%cm(1) - pclast%prevcm(1)
+	dz = pclast%cm(3) - pclast%prevcm(3)
+	d = sqrt(dx*dx + dz*dz)
+	if (d > OC_MOVE_THRESHOLD) then
+		pclast%prevcm = pclast%cm
+		call SetPitCover(pclast)
+	endif
+enddo
+end subroutine
+
+!--------------------------------------------------------------------------
+! Based on the radius of the OC, the list of pits is defined.  Each pit
+! has an integer offset from the centre %cm(:), and a value %cover indicating
+! what fraction of the site at that offset is currently covered.
+! When the OC moves the pit%cover values need to be updated.
+!--------------------------------------------------------------------------
+subroutine MakePits(pclast)
+type(osteoclast_type), pointer :: pclast
+type(pit_type) :: temp(200)
+integer :: n, dx, dz, k
+real :: d, x, z
+
+n = pclast%radius + 1
+k = 0
+do dx = -n,n
+	do dz = -n,n
+		d = sqrt(real(dx*dx + dz*dz))
+		if (d < pclast%radius + 1.5) then
+			k = k+1
+			temp(k)%delta(1) = dx
+			temp(k)%delta(2) = 0
+			temp(k)%delta(3) = dz
+			temp(k)%cover = 0
+		endif
+	enddo
+enddo
+if (allocated(pclast%pit)) then
+	deallocate(pclast%pit)
+endif
+pclast%npit = k
+allocate(pclast%pit(pclast%npit))
+do k = 1,pclast%npit
+	pclast%pit(k)%delta = temp(k)%delta
+	pclast%pit(k)%fraction = 1.0/pclast%npit	! crude first approx.
+!	x = pclast%cm(1) + pclast%pit(k)%delta(1)
+!	z = pclast%cm(3) + pclast%pit(k)%delta(3)
+enddo
+call SetPitCover(pclast)
+end subroutine
+
+!--------------------------------------------------------------------------
+! Whenever the OC moves, or when it is resized, the cover must be recomputed.
+! For each pit offset, the fraction within a circle pclast%radius centred at
+! pclast%cm must be determined.
+! OC movement needs to be more than some threshold distance since the last move.
+! OC_MOVE_THRESHOLD
+!--------------------------------------------------------------------------
+subroutine SetPitCover(pclast)
+type(osteoclast_type), pointer :: pclast
+integer :: k, site0(3), site(3)
+real :: x0, z0, dx, dz, d
+
+!write(*,*) 'SetPitCover: ',pclast%ID
+x0 = pclast%cm(1)
+z0 = pclast%cm(3)
+site0(1) = x0 + 0.5
+site0(3) = z0 + 0.5
+do k = 1,pclast%npit
+	site = site0 + pclast%pit(k)%delta
+	if (site(1) < 1 .or. site(1) > NX .or. site(3) < 1 .or. site(1) > NZ) then
+		pclast%pit(k)%cover = 0.0
+		cycle
+	endif	
+	dx = site(1) - x0
+	dz = site(3) - z0
+	d = sqrt(dx*dx + dz*dz)
+	if (d < pclast%radius - 0.5) then
+		pclast%pit(k)%cover = 1.0
+	elseif (d < pclast%radius + 0.5) then
+		pclast%pit(k)%cover = pclast%radius + 0.5 - d
+	else
+		pclast%pit(k)%cover = 0.0
+	endif
+enddo
+end subroutine
+
+!--------------------------------------------------------------------------
+!--------------------------------------------------------------------------
+subroutine Resorb
+type(osteoclast_type), pointer :: pclast
+integer :: iclast, ipit, x0, z0, x, z
+real :: rate
+
+do iclast = 1,nclast
+	pclast => clast(iclast)
+	if (pclast%status /= RESORBING) cycle
+	x0 = pclast%cm(1) + 0.5
+	z0 = pclast%cm(3) + 0.5
+	do ipit = 1,pclast%npit
+		x = x0 + pclast%pit(ipit)%delta(1)
+		z = z0 + pclast%pit(ipit)%delta(3)
+		if (pclast%pit(ipit)%cover > 0 .and. surface(x,z)%signal > 0) then
+			rate = pclast%pit(ipit)%fraction*resorptionRate(pclast%count,pclast%npit)*pclast%pit(ipit)%cover
+			surface(x,z)%depth =  surface(x,z)%depth + rate*DELTA_T
+			surface(x,z)%signal = max(0.0,GetSignal(x,z))	
+!			if (iclast == 1 .and. ipit == 23) then
+!				write(*,'(2i3,4e12.3)') iclast,ipit,pclast%pit(ipit)%fraction,resorptionRate(pclast%count,pclast%npit),pclast%pit(ipit)%cover,rate
+!			endif
+		endif
+	enddo
+enddo
+end subroutine
+
+!--------------------------------------------------------------------------
+! The surface seal on sites adjacent to an OC pit (with cover > 0) is
+! gradually removed.
+! This method relies on the set of possible pits,pclast%pit(k)%delta,
+! spreading a bit beyond the radius of the OC.
+! (see: 	if (d < pclast%radius + 1.5)  in MakePits)
+!--------------------------------------------------------------------------
+subroutine LiftSeal
+integer :: iclast, k
+integer :: site0(3), site(3)
+type(osteoclast_type), pointer :: pclast
+
+do iclast = 1,nclast
+	pclast => clast(iclast)
+	if (pclast%status /= RESORBING) cycle
+	site0(1) = pclast%cm(1) + 0.5
+	site0(3) = pclast%cm(3) + 0.5
+	do k = 1,pclast%npit
+		site = site0 + pclast%pit(k)%delta
+		if (surface(site(1),site(3))%target_depth > 0) then
+			!NOTE:  This hard-wires the direction of BMU travel to be +x.  TESTING ONLY  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+			if (pclast%pit(k)%cover > 0 .or. pclast%pit(k)%delta(1) > 0) then
+				surface(site(1),site(3))%seal = max(0.0,surface(site(1),site(3))%seal - SEAL_REMOVAL_RATE*DELTA_T)
+			endif
+		endif
+	enddo
+enddo
+end subroutine
+
+!--------------------------------------------------------------------------
+! Set up state(:), statep(:) for the first time.
+!--------------------------------------------------------------------------
+subroutine InitState(state,statep)
+real(8) :: state(:), statep(:)
+integer :: iclast, indx, k
+type(osteoclast_type), pointer :: pclast
+indx = 0
+do iclast = 1,nclast
+	pclast => clast(iclast)
+	if (pclast%status == DEAD) cycle
+	indx = indx + 1
+	OC_to_index(iclast) = indx
+	index_to_OC(indx) = iclast
+	k = (indx-1)*4 + 1
+	state(k) = pclast%cm(1)
+	k = k+1
+	state(k) = 0
+	k = k+1
+	state(k) = pclast%cm(3)
+	k = k+1
+	state(k) = 0
+enddo
+statep = 0
+end subroutine
+
+!--------------------------------------------------------------------------
+! When the OC team changes, we need to set up state(:), statep(:) again.
+! First deallocate the arrays, then determine the new dimension, then
+! allocate again.
+! In this simple version, OC velocities and accelerations are all reset
+! to zero (statep = 0).  This is not an issue.
+!--------------------------------------------------------------------------
+subroutine ReinitState(state,statep)
+real(8), allocatable :: state(:), statep(:)
+integer :: iclast, indx, k
+type(osteoclast_type), pointer :: pclast
+
+deallocate(state)
+deallocate(statep)
+
+indx = 0
+do iclast = 1,nclast
+	pclast => clast(iclast)
+	if (pclast%status == DEAD) cycle
+	indx = indx + 1
+enddo
+OC_NV = 4*indx
+allocate(state(OC_NV))
+allocate(statep(OC_NV))
+
+indx = 0
+do iclast = 1,nclast
+	pclast => clast(iclast)
+	if (pclast%status == DEAD) cycle
+	indx = indx + 1
+	OC_to_index(iclast) = indx
+	index_to_OC(indx) = iclast
+	k = (indx-1)*4 + 1
+	state(k) = pclast%cm(1)
+	k = k+1
+	state(k) = 0
+	k = k+1
+	state(k) = pclast%cm(3)
+	k = k+1
+	state(k) = 0
+enddo
+statep = 0
+end subroutine
+
+!--------------------------------------------------------------------------
+! For now assume that the number of active OCs is fixed - none die, none created.
+!--------------------------------------------------------------------------
+subroutine OC_mover(NV,t,dt,state,statep,first)
+integer :: NV
+real :: t, dt
+real(8) :: state(:), statep(:)
+logical :: first
+real(8) ::  tstart, tend, relerr, abserr
+integer :: flag, iclast, k, indx
+
+tstart = t
+tend = tstart + dt
+if (first) then
+    call OC_deriv(tstart,state,statep)
+	first = .false.
+    flag = 1
+else
+    flag = 2
+endif
+
+abserr = sqrt ( epsilon ( abserr ) )
+relerr = sqrt ( epsilon ( relerr ) )
+
+call r8_rkf45 ( OC_deriv, OC_NV, state, statep, tstart, tend, relerr, abserr, flag )
+
+do indx = 1,OC_NV/4
+	iclast = index_to_OC(indx)
+	k = (indx-1)*4 + 1
+	clast(iclast)%cm(1) = state(k)
+	k = (indx-1)*4 + 3
+	clast(iclast)%cm(3) = state(k)
+enddo
+end subroutine
+
+!--------------------------------------------------------------------------
+!--------------------------------------------------------------------------
+subroutine OC_deriv(t,y,yp)
+real(8) :: t, y(*), yp(*)
+integer :: indx, nindx, k
+real, parameter :: drag = 1.0
+real, parameter :: mass = 1.0
+
+call OCforces(y,F,NF)
+
+!do iclast = 1,nclast
+!	write(*,'(i4,2f8.4)') iclast,F(iclast,:)
+!enddo
+
+! Each OC has associated with it 4 variables: x,x',z,z'
+! therefore if there are N active OCs, there are 4N variables.
+
+nindx = OC_NV/4
+do indx = 1,nindx
+	k = (indx-1)*4 + 1
+	yp(k) = y(k+1)
+	k = k+1
+	yp(k) = (F(indx,1) - drag*y(k))/mass
+	k = k+1
+	yp(k) = y(k+1)
+	k = k+1
+	yp(k) = (F(indx,2) - drag*y(k))/mass
+enddo
+!write(*,'(a,8f8.4)') 'y: ',y(1:OC_NV)
+!write(*,'(a,8f8.4)') 'yp: ',yp(1:OC_NV)
+end subroutine
+
+!---------------------------------------------------------------------
+! First, compute forces on OCs from other OCs.  This reflects both the
+! tendency of cells to cluster together, and their occupation of space.
+! Next need to include attraction towards bone signal.
+! Pass with n = dimension of array F(:,2)
+!---------------------------------------------------------------------
+subroutine OCforces(y,F,n)
+real(8) :: y(*)
+integer :: n
+real(8) :: F(n,2)
+integer :: iclast0, iclast1, indx0, indx1, nindx, nm0
+integer :: ix, iz, n0, dx, dz, ixx, izz
+real(8) :: x0, z0, x1, z1, r0, r1, v(2), vn(2), d, df, s, fs(2), x, z, ax, az, dfac
+real(8) :: ss(0:1,0:1)
+type(osteoclast_type), pointer :: pclast0, pclast1
+real, parameter :: K_MUTUAL = 1.0
+real, parameter :: K_SIGNAL = 0.001
+real, parameter :: BS_REACH_FACTOR = 1.5
+
+nindx = OC_NV/4
+do indx0 = 1,nindx
+	iclast0 = index_to_OC(indx0)
+!	if (dbug) write(*,*) 'iclast0: ',iclast0
+	F(indx0,:) = 0
+	pclast0 => clast(iclast0)
+	if (pclast0%status == DEAD) then
+		write(*,*) 'ERROR: indx0, iclast0: DEAD: ',indx0,iclast0
+		stop
+	endif
+	x0 = y((indx0-1)*4+1)	! pclast0%cm(1)
+	z0 = y((indx0-1)*4+3)	! pclast0%cm(3)
+	r0 = pclast0%radius
+	nm0 = pclast0%count
+	
+	! Forces from other OCs
+	do indx1 = 1,nindx
+		if (indx1 == indx0) cycle
+		iclast1 = index_to_OC(indx1)
+		pclast1 => clast(iclast1)
+		if (pclast1%status == DEAD) then
+			write(*,*) 'ERROR: indx1, iclast1: DEAD: ',indx1,iclast1
+			stop
+		endif
+		x1 = y((indx1-1)*4+1)
+		z1 = y((indx1-1)*4+3)
+		r1 = pclast1%radius
+		v(1) = x1 - x0
+		v(2) = z1 - z0
+		d = sqrt(v(1)**2 + v(2)**2)
+		if (d > 3*r0) cycle		! otherwise remote OCs exert attraction - probably not a good idea
+		vn = v/d
+!		if (dbug) write(*,*) 'iclast1,vn,d: ',iclast1,vn,d
+		df = OCattraction(d,r0,r1)
+!		if (dbug) write(*,'(a,3f10.6)') 'df*vn: ',df, df*vn
+		F(indx0,:) = F(indx0,:) + K_MUTUAL*df*vn
+!		if (dbug) write(*,'(a,2f10.6)') 'F_OC: ',F(iclast0,:)
+	enddo
+	
+	! Bone signal forces
+	! Assume that an OC can sample sites within some radius (e.g. 1.5r) and
+	! the attractiveness of each is determined and added vectorially.
+	fs = 0
+	n0 = BS_REACH_FACTOR*r0 + 1
+	do dx = -n0,n0
+		x = x0 + dx
+		if (x < 1 .or. x > NX) cycle
+		
+		do dz = -n0,n0
+			z = z0 + dz
+			if (z < 1 .or. z > NZ) cycle
+			if (dx == 0 .and. dz == 0) cycle
+			v(1) = x - x0
+			v(2) = z - z0
+			d = sqrt(v(1)**2 + v(2)**2)
+			if (d > n0) cycle
+			if (d < 1) then
+				dfac = 1
+			else
+				dfac = 1/d
+			endif
+			ax = x - int(x)
+			az = z - int(z)
+			vn = v/d
+			do ixx = 0,1
+				do izz = 0,1
+					if (surface(ix+ixx,iz+izz)%seal == 1) then
+						ss(ixx,izz) = 0
+					else
+						ss(ixx,izz) = surface(ix+ixx,iz+izz)%signal*(1-surface(ix+ixx,iz+izz)%seal)
+					endif
+				enddo
+			enddo
+			ix = x
+			iz = z
+!			s = (1-ax)*(1-az)*surface(ix,iz)%signal*(1 - surface(ix,iz)%seal) &
+!			  + ax*(1-az)*surface(ix+1,iz)%signal*(1 - surface(ix+1,iz)%seal) &
+!			  + (1-ax)*az*surface(ix,iz+1)%signal*(1 - surface(ix,iz+1)%seal) &
+!			  + ax*az*surface(ix+1,iz+1)%signal*(1 - surface(ix+1,iz+1)%seal)
+			s = (1-ax)*(1-az)*ss(0,0) + ax*(1-az)*ss(1,0) + (1-ax)*az*ss(0,1) + ax*az*ss(1,1)
+			fs = fs + K_SIGNAL*nm0*s*vn/dfac
+!			if (dbug .and. iclast0 == 2) then
+!				write(*,*) 
+!			if (dbug .and. dz == 2) write(*,'(4f12.6)') x,z,s,s*vn(1)		!surface(x,z)%signal,surface(x,z)%seal
+		enddo
+	enddo
+	if (dbug .and. iclast0 == 2) then
+		write(*,'(a,i3,4f8.4)') 'iclast0, F_S, F_OC: ',iclast0,fs,F(indx0,:)
+	endif
+	F(indx0,:) = F(indx0,:) + fs
+enddo
+	
+end subroutine
+
+!---------------------------------------------------------------------
+!---------------------------------------------------------------------
+subroutine OCforces1(F,n)
+integer :: n
+real(8) :: F(n,2)
+integer :: iclast0, iclast1
+real(8) :: x0, z0, x1, z1, r0, r1, v(2), vn(2), d, df
+type(osteoclast_type), pointer :: pclast0, pclast1
+
+do iclast0 = 1,nclast
+	F(iclast0,:) = 0
+	pclast0 => clast(iclast0)
+	if (pclast0%status == DEAD) cycle
+	x0 = pclast0%cm(1)
+	z0 = pclast0%cm(3)
+	r0 = pclast0%radius
+	
+	! Forces from other OCs
+	do iclast1 = 1,nclast
+		if (iclast1 == iclast0) cycle
+		pclast1 => clast(iclast1)
+		if (pclast1%status == DEAD) cycle
+		x1 = pclast1%cm(1)
+		z1 = pclast1%cm(3)
+		r1 = pclast1%radius
+		v(1) = x1 - x0
+		v(2) = z1 - z0
+		d = sqrt(v(1)**2 + v(2)**2)
+		vn = v/d
+		write(*,*) 'd,r0,r1,vn: ',d,r0,r1,vn
+		df = OCattraction(d,r0,r1)
+		write(*,*) 'df*vn: ',df*vn
+		F(iclast0,:) = F(iclast0,:) + df*vn
+		write(*,*) 'F: ',F(iclast0,:)
+	enddo
+enddo
+	
+end subroutine
+
+
+!---------------------------------------------------------------------
+! The desired shape of the attraction-repulsion function is not obvious.
+! Clearly f -> 0 as d -> inf., and f -> -inf. as d -> K1(r0+r1) (K1 < 1)
+! Near d = r0+r1, say at d = K2(r0+r1), we want f = 0, and the slope
+! near the axis crossing should be small.
+! The attractive force will rise to a maximum, at say d = K3(r0+r1),
+! then decrease (in an inverse square way?) with increasing d.
+! As in attraction-repulsion.xlsx:
+! Using d = r0+r1 as the axis-crossing point (simple case to start)
+! and setting x = d/(r0+r1),
+! For x <= 1
+!	f(x) = -b/(x-1+a) + b/a
+!   Note: x < 1-a => ERROR (attraction)
+! for x >= 1
+!	f(x) = h.exp(-k(x-1)).(exp(g(x-1))-1)/(exp(g(x-1))+1)
+! The slopes are matched (= s) at x=1 when:
+!	b = s.a^2
+!	g = (2s)/h
+! Reasonable curve is obtained with:
+!	s = 0.1
+!	a = 0.5
+!	h = 20
+!	k = 3
+! Note that the slope is still a bit steep near x=1
+!---------------------------------------------------------------------
+real(8) function OCattraction(d,r0,r1)
+real(8) :: d, r0, r1, x
+real, parameter :: s = 0.1
+real, parameter :: a = 0.5
+real, parameter :: h = 20
+real, parameter :: k = 3
+real(8) :: b, g
+
+b = s*a**2
+g = (2*s)/h
+x = d/(r0+r1)
+if (dbug) write(*,*) 'x: ',d,r0+r1,x
+if (x <= 1) then
+	if (x < 1-a) then
+		write(*,*) 'ERROR: in OCattraction: x < 1-a: ',x,1-a
+		x = 1.01*(1-a)
+	endif
+	OCattraction = -b/(x-1+a) + b/a
+	if (dbug) write(*,*) -b/(x-1+a),b/a
+else
+	OCattraction = h*exp(-k*(x-1))*(exp(g*(x-1))-1)/(exp(g*(x-1))+1)
+endif
+end function
 
 !---------------------------------------------------------------------
 ! We now take account of the surface seal.
