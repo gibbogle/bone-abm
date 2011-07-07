@@ -33,8 +33,10 @@ integer, parameter :: CROSSING = 8
 integer, parameter :: LEFT = 9
 integer, parameter :: DORMANT = 10
 
-integer, parameter :: RESORBING = 2
-integer, parameter :: MOVING = 3
+! OC-specific constants
+integer, parameter :: JOINING = 2
+integer, parameter :: RESORBING = 3
+integer, parameter :: MOVING = 4
 
 integer, parameter :: NEUMANN_MODEL = 1
 integer, parameter :: MOORE18_MODEL = 2
@@ -51,10 +53,11 @@ integer, parameter :: MAX_CAP = 100
 integer, parameter :: MAX_SIGNAL = 10000
 integer, parameter :: MAX_NCLUMP = 50
 integer, parameter :: MAX_CLUMP_CELLS = 50
-real, parameter :: DELTA_T = 0.25		! minutes
+real, parameter :: DELTA_T = 1		! minutes (0.25)
 real, parameter :: BIGTIME = 1.0e10
 logical, parameter :: FAST_DISPLAY = .false.
 real, parameter :: STARTUP_TIME = 1		! days
+real, parameter :: OC_MOVE_THRESHOLD = 0.1
 
 ! GUI parameters
 character*(12), parameter :: stopfile = 'stop_dll'
@@ -116,7 +119,7 @@ real, parameter :: DT_FAST_MOVE = 10.0
 real, parameter :: CLAST_RADIUS_FACTOR = 0.5	! relates OC radius to the sqrt of the number of monocytes
 real, parameter :: OC_SIGNAL_THRESHOLD = 0.5
 real, parameter :: OC_MARGIN = 2
-real, parameter :: SEAL_REMOVAL_RATE = 0.0001
+real, parameter :: SEAL_REMOVAL_RATE = 0.001
 ! Pit parameters
 logical, parameter :: HALF_ELLIPSE = .true.
 real, parameter :: LACUNA_A = 40		! Parameters of the elliptical region to be excavated
@@ -164,6 +167,7 @@ end type
 
 type pit_type
 	integer :: delta(3)
+	real :: cover
 	real :: rate
 	real :: fraction
 end type
@@ -171,7 +175,7 @@ end type
 type osteoclast_type
     integer :: ID
     integer :: site(3)
-    real :: cm(3), radius
+    real :: cm(3), radius, prevcm(3)
 	real :: normal(3)
     integer(2) :: status
     integer(2) :: lastdir
@@ -213,7 +217,7 @@ type occupancy_type
     integer :: indx
 !    integer :: signal
 !    real :: intensity
-    real :: bone_fraction
+!    real :: bone_fraction
 end type
 
 type surface_type
