@@ -237,21 +237,26 @@ NMONO_INITIAL = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*MONO_PER_MM3	! domain as fract
 !NSTEM = (PI*NX*CAPILLARY_DIAMETER*DELTA_X**2/1.0e6)*STEM_PER_MM2	! capillary surface area as fraction of 1 mm2 x rate of stem cells
 NSTEM = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*STEM_PER_MM3	! domain as fraction of 1 mm3 x rate of monocytes
 NBLAST_INITIAL = (patch%volume*DELTA_X**3)*OB_PER_UM3
-!write(*,*) 'Lacuna volume: ',patch%volume,NBLAST_INITIAL
-!write(logmsg,*) 'NSTEM, NMONO_INITIAL: ',NSTEM,NMONO_INITIAL
-call logger(logmsg)
 
 allocate(mono(MAX_MONO))
 allocate(clast(MAX_CLAST))
 allocate(blast(MAX_BLAST))
-call InitialBlastPlacement
-call logger('did InitialBlastPlacement')
-!call Initiation
-
-RANKSIGNAL_decayrate = log(2.0)/(RANKSIGNAL_HALFLIFE)    ! rate/min
-CXCL12_KDECAY = log(2.0)/(CXCL12_HALFLIFE)    ! rate/min
-call init_fields
-call logger('Did init_fields')
+if (TESTING_OC) then
+	NMONO_INITIAL = 0
+	NSTEM = 0
+	NBLAST_INITIAL = 0
+else
+	call InitialBlastPlacement
+	call logger('did InitialBlastPlacement')
+	!call Initiation
+	RANKSIGNAL_decayrate = log(2.0)/(RANKSIGNAL_HALFLIFE)    ! rate/min
+	CXCL12_KDECAY = log(2.0)/(CXCL12_HALFLIFE)    ! rate/min
+	call init_fields
+	call logger('Did init_fields')
+endif
+!write(*,*) 'Lacuna volume: ',patch%volume,NBLAST_INITIAL
+!write(logmsg,*) 'NSTEM, NMONO_INITIAL: ',NSTEM,NMONO_INITIAL
+!call logger(logmsg)
 
 nclast = 0
 nliveclast = 0
@@ -268,21 +273,23 @@ do while (nmono < NMONO_INITIAL)
 	call addMono('initial',site)
 enddo
 
-allocate(stem(NSTEM))
-i = 0
-do while (i < NSTEM)
-	x = random_int(1,NX,kpar)
-	y = random_int(NBY+1,NY,kpar)
-	z = random_int(1,NZ,kpar)
-	if (occupancy(x,y,z)%region /= MARROW) cycle
-	i = i + 1
-	stem(i)%ID = i
-	stem(i)%site = (/x,y,z/)
-!	call random_number(R)
-	R = par_uni(kpar)
-	stem(i)%dividetime = R*STEM_CYCLETIME	! stem cells are due to divide at random times
-	occupancy(x,y,z)%species = STEMCELL
-enddo
+if (NSTEM > 0) then
+	allocate(stem(NSTEM))
+	i = 0
+	do while (i < NSTEM)
+		x = random_int(1,NX,kpar)
+		y = random_int(NBY+1,NY,kpar)
+		z = random_int(1,NZ,kpar)
+		if (occupancy(x,y,z)%region /= MARROW) cycle
+		i = i + 1
+		stem(i)%ID = i
+		stem(i)%site = (/x,y,z/)
+	!	call random_number(R)
+		R = par_uni(kpar)
+		stem(i)%dividetime = R*STEM_CYCLETIME	! stem cells are due to divide at random times
+		occupancy(x,y,z)%species = STEMCELL
+	enddo
+endif
 
 nclump = 0
 stuck = .false.
@@ -1306,7 +1313,8 @@ do iclast = 1,nclast
 	k = k+1
 	size = pclast%radius
 	j = 7*(k-1)
-	clast_list(j+1:j+3) = pclast%site
+!	clast_list(j+1:j+3) = pclast%site
+	clast_list(j+1:j+3) = pclast%cm + 0.5
 	clast_list(j+2) = clast_list(j+2) - 0.5
 !	clast_list(j+4:j+6) = (/1,0,0/)		! direction unit vector
 	lastjump = dir2D(:,pclast%lastdir)
@@ -1604,6 +1612,12 @@ res = 0
 ok = .true.
 istep = istep + 1
 tnow = istep*DELTA_T
+
+if (TESTING_OC) then
+	call simulate_OC_step
+	return
+endif
+
 if (.not. initiated .and. tnow > STARTUP_TIME*24*60) then
 	call Initiation
 endif
@@ -1794,9 +1808,8 @@ if (ok) then
 	simulation_start = .true.
 	istep = 0
 	
-	if (TESTING) then
+	if (TESTING_OC) then
 		call test_OCdynamics
-		stop
 	endif
 	
 	return

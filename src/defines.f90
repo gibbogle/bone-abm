@@ -53,7 +53,8 @@ integer, parameter :: MAX_CAP = 100
 integer, parameter :: MAX_SIGNAL = 10000
 integer, parameter :: MAX_NCLUMP = 50
 integer, parameter :: MAX_CLUMP_CELLS = 50
-real, parameter :: DELTA_T = 1		! minutes (0.25)
+real, parameter :: DELTA_T = 0.25		! minutes 
+!real, parameter :: DELTA_T_OC = 4		! minutes (for OC simulation)
 real, parameter :: BIGTIME = 1.0e10
 logical, parameter :: FAST_DISPLAY = .false.
 real, parameter :: STARTUP_TIME = 1		! days
@@ -119,7 +120,6 @@ real, parameter :: DT_FAST_MOVE = 10.0
 real, parameter :: CLAST_RADIUS_FACTOR = 0.5	! relates OC radius to the sqrt of the number of monocytes
 real, parameter :: OC_SIGNAL_THRESHOLD = 0.5
 real, parameter :: OC_MARGIN = 2
-real, parameter :: SEAL_REMOVAL_RATE = 0.001
 ! Pit parameters
 logical, parameter :: HALF_ELLIPSE = .true.
 real, parameter :: LACUNA_A = 40		! Parameters of the elliptical region to be excavated
@@ -175,7 +175,8 @@ end type
 type osteoclast_type
     integer :: ID
     integer :: site(3)
-    real :: cm(3), radius, prevcm(3)
+    real :: cm(3), radius, prevcm(3), dcm(3)
+    real :: foc(2), fsig(2), ftot(2)
 	real :: normal(3)
     integer(2) :: status
     integer(2) :: lastdir

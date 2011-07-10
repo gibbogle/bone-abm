@@ -8,14 +8,27 @@ implicit none
 save
 
 real, parameter :: Kchemo = 1.0
+real, parameter :: K_MUTUAL_ATTRACT = 0.2	!0.2
+real, parameter :: K_MUTUAL_REPELL = 0.2
+real, parameter :: K_SIGNAL = 0.001	!0.01
+real, parameter :: K_JOINING = 2
+real, parameter :: SEAL_REMOVAL_RATE = 0.001
+real, parameter :: JOIN_DISP_THRESHOLD = 0.0005
+real, parameter :: JOIN_TIME_LIMIT = 100
+real, parameter :: K_OC_DRAG = 30.0
+real, parameter :: OC_MASS = 0.1
+real, parameter :: SPEEDUP = 10
 
 ! For testing OC dynamics, need lookup tables to translate between
 ! OC index and state index (actually (index-1)/4 + 1)
+real(8), allocatable :: OCstate(:), OCstatep(:)
 integer :: OC_NV
 integer :: OC_to_index(100)
 integer :: index_to_OC(100)
 integer, parameter :: NF=100
-real(8) :: F(NF,2)
+real(8) :: F(NF,2), FSIG(NF,2)
+integer :: istep_OC
+logical :: first_OC
 logical :: dbug
 
 contains
@@ -169,18 +182,92 @@ contains
 !	solve for motion
 !---------------------------------------------------------------------
 subroutine test_OCdynamics
-integer :: i
+!integer :: it
+
+DELTA_T_OC = SPEEDUP*DELTA_T
+call OCsetup
+
+call PrepareSurface
+
+OC_NV = 4*nclast
+if (allocated(OCstate)) deallocate(OCstate)
+if (allocated(OCstatep)) deallocate(OCstatep)
+allocate(OCstate(OC_NV))
+allocate(OCstatep(OC_NV))
+
+! Initialize state, statep
+call InitState(OCstate,OCstatep)
+
+istep_OC = 0
+first_OC = .true.
+dbug = .false.
+
+!do it = 1,5000
+!	call simulate_OC_step
+!enddo
+
+!call OCforces1(F,NF)
+!call OCforces(state,F,NF)
+!write(*,*) 'F: ',F(4,1),F(4,2)
+!write(*,*) 'OCstate: '
+!write(*,'(4f10.6)') OCstate(1:OC_NV)
+!write(*,*) 'OCstatep: '
+!write(*,'(4f10.6)') OCstatep(1:OC_NV)
+end subroutine
+
+!--------------------------------------------------------------------------
+!--------------------------------------------------------------------------
+subroutine simulate_OC_step
+integer :: i	!site(3)
 type(osteoclast_type), pointer :: pclast
-real(8), allocatable :: state(:), statep(:)
-logical, save :: first = .true.
 logical :: changed	! this would be set when an OC is either added or removed (or both)
 real :: t, dt
-real(8) :: d, r0, r1
+
+istep_OC = istep_OC + 1
+dt = DELTA_T_OC
+t = (istep_OC-1)*DELTA_T_OC
+call OCfsignal(OCstate) 
+call OC_mover(OC_NV,t,dt,OCstate,OCstatep,first_OC)
+first_OC = .false.
+call UpdateSurface
+call MovePits
+call Resorb
+call LiftSeal
+if (mod(istep_OC,100) == 0 .or. istep_OC >= 1000000) then	
+!		dbug = .true.
+!	write(*,'(i5,6(2x,2f6.2))') istep_OC,((OCstate(4*i-3),OCstate(4*i-1)),i=1,nclast)
+!		call LiftSeal
+!	pclast => clast(1)
+!	site = pclast%cm
+!	sig = TotalSignal(pclast,site)
+!	site(3) = site(3) + 1
+!	sig = TotalSignal(pclast,site)
+!	dbug = .false.
+endif
+call CheckJoining(t,changed)
+if (changed) then
+	write(logmsg,*) 'New OC joined the team: ',istep_OC
+	call logger(logmsg)
+	call ReinitState(OCstate,OCstatep)
+	first_OC = .true.
+	changed = .false.
+!		pclast =>clast(2)
+!		call show(pclast)
+!		pclast =>clast(4)
+!		call show(pclast)
+endif
+end subroutine
+
+!--------------------------------------------------------------------------
+!--------------------------------------------------------------------------
+subroutine OCsetup
+type(osteoclast_type), pointer :: pclast
 
 nclast = nclast+1
 pclast => clast(nclast)
 pclast%ID = nclast
-pclast%cm(1) = 3.3
+pclast%entrytime = 0
+pclast%cm(1) = 2.3
 pclast%cm(2) = NBY + 1
 pclast%cm(3) = NZ/2 + 2.1
 pclast%radius = 25/DELTA_X
@@ -192,114 +279,101 @@ call MakePits(pclast)
 nclast = nclast+1
 pclast => clast(nclast)
 pclast%ID = nclast
-pclast%cm(1) = 3.2
+pclast%entrytime = 0
+pclast%cm(1) = 3.0
 pclast%cm(2) = NBY + 1
-pclast%cm(3) = NZ/2 - 2.5
+pclast%cm(3) = NZ/2 - 3
+pclast%radius = 25/DELTA_X
+pclast%count = 10
+pclast%status = RESORBING
+pclast%prevcm = -999
+call MakePits(pclast)
+
+nclast = nclast+1
+pclast => clast(nclast)
+pclast%ID = nclast
+pclast%entrytime = 0
+pclast%cm(1) = 6.2
+pclast%cm(2) = NBY + 1
+pclast%cm(3) = NZ/2 + 3.1
+pclast%radius = 25/DELTA_X
+pclast%count = 10
+pclast%status = RESORBING
+pclast%prevcm = -999
+call MakePits(pclast)
+
+nclast = nclast+1
+pclast => clast(nclast)
+pclast%ID = nclast
+pclast%entrytime = 0
+pclast%cm(1) = 7.5
+pclast%cm(2) = NBY + 1
+pclast%cm(3) = NZ/2 - 3.8
 pclast%radius = 25/DELTA_X
 pclast%count = 10
 pclast%status = RESORBING
 pclast%prevcm = -999
 call MakePits(pclast)
 !
-!nclast = nclast+1
-!pclast => clast(nclast)
-!pclast%ID = nclast
-!pclast%cm(1) = 6.2
-!pclast%cm(2) = NBY + 1
-!pclast%cm(3) = NZ/2 + 1.1
-!pclast%radius = 25/DELTA_X
-!pclast%count = 10
-!pclast%status = RESORBING
-!pclast%prevcm = -999
-!call MakePits(pclast)
-
-!nclast = nclast+1
-!pclast => clast(nclast)
-!pclast%ID = nclast
-!pclast%cm(1) = 8.2
-!pclast%cm(2) = NBY + 1
-!pclast%cm(3) = NZ/2 - 3.1
-!pclast%radius = 25/DELTA_X
-!pclast%count = 10
-!pclast%status = RESORBING
-!pclast%prevcm = -999
-!call MakePits(pclast)
-
-call PrepareSurface
-
-OC_NV = 4*nclast
-allocate(state(OC_NV))
-allocate(statep(OC_NV))
-
-! Initialize state, statep
-call InitState(state,statep)
-changed = .false.
-
-dbug = .false.
-dt = DELTA_T
-do istep = 1,1005
-	t = (istep-1)*DELTA_T
-!	if (it == 300) changed = .true.
-	if (changed) then
-		call ReinitState(state,statep)
-		first = .true.
-		changed = .false.
-	endif
-	call OC_mover(OC_NV,t,dt,state,statep,first)
-	first = .false.
-	call MovePits
-	call Resorb
-	call LiftSeal
-	if (mod(istep,100) == 0 .or. istep >= 1000) then	! .or. (istep>640 .and. istep <680)) then
-		dbug = .true.
-		write(*,'(i5,4(2x,2f6.2))') istep,((state(4*i-3),state(4*i-1)),i=1,nclast)
-		if (dbug) then
-			call OCforces(state,F,NF)
-			write(*,'(a,4f10.6)') 'F: ',F(2,1),F(2,2),state(5)
-			write(*,*)
-		endif
-		dbug = .false.
-!		call show
-	endif
-enddo
-!call OCforces1(F,NF)
-!call OCforces(state,F,NF)
-!write(*,*) 'F: ',F(4,1),F(4,2)
-write(*,*) 'state: '
-write(*,'(4f10.6)') state(1:OC_NV)
-write(*,*) 'statep: '
-write(*,'(4f10.6)') statep(1:OC_NV)
-
-r0 = 2.5
-r1 = 2.5
-d = 4.73
-!write(*,*) 'OCattraction(d,r0,r1): ',OCattraction(d,r0,r1)
+nclast = nclast+1
+pclast => clast(nclast)
+pclast%ID = nclast
+pclast%entrytime = 0
+pclast%cm(1) = 9.2
+pclast%cm(2) = NBY + 1
+pclast%cm(3) = NZ/2 
+pclast%radius = 25/DELTA_X
+pclast%count = 15
+pclast%status = JOINING
+pclast%prevcm = -999
+call MakePits(pclast)
 
 end subroutine
 
 !--------------------------------------------------------------------------
 !--------------------------------------------------------------------------
-subroutine show
+subroutine show(pclast)
 type(osteoclast_type), pointer :: pclast
 type(surface_type), pointer :: ps
-integer :: iclast, ipit, x0, z0, x, z
+integer :: ipit, x0, z0, x, z
 real :: rate
 
-!do iclast = 1,nclast
-do iclast = 4,4
+write(*,*) 'clast: ',pclast%ID
+x0 = pclast%cm(1) + 0.5
+z0 = pclast%cm(3) + 0.5
+do ipit = 1,pclast%npit
+	x = x0 + pclast%pit(ipit)%delta(1)
+	z = z0 + pclast%pit(ipit)%delta(3)
+	if (x < 1 .or. x > NX .or. z < 1 .or. z > NZ) cycle
+!	ps => surface(x,z)
+	write(*,'(4i4,f8.3)') ipit,pclast%pit(ipit)%delta,pclast%pit(ipit)%cover
+enddo
+end subroutine
+
+!--------------------------------------------------------------------------
+! A new OC makes the transition from JOINING to RESORBING when one of two
+! conditions is met:
+! (1) The displacement in a timestep drop below a threshold
+! (2) A specified time limit since the OC's creation is reached.
+!--------------------------------------------------------------------------
+subroutine CheckJoining(t,joined)
+real :: t
+logical :: joined
+integer :: iclast
+real :: dcm(3), d
+type(osteoclast_type), pointer :: pclast
+
+joined = .false.
+do iclast = 1,nclast
 	pclast => clast(iclast)
-	if (pclast%status /= RESORBING) cycle
-	x0 = pclast%cm(1) + 0.5
-	z0 = pclast%cm(3) + 0.5
-	do ipit = 1,pclast%npit
-		x = x0 + pclast%pit(ipit)%delta(1)
-		z = z0 + pclast%pit(ipit)%delta(3)
-		if (x < 1 .or. x > NX .or. z < 1 .or. z > NZ) cycle
-		ps => surface(x,z)
-!		if (pclast%pit(ipit)%cover > 0) then
-			write(*,'(3i4,5f8.3)') ipit,x,z,ps%depth,ps%target_depth,ps%signal,ps%seal,pclast%pit(ipit)%cover
-!		endif
-	enddo
+	if (pclast%status /= JOINING) cycle
+	dcm = pclast%dcm
+	d = sqrt(dcm(1)*dcm(1)+dcm(3)*dcm(3))
+!	write(*,'(a,i3,3f10.6)') 'd: ',iclast,pclast%dcm(1),pclast%dcm(3),d
+	if (d < JOIN_DISP_THRESHOLD .or. t-pclast%entrytime > JOIN_TIME_LIMIT) then
+		pclast%status = RESORBING
+		joined = .true.
+	endif
 enddo
 end subroutine
 
@@ -325,6 +399,10 @@ do x = 1,NX
 			surface(x,z)%target_depth = (1 - c/2)*MAX_PIT_DEPTH
 			surface(x,z)%signal = GetSignal(x,z)
 			surface(x,z)%seal = 1
+			if (x <= 2) then	! TEMPORARY measure for startup
+				surface(x,z)%signal = 0	!0.1*surface(x,z)%signal
+				surface(x,z)%seal = 0
+			endif
 		endif
 	enddo
 enddo
@@ -356,6 +434,8 @@ enddo
 end subroutine
 
 !--------------------------------------------------------------------------
+! %prevcm(:) is set every time site coverage by pits is recomputed.
+! The coverage is recomputed when a minimum OC movement has occurred.
 !--------------------------------------------------------------------------
 subroutine MovePits
 type(osteoclast_type), pointer :: pclast
@@ -387,12 +467,12 @@ type(pit_type) :: temp(200)
 integer :: n, dx, dz, k
 real :: d, x, z
 
-n = pclast%radius + 1
+n = pclast%radius + 3
 k = 0
 do dx = -n,n
 	do dz = -n,n
 		d = sqrt(real(dx*dx + dz*dz))
-		if (d < pclast%radius + 1.5) then
+		if (d < pclast%radius + 2.0) then
 			k = k+1
 			temp(k)%delta(1) = dx
 			temp(k)%delta(2) = 0
@@ -409,6 +489,7 @@ allocate(pclast%pit(pclast%npit))
 do k = 1,pclast%npit
 	pclast%pit(k)%delta = temp(k)%delta
 	pclast%pit(k)%fraction = 1.0/pclast%npit	! crude first approx.
+!	write(*,*) pclast%ID,k,pclast%pit(k)%delta(1),pclast%pit(k)%delta(3)
 !	x = pclast%cm(1) + pclast%pit(k)%delta(1)
 !	z = pclast%cm(3) + pclast%pit(k)%delta(3)
 enddo
@@ -466,9 +547,9 @@ do iclast = 1,nclast
 	do ipit = 1,pclast%npit
 		x = x0 + pclast%pit(ipit)%delta(1)
 		z = z0 + pclast%pit(ipit)%delta(3)
-		if (pclast%pit(ipit)%cover > 0 .and. surface(x,z)%signal > 0) then
+		if (pclast%pit(ipit)%cover > 0 .and. surface(x,z)%signal > 0 .and. surface(x,z)%seal == 0) then
 			rate = pclast%pit(ipit)%fraction*resorptionRate(pclast%count,pclast%npit)*pclast%pit(ipit)%cover
-			surface(x,z)%depth =  surface(x,z)%depth + rate*DELTA_T
+			surface(x,z)%depth =  surface(x,z)%depth + rate*DELTA_T_OC
 			surface(x,z)%signal = max(0.0,GetSignal(x,z))	
 !			if (iclast == 1 .and. ipit == 23) then
 !				write(*,'(2i3,4e12.3)') iclast,ipit,pclast%pit(ipit)%fraction,resorptionRate(pclast%count,pclast%npit),pclast%pit(ipit)%cover,rate
@@ -489,19 +570,30 @@ subroutine LiftSeal
 integer :: iclast, k
 integer :: site0(3), site(3)
 type(osteoclast_type), pointer :: pclast
+real :: r2, d2
+real, parameter :: EDGE = 0.5	! TESTING!!!!!!!!!!!!!!
 
 do iclast = 1,nclast
 	pclast => clast(iclast)
 	if (pclast%status /= RESORBING) cycle
 	site0(1) = pclast%cm(1) + 0.5
 	site0(3) = pclast%cm(3) + 0.5
+	r2 = (pclast%radius + EDGE)**2
+	if (dbug) write(*,*) 'LiftSeal: ',iclast,pclast%radius,r2
 	do k = 1,pclast%npit
 		site = site0 + pclast%pit(k)%delta
+		if (site(1) < 1 .or. site(1) > NX) cycle
+		if (site(3) < 1 .or. site(3) > NZ) cycle
+		if (surface(site(1),site(3))%seal == 0) cycle
+		d2 = pclast%pit(k)%delta(1)**2 + pclast%pit(k)%delta(3)**2
+		if (dbug) write(*,*) k,site(1),site(3),pclast%pit(k)%delta(1),pclast%pit(k)%delta(3),d2
+		if (d2 > r2) cycle
 		if (surface(site(1),site(3))%target_depth > 0) then
 			!NOTE:  This hard-wires the direction of BMU travel to be +x.  TESTING ONLY  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-			if (pclast%pit(k)%cover > 0 .or. pclast%pit(k)%delta(1) > 0) then
-				surface(site(1),site(3))%seal = max(0.0,surface(site(1),site(3))%seal - SEAL_REMOVAL_RATE*DELTA_T)
-			endif
+!			if (pclast%pit(k)%cover > 0 .or. pclast%pit(k)%delta(1) > 0) then
+!			if (pclast%pit(k)%cover > 0) then
+				surface(site(1),site(3))%seal = max(0.0,surface(site(1),site(3))%seal - SEAL_REMOVAL_RATE*DELTA_T_OC)
+!			endif
 		endif
 	enddo
 enddo
@@ -587,6 +679,7 @@ real(8) :: state(:), statep(:)
 logical :: first
 real(8) ::  tstart, tend, relerr, abserr
 integer :: flag, iclast, k, indx
+type(osteoclast_type), pointer :: pclast
 
 tstart = t
 tend = tstart + dt
@@ -605,40 +698,39 @@ call r8_rkf45 ( OC_deriv, OC_NV, state, statep, tstart, tend, relerr, abserr, fl
 
 do indx = 1,OC_NV/4
 	iclast = index_to_OC(indx)
+	pclast => clast(iclast)
 	k = (indx-1)*4 + 1
-	clast(iclast)%cm(1) = state(k)
+	pclast%dcm(1) = state(k) - pclast%cm(1)
+	pclast%cm(1) = state(k)
 	k = (indx-1)*4 + 3
-	clast(iclast)%cm(3) = state(k)
+	pclast%dcm(3) = state(k) - pclast%cm(3)
+	pclast%cm(3) = state(k)
 enddo
 end subroutine
 
 !--------------------------------------------------------------------------
+! Each OC has associated with it 4 variables: x,x',z,z'
+! therefore if there are N active OCs, there are 4N variables.
 !--------------------------------------------------------------------------
 subroutine OC_deriv(t,y,yp)
 real(8) :: t, y(*), yp(*)
 integer :: indx, nindx, k
-real, parameter :: drag = 1.0
-real, parameter :: mass = 1.0
 
 call OCforces(y,F,NF)
 
 !do iclast = 1,nclast
 !	write(*,'(i4,2f8.4)') iclast,F(iclast,:)
 !enddo
-
-! Each OC has associated with it 4 variables: x,x',z,z'
-! therefore if there are N active OCs, there are 4N variables.
-
 nindx = OC_NV/4
 do indx = 1,nindx
 	k = (indx-1)*4 + 1
 	yp(k) = y(k+1)
 	k = k+1
-	yp(k) = (F(indx,1) - drag*y(k))/mass
+	yp(k) = (F(indx,1) - K_OC_DRAG*y(k))/OC_MASS
 	k = k+1
 	yp(k) = y(k+1)
 	k = k+1
-	yp(k) = (F(indx,2) - drag*y(k))/mass
+	yp(k) = (F(indx,2) - K_OC_DRAG*y(k))/OC_MASS
 enddo
 !write(*,'(a,8f8.4)') 'y: ',y(1:OC_NV)
 !write(*,'(a,8f8.4)') 'yp: ',yp(1:OC_NV)
@@ -655,14 +747,12 @@ real(8) :: y(*)
 integer :: n
 real(8) :: F(n,2)
 integer :: iclast0, iclast1, indx0, indx1, nindx, nm0
-integer :: ix, iz, n0, idx, idz, ixx, izz, site0(3), site(3)
+integer :: ix, iz, n0, idx, idz, ixx, izz, site0(3), site(3), idxmax, idzmax
 real(8) :: x0, z0, x1, z1, r0, r1, v(2), vn(2), d, df, s, fs(2), x, z, ax, az, dfac, dx, dz
-real(8) :: ss(0:1,0:1), tot(-1:1,-1:1), tot0
+real(8) :: ss(0:1,0:1), tot(-1:1,-1:1), tot0, sigmax
 type(osteoclast_type), pointer :: pclast0, pclast1
-real, parameter :: K_MUTUAL = 1.0
-real, parameter :: K_SIGNAL = 0.001
 real, parameter :: BS_REACH_FACTOR = 1.5
-integer, parameter :: idea = 2
+integer, parameter :: idea = 0
 
 nindx = OC_NV/4
 do indx0 = 1,nindx
@@ -696,11 +786,13 @@ do indx0 = 1,nindx
 		d = sqrt(v(1)**2 + v(2)**2)
 		if (d > 3*r0) cycle		! otherwise remote OCs exert attraction - probably not a good idea
 		vn = v/d
-!		if (dbug) write(*,*) 'iclast1,vn,d: ',iclast1,vn,d
 		df = OCattraction(d,r0,r1)
-!		if (dbug) write(*,'(a,3f10.6)') 'df*vn: ',df, df*vn
-		F(indx0,:) = F(indx0,:) + K_MUTUAL*df*vn
-!		if (dbug) write(*,'(a,2f10.6)') 'F_OC: ',F(iclast0,:)
+!		F(indx0,:) = F(indx0,:) + K_MUTUAL*df*vn
+		if (df > 0) then
+			F(indx0,:) = F(indx0,:) + K_MUTUAL_ATTRACT*df*vn
+		else
+			F(indx0,:) = F(indx0,:) + K_MUTUAL_REPELL*df*vn
+		endif
 	enddo
 	
 	! Bone signal forces
@@ -727,6 +819,9 @@ do indx0 = 1,nindx
 	!             FS direction is site-cm
 	!         endif
 	!     endif
+	!
+	! This module can be removed from the OCforces subroutine, and FSIG(:,2),
+	! which will be a global array, can be computed less frequently, e.g. every 10 timesteps.
 	
 	if (idea == 1) then
 	fs = 0
@@ -753,10 +848,15 @@ do indx0 = 1,nindx
 			vn = v/d
 			do ixx = 0,1
 				do izz = 0,1
-					if (surface(ix+ixx,iz+izz)%seal == 1) then
+!					if (surface(ix+ixx,iz+izz)%seal == 1) then
+!						ss(ixx,izz) = 0
+!					else
+!						ss(ixx,izz) = surface(ix+ixx,iz+izz)%signal*(1-surface(ix+ixx,iz+izz)%seal)
+!					endif
+					if (surface(ix+ixx,iz+izz)%seal /= 0) then
 						ss(ixx,izz) = 0
 					else
-						ss(ixx,izz) = surface(ix+ixx,iz+izz)%signal*(1-surface(ix+ixx,iz+izz)%seal)
+						ss(ixx,izz) = surface(ix+ixx,iz+izz)%signal
 					endif
 				enddo
 			enddo
@@ -774,6 +874,14 @@ do indx0 = 1,nindx
 		enddo
 	enddo
 	elseif (idea == 2) then
+		if (x0 < 1 .or. z0 < 1) then
+			write(*,*) 'ERROR: OCforces: x0 or z0 < 0.5'
+			stop
+		endif
+		if (x0 > NX .or. z0 > NZ) then
+			write(*,*) 'ERROR: OCforces: x0 or z0 < 0.5'
+			stop
+		endif
 		tot = -1
 		site0(1) = x0 + 0.5
 		site0(2) = NBY + 1
@@ -806,14 +914,213 @@ do indx0 = 1,nindx
 		tot(idx,idz) = TotalSignal(pclast0,site)
 		tot0 = (1-ax)*(1-az)*tot(0,0) + ax*(1-az)*tot(idx,0) &
 		     + (1-ax)*az*tot(0,idz)   + ax*az*tot(idx,idz)
-		
+		if (tot0 > 0.4*pclast0%npit) then	! arbitrary threshold
+			if (dbug) then
+				write(*,*) 'ax,az: ',idx,idz,ax,az
+				write(*,*) 'tot0: ',tot0,0.4*pclast0%npit,tot(idx,idz)
+			endif
+			fs = 0
+		else
+			sigmax = 0
+			do idx = -1,1
+				do idz = -1,1
+					if (tot(idx,idz) < 0) then
+						site(1) = site0(1) + idx
+						site(2) = NBY + 1
+						site(3) = site0(3) + idz
+						tot(idx,idz) = TotalSignal(pclast0,site)
+					endif
+					if (tot(idx,idz) > sigmax) then
+						idxmax = idx
+						idzmax = idz
+						sigmax = tot(idx,idz)
+					endif
+				enddo
+			enddo
+			if (sigmax > tot0) then
+				v(1) = site0(1) + idxmax - x0
+				v(2) = site0(3) + idzmax - z0
+				d = sqrt(v(1)**2 + v(2)**2)
+				if (d == 0) then
+					fs = 0
+				else
+					vn = v/d
+					fs = K_SIGNAL*nm0*(sigmax-tot0)*vn
+				endif
+			else
+				fs = 0
+			endif
+		endif
+		if (dbug) then
+			write(*,*) 'fs: ',fs
+!			stop
+		endif
 	endif
-	if (dbug .and. iclast0 == 2) then
-		write(*,'(a,i3,4f8.4)') 'iclast0, F_S, F_OC: ',iclast0,fs,F(indx0,:)
+!	if (dbug .and. iclast0 == 1) then
+!		write(*,'(a,i3,4f8.4)') 'iclast0, F_S, F_OC: ',iclast0,fs,F(indx0,:)
+!	endif
+	pclast0%foc = F(indx0,:)
+	if (idea == 0) then
+		F(indx0,:) = F(indx0,:) + FSIG(indx0,:)
+	else
+		F(indx0,:) = F(indx0,:) + fs
 	endif
-	F(indx0,:) = F(indx0,:) + fs
+	pclast0%ftot = F(indx0,:)
 enddo
 	
+end subroutine
+
+!---------------------------------------------------------------------
+! Bone signal forces
+! Need to distinguish between an OC that is JOINING and one that is RESORBING.
+! A JOINING OC must be responsive to signals that are quite remote, in order
+! to be able to squeeze into the BMU team.  This is not an issue for a RESORBING OC.
+!
+! RESORBING OC: two steps
+! (a) Measure totsignal0 under OC
+!     If totsignal0 > threshold
+!         FS = 0
+!     else
+!         Choose best direction of movement.  Consider OC located at a set of
+!         sites nearby, evaluate totsignal at each.  Select maximum = sigmax
+!         if (sigmax < totsignal)
+!             FS = 0
+!         else
+!             FS magnitude ~ (sigmax-totsignal0)
+!             FS direction is site-cm
+!         endif
+!     endif
+!
+! JOINING OC:
+! Needs to push its way in.
+!
+! This module can be removed from the OCforces subroutine, and FSIG(:,2),
+! which will be a global array, can be computed less frequently, e.g. every 10 timesteps.
+!---------------------------------------------------------------------
+subroutine OCfsignal(y)
+real(8) :: y(*)
+integer :: iclast0, indx0, nindx, nm0
+integer :: ix, iz, n0, idx, idz, ixx, izz, site0(3), site(3), idxmax, idzmax
+real(8) :: x0, z0, r0, v(2), vn(2), d, fs(2), x, z, ax, az, dx, dz
+integer, parameter :: Q=2
+real(8) :: tot(-Q:Q,-Q:Q), tot0, sigmax
+type(osteoclast_type), pointer :: pclast0
+
+nindx = OC_NV/4
+do indx0 = 1,nindx
+	iclast0 = index_to_OC(indx0)
+	pclast0 => clast(iclast0)
+	if (pclast0%status == DEAD) then
+		write(logmsg,*) 'ERROR: indx0, iclast0: DEAD: ',indx0,iclast0
+		call logger(logmsg)
+		stop
+	endif
+	x0 = y((indx0-1)*4+1)	! pclast0%cm(1)
+	z0 = y((indx0-1)*4+3)	! pclast0%cm(3)
+	r0 = pclast0%radius
+	nm0 = pclast0%count
+	if (x0 < 1 .or. z0 < 1) then
+		write(logmsg,*) 'ERROR: OCfsignal: x0 or z0 < 0.5'
+		call logger(logmsg)
+!		stop
+	endif
+	if (x0 > NX .or. z0 > NZ) then
+		write(logmsg,*) 'ERROR: OCforces: x0 or z0 < 0.5'
+		call logger(logmsg)
+!		stop
+	endif
+	
+	fs = 0
+	if (pclast0%status == RESORBING .or. pclast0%status == JOINING) then
+		tot = -1
+		site0(1) = x0 + 0.5
+		site0(2) = NBY + 1
+		site0(3) = z0 + 0.5
+		tot(0,0) = TotalSignal(pclast0,site0)
+		site = site0
+		dx = x0 - site0(1)
+		dz = z0 - site0(3)
+		if (dx >= 0) then
+			idx = 1
+			ax = dx
+		else
+			idx = -1
+			ax = -dx
+		endif
+		site(1) = site(1) + idx
+		tot(idx,0) = TotalSignal(pclast0,site)
+		site(1) = site0(1)
+		if (dz >= 0) then
+			idz = 1
+			az = dz
+		else
+			idz = -1
+			az = -dz
+		endif
+		site(3) = site(3) + idz
+		tot(0,idz) = TotalSignal(pclast0,site)
+		site(1) = site0(1) + idx
+		site(3) = site0(3) + idz
+		tot(idx,idz) = TotalSignal(pclast0,site)
+		tot0 = (1-ax)*(1-az)*tot(0,0) + ax*(1-az)*tot(idx,0) &
+			 + (1-ax)*az*tot(0,idz)   + ax*az*tot(idx,idz)
+		if (pclast0%status == RESORBING .and. tot0 > 0.4*pclast0%npit) then	! arbitrary threshold
+			if (dbug) then
+				write(*,*) 'ax,az: ',idx,idz,ax,az
+				write(*,*) 'tot0: ',tot0,0.4*pclast0%npit,tot(idx,idz)
+			endif
+			fs = 0
+		else
+			sigmax = 0
+			do idx = -Q,Q
+				do idz = -Q,Q
+					if (tot(idx,idz) < 0) then
+						site(1) = site0(1) + idx
+						site(2) = NBY + 1
+						site(3) = site0(3) + idz
+						tot(idx,idz) = TotalSignal(pclast0,site)
+					endif
+					if (tot(idx,idz) > sigmax) then
+						idxmax = idx
+						idzmax = idz
+						sigmax = tot(idx,idz)
+					endif
+				enddo
+			enddo
+			if (sigmax > tot0) then
+				v(1) = site0(1) + idxmax - x0
+				v(2) = site0(3) + idzmax - z0
+				d = sqrt(v(1)**2 + v(2)**2)
+				if (d == 0) then
+					if (dbug) write(*,*) 'd == 0'
+					fs = 0
+				else
+					vn = v/d
+					if (dbug) write(*,*) 'vn: ',vn
+					fs = K_SIGNAL*nm0*(sigmax-tot0)*vn
+				endif
+			else
+				if (dbug) then
+					write(*,*) 'sigmax <= tot0: ',sigmax,tot0
+					do idz = -1,1
+						write(*,'(3f10.6)') (tot(idx,idz),idx=-1,1)
+					enddo
+				endif
+				fs = 0
+			endif
+			if (pclast0%status == JOINING) then
+				fs = K_JOINING*fs
+			endif
+		endif
+		pclast0%fsig = fs
+
+	endif
+!	if (dbug) then
+!		write(*,*) 'fs: ',fs
+!	endif
+	FSIG(indx0,:) = fs
+enddo
+!write(*,'(a,4(2x,2e12.3))') 'FS: ',(FSIG(iclast0,:),iclast0=1,nclast)	
 end subroutine
 
 !---------------------------------------------------------------------
@@ -895,7 +1202,8 @@ x = d/(r0+r1)
 if (dbug) write(*,*) 'x: ',d,r0+r1,x
 if (x <= 1) then
 	if (x < 1-a) then
-		write(*,*) 'ERROR: in OCattraction: x < 1-a: ',x,1-a
+		write(logmsg,*) 'ERROR: in OCattraction: x < 1-a: ',x,1-a
+		call logger(logmsg)
 		x = 1.01*(1-a)
 	endif
 	OCattraction = -b/(x-1+a) + b/a
@@ -915,29 +1223,27 @@ end function
 real function TotalSignal(pclast,site)
 type(osteoclast_type), pointer :: pclast
 integer :: site(3)
-integer :: k, x, z, ic
-real :: sig
+integer :: k, x, z, ic, dx, dz
+real :: sig, r2
 
+r2 = pclast%radius**2
 TotalSignal = 0
 do k = 1,pclast%npit
-	x = site(1) + pclast%pit(k)%delta(1)
-	z = site(3) + pclast%pit(k)%delta(3)
+	dx = pclast%pit(k)%delta(1)
+	dz = pclast%pit(k)%delta(3)
+	x = site(1) + dx
+	z = site(3) + dz
 	if (x < 1 .or. x > NX) cycle
 	if (z < 1 .or. z > NZ) cycle
+	if (dx*dx+dz*dz > r2) cycle
 	ic = surface(x,z)%iclast
-	if (ic /= 0 .and. ic /= pclast%ID) cycle
+	if (pclast%status == RESORBING .and. ic /= 0 .and. ic /= pclast%ID) cycle
 	sig = surface(x,z)%signal*(1 - surface(x,z)%seal)
+	if (dbug) write(*,'(3i4,3f8.4)') k,x,z,surface(x,z)%signal,surface(x,z)%seal,sig
 	TotalSignal = TotalSignal + sig
 !	write(*,*) k,x,z,surface(x,z)%signal,surface(x,z)%seal
 enddo
-!if (TotalSignal/pclast%npit < OC_SIGNAL_THRESHOLD) then
-!	write(*,*) 'TotalSignal < OC_SIGNAL_THRESHOLD'
-!	do k = 1,pclast%npit
-!		x = site(1) + pclast%pit(k)%delta(1)
-!		z = site(3) + pclast%pit(k)%delta(3)
-!		write(*,*) k,x,z,surface(x,z)%signal,surface(x,z)%seal
-!	enddo
-!endif
+if (dbug) write(*,*) 'TotalSignal: ',TotalSignal
 end function
 
 !---------------------------------------------------------------------
@@ -1291,17 +1597,22 @@ call UpdateSurface
 end subroutine
 
 !------------------------------------------------------------------------------------------------
-! Refresh the locations of OCs on the surface.
+! Refresh the locations of OCs on the surface. 
 !------------------------------------------------------------------------------------------------
 subroutine UpdateSurface
 type(osteoclast_type), pointer :: pclast
 integer :: iclast, i, site(3), x, z
+real :: r2, d2
 
 surface%iclast = 0
 do iclast = 1,nclast
 	pclast => clast(iclast)
 	if (pclast%status == DEAD) cycle 
+	r2 = pclast%radius**2
+	pclast%site = pclast%cm + 0.5
 	do i = 1,pclast%npit
+		d2 = pclast%pit(i)%delta(1)**2 + pclast%pit(i)%delta(3)**2
+		if (d2 > r2) cycle
 		site = pclast%site + pclast%pit(i)%delta
 		x = site(1)
 		z = site(3)

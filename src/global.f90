@@ -90,7 +90,7 @@ integer :: NT_GUI_OUT					! interval between GUI outputs (timesteps)
 integer :: SPECIES						! animal species (0=mouse, 1=human)
 
 ! Misc parameters
-real :: DELTA_X, PI
+real :: DELTA_X, PI, DELTA_T_OC
 integer :: Nsteps
 integer :: NX,NY,NZ						! size of region
 type(patch_type) :: patch
@@ -105,7 +105,7 @@ real :: CXCL12_GRADLIM = 5.0e-4			! was equal to the initial max CXCL12 gradient
 logical :: stuck
 logical :: initiated
 
-logical, parameter :: TESTING = .true.
+logical, parameter :: TESTING_OC = .true.
 
 contains
 
