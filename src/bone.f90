@@ -1294,7 +1294,7 @@ do x = 1,NX
 !			else
 !				ypit = y + 0.5 - surface(x,z)%target_depth
 !			endif
-			ypit = surface(x,z)%signal
+			ypit = max(0.0,surface(x,z)%signal)
 			k = k+1
 			j = 4*(k-1)
 			pit_list(j+1:j+3) = (/x,y,z/)
@@ -1614,7 +1614,8 @@ istep = istep + 1
 tnow = istep*DELTA_T
 
 if (TESTING_OC) then
-	call simulate_OC_step
+	call simulate_OC_step(error)
+	res = error
 	return
 endif
 
@@ -1656,8 +1657,17 @@ end subroutine
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
 subroutine report
-integer :: i, k, indx, status
+integer :: i, k, indx, status, x, z
 
+write(nflog,*)
+write(nflog,*) 'Bone removal depths:'
+do x = 1,NX
+	do z = 1,NZ
+		if (surface(x,z)%target_depth == 0) cycle
+		write(nflog,'(2i4,3f6.2)') x,z,surface(x,z)%target_depth,surface(x,z)%depth,surface(x,z)%target_depth-surface(x,z)%depth
+	enddo
+enddo
+return
 write(logmsg,*) 'nclump: ',nclump
 call logger(logmsg)
 do i = 1,nclump
@@ -1699,6 +1709,7 @@ if (allocated(CXCL12_grad)) deallocate(CXCL12_grad)
 if (allocated(CXCL12_influx)) deallocate(CXCL12_influx)
 if (allocated(S1P_conc)) deallocate(S1P_conc)
 if (allocated(S1P_grad)) deallocate(S1P_grad)
+if (allocated(OClist)) deallocate(OClist)
 
 end subroutine
 
@@ -1711,7 +1722,7 @@ integer(c_int) :: res
 character*(8), parameter :: quit = '__EXIT__'
 integer :: error, i
 
-!call report
+call report
 call wrapup
 
 if (res == 0) then

@@ -25,7 +25,7 @@ end subroutine
 program main
 use bone_mod
 integer :: nt = 10000
-real :: simdays = 10
+real :: simdays
 character*(64) :: infile = 'basecase.inp'
 integer :: res, nlen
 
@@ -35,7 +35,9 @@ write(*,*) 'DAYS: ',simdays
 nlen = len(infile)
 call execute(infile,nlen)
 
+simdays = 1
 nt = simdays*24*60*4
+write(*,*) 'nt: ',nt
 do it = 1,nt
 	call simulate_step(res)
 	if (res /= 0) then
