@@ -1099,6 +1099,8 @@ void MainWindow::runServer()
 	exthread->paused = false;
 	exthread->stopped = false;
 	exthread->start();
+
+	goToVTK();
 }
 
 //--------------------------------------------------------------------------------------------------------

@@ -55,7 +55,7 @@ real :: FUSING_TIME = 2*60				! mins
 real :: CLAST_LIFETIME = 96*60			! days -> mins
 !real :: CLAST_DWELL_TIME0 = 4*60		! mins
 real :: CLAST_DWELL_TIME = 60			! mins
-real :: MAX_RESORPTION_RATE = 0.1		! um/min
+real :: MAX_RESORPTION_RATE = 0.2		! um/min
 real :: MAX_RESORPTION_D = 10			! um
 integer :: MAX_RESORPTION_N = 10
 

@@ -34,9 +34,10 @@ integer, parameter :: LEFT = 9
 integer, parameter :: DORMANT = 10
 
 ! OC-specific constants
-integer, parameter :: JOINING = 2
-integer, parameter :: RESORBING = 3
-integer, parameter :: MOVING = 4
+integer, parameter :: QUEUED = 2
+integer, parameter :: JOINING = 3
+integer, parameter :: RESORBING = 4
+integer, parameter :: MOVING = 5
 
 integer, parameter :: NEUMANN_MODEL = 1
 integer, parameter :: MOORE18_MODEL = 2
@@ -53,7 +54,7 @@ integer, parameter :: MAX_CAP = 100
 integer, parameter :: MAX_SIGNAL = 10000
 integer, parameter :: MAX_NCLUMP = 50
 integer, parameter :: MAX_CLUMP_CELLS = 50
-real, parameter :: DELTA_T = 0.25		! minutes 
+real, parameter :: DELTA_T = 1.0		! minutes 
 !real, parameter :: DELTA_T_OC = 4		! minutes (for OC simulation)
 real, parameter :: BIGTIME = 1.0e10
 logical, parameter :: FAST_DISPLAY = .false.
@@ -123,10 +124,11 @@ real, parameter :: OC_MARGIN = 2
 ! Pit parameters
 logical, parameter :: HALF_ELLIPSE = .true.
 real, parameter :: LACUNA_A = 40		! Parameters of the elliptical region to be excavated
-real, parameter :: LACUNA_B = 7
+real, parameter :: LACUNA_B = 9
 real, parameter :: MAX_PIT_DEPTH = 3	! grids (should be input parameter)
 real, parameter :: OC_SIGNAL_SENSING_RANGE = 20	! grids
 real, parameter :: Kattraction = 4
+logical, parameter :: SIGNAL_POSITIVE = .false.
 
 ! Osteoblast parameters
 real, parameter :: OB_PER_UM3 = 1.0e-8

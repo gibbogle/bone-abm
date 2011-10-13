@@ -278,6 +278,6 @@ public:
 	}
 };
 
-static const double DELTA_T = 0.25;
+static const double DELTA_T = 1.0;	//mins	// Need to ensure consistency between Qt and Fortran DLL
 
 #endif

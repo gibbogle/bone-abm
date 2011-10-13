@@ -163,12 +163,12 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Length of time that an osteoclast remains active\n\
 [days]"},
 
-{"CLAST_DWELL_TIME", 720.0, 0.0, 0.0,
+{"CLAST_DWELL_TIME", 360.0, 0.0, 0.0,
 "Osteoclast dwell time",
 "Minimum length of time that an osteoclast remains in one spot, before moving one grid\n\
-[days]"},
+[mins]"},
 
-{"MAX_RESORPTION_RATE", 500000, 0.0, 0.0,
+{"MAX_RESORPTION_RATE", 600000, 0.0, 0.0,
 "Maximum resorption rate",
 "Maximum rate of bone removal by an osteoclast\n\
 [um3/day]"},
@@ -178,7 +178,7 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Excavation depth at which rate of bone removal goes to zero\n\
 [um]"},
 
-{"MAX_RESORPTION_N", 30, 0, 0,
+{"MAX_RESORPTION_N", 10, 0, 0,
 "Maximum resorption N",
 "Number of osteoclast monocytes corresponding to maximum resorption rate."},
 
@@ -203,7 +203,7 @@ is given by: probability = (Max capillary egress probability)*(S1P1 - S1P1_THRES
 "Strength of chemotactic influence on T cell motion towards DCs."},
 */
 
-{"NDAYS", 90.0, 0, 0,
+{"NDAYS", 100.0, 0, 0,
 "Number of days",
 "Length of the simulation.\n\
 [days]"},
@@ -216,7 +216,7 @@ is given by: probability = (Max capillary egress probability)*(S1P1 - S1P1_THRES
 "Second RNG seed",
 "The random number generator is seeded by a pair of integers.  Changing the seed generates a different Monte Carlo realization."},
 
-{"NCPU", 6, 1, 8,
+{"NCPU", 3, 1, 8,
 "Number of CPUs",
 "Number of CPUs to use for the simulation."},
 

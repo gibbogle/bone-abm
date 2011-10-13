@@ -191,6 +191,7 @@ LOG_QMSG("__COMPILETIME_LOADING__ defined");
 			}
 		}
 		if (stopped) break;
+		if (res == 1) break;
 	}
 	snapshot();
 	Sleep(10);
