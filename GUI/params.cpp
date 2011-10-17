@@ -120,12 +120,12 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Dimension of the modelled bone region (in X and Z directions).\n\
 [um]"},
 
-{"Y_SIZE", 500, 0, 0,
+{"Y_SIZE", 200, 0, 0,
 "Slice thickness",
 "Dimension of the modelled region in Y direction.\n\
 [um]"},
 
-{"CAPILLARY_DIAMETER", 50.0, 20.0, 200.0,
+{"CAPILLARY_DIAMETER", 0.0, 20.0, 200.0,
 "Diameter of a capillary",
 "(Currently we consider only a single capillary with a fixed diameter)\n\
 [um]"},

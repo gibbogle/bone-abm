@@ -179,6 +179,7 @@ type osteoclast_type
     integer :: site(3)
     real :: cm(3), radius, prevcm(3), dcm(3)
     real :: foc(2), fsig(2), ftot(2)
+    real :: totalsignal
 	real :: normal(3)
     integer(2) :: status
     integer(2) :: lastdir

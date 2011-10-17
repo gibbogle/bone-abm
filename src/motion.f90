@@ -8,11 +8,11 @@ implicit none
 save
 
 real, parameter :: Kchemo = 1.0
-real, parameter :: K_MUTUAL_ATTRACT = 0.6	!0.2 
-real, parameter :: K_MUTUAL_REPELL = 0.3
+real, parameter :: K_MUTUAL_ATTRACT = 1.5	!0.6 
+real, parameter :: K_MUTUAL_REPELL = 0.5
 real, parameter :: K_SIGNAL = 0.001	!0.001
 real, parameter :: K_JOINING = 100
-real, parameter :: SEAL_REMOVAL_RATE = 0.0002	!0.0001
+real, parameter :: SEAL_REMOVAL_RATE = 0.001	!0.0001
 real, parameter :: JOIN_DISP_THRESHOLD = 0.0005
 real, parameter :: JOIN_TIME_LIMIT = 100
 real, parameter :: K_OC_DRAG = 10.0
@@ -29,7 +29,7 @@ integer :: OC_NV
 integer :: OC_to_index(100)
 integer :: index_to_OC(100)
 integer, parameter :: NF=100
-real(8) :: F(NF,2), FSIG(NF,2)
+real(8) :: F(NF,2), Fsig_go(NF,2), Fsig_stop(NF)
 integer :: istep_OC
 logical :: first_OC
 logical :: dbug, WOK, ts_dbug
@@ -222,6 +222,7 @@ dbug = .false.
 end subroutine
 
 !--------------------------------------------------------------------------
+! Need to perturb the motion with some randomness.
 !--------------------------------------------------------------------------
 subroutine simulate_OC_step(ierr)
 integer :: i, site(3), ierr
@@ -235,6 +236,7 @@ t = (istep_OC-1)*DELTA_T_OC
 dbug = .false.
 ts_dbug = .false.
 call OCfsignal(OCstate) 
+call UpdateNuclei
 call OC_mover(OC_NV,t,dt,OCstate,OCstatep,first_OC,ierr)
 if (ierr /= 0) return
 first_OC = .false.
@@ -281,9 +283,10 @@ end subroutine
 subroutine OCsetup
 type(osteoclast_type), pointer :: pclast
 integer :: iclast
+integer :: kpar = 0
 real, parameter :: interval = 5	! days
 
-nOClist = 6
+nOClist = 4
 allocate(OClist(nOClist))
 do iclast = 1,nOClist
 	pclast => OClist(iclast)
@@ -291,9 +294,9 @@ do iclast = 1,nOClist
 	pclast%entrytime = (iclast-1)*interval*24*60
 	pclast%cm(1) = 3.0
 	pclast%cm(2) = NBY + 1
-	pclast%cm(3) = NZ/2
-	pclast%count = 6
-	pclast%radius = (25/DELTA_X)*sqrt(pclast%count/10.)
+	pclast%cm(3) = NZ/2 + 1
+	pclast%count = random_int(8,15,kpar)
+	pclast%radius = (25/DELTA_X)*sqrt(pclast%count/20.)
 	pclast%status = QUEUED
 	pclast%prevcm = -999
 	call MakePits(pclast)
@@ -396,6 +399,59 @@ enddo
 end subroutine
 
 !--------------------------------------------------------------------------
+! In a time step an OC may lose a nucleus (monocyte), since the mean life
+! of a nucleus is # days, and also a monocyte may join.
+! The probability of loss of a nucleus is determined by the lifetime and
+! by %count.
+! The probability of capturing a monocyte we will (for now) make proportional
+! to the current total signal that the OC is receiving - the idea is that
+! the monocytes go where they are most needed.  To prevent the nucleus count
+! from increasing indefinitely, there needs to be a multiplying factor that
+! kicks in when the count exceeds some number, pulling the probability down
+! to zero as the count increases.
+!
+! What's needed is for monocytes to have an enhanced probability of joining
+! an OC that has fewer nuclei relative to the local signal intensity, not
+! the total signal.  The appropriate measure of intensity would be 
+! totalsignal/OCarea.
+!--------------------------------------------------------------------------
+subroutine UpdateNuclei
+integer :: kpar = 0
+integer :: iclast
+real(8) :: R, ploss, pgain, pfac, sig
+type(osteoclast_type), pointer :: pclast
+real(8) :: max_sig = 1.0
+real(8) :: MONOCYTE_CAPTURE_RATE = 0.0002
+real(8) :: prob_nucleus_death = 0.000002
+
+do iclast = 1,nclast
+	pclast => clast(iclast)
+	if (pclast%status /= RESORBING) cycle
+	ploss = pclast%count*prob_nucleus_death
+	R = par_uni(kpar)
+	if (pclast%count > 3 .and. R < ploss) then
+		pclast%count = pclast%count - 1
+		pclast%radius = (25/DELTA_X)*sqrt(pclast%count/20.)
+	endif
+	if (pclast%count < 12) then
+		pfac = 1.0
+	elseif (pclast%count > 15) then
+		pfac = 0
+	else
+		pfac = 1 - (pclast%count - 12)/(15-12)
+	endif
+	sig = pclast%totalsignal/(PI*pclast%radius**2)
+	write(nflog,'(2i4,3f8.3)') iclast,pclast%count,pclast%totalsignal,pclast%radius,sig
+	pgain = min(sig/max_sig, 1.0)*pfac*MONOCYTE_CAPTURE_RATE
+	R = par_uni(kpar)
+	if (R < pgain) then
+		pclast%count = pclast%count + 1
+		pclast%radius = (25/DELTA_X)*sqrt(pclast%count/20.)
+	endif
+enddo
+end subroutine
+
+!--------------------------------------------------------------------------
 ! A new OC makes the transition from JOINING to RESORBING when one of two
 ! conditions is met:
 ! (1) The displacement in a timestep drop below a threshold
@@ -454,12 +510,14 @@ do iclast = 1,nclast
 	endif
 enddo
 cm = clast(imax)%cm
-if (cm(3) > NZ/2) then
-	pclast0%cm(3) = NZ/2 - 2*(1 + par_uni(kpar))
-else
-	pclast0%cm(3) = NZ/2 + 2*(1 + par_uni(kpar))
-endif
+!if (cm(3) > NZ/2) then
+!	pclast0%cm(3) = NZ/2 - 2*(1 + par_uni(kpar))
+!else
+!	pclast0%cm(3) = NZ/2 + 2*(1 + par_uni(kpar))
+!endif
+pclast0%cm(3) = NZ/2 + (par_uni(kpar) - 0.5)
 pclast0%cm(1) = cm(1) + 1.5*pclast0%radius
+pclast0%totalsignal = 0
 end subroutine
 
 !--------------------------------------------------------------------------
@@ -810,10 +868,13 @@ end subroutine
 !--------------------------------------------------------------------------
 ! Each OC has associated with it 4 variables: x,x',z,z'
 ! therefore if there are N active OCs, there are 4N variables.
+! Treat OC_MASS as a baseline value, scale by monocyte count.
 !--------------------------------------------------------------------------
 subroutine OC_deriv(t,y,yp)
 real(8) :: t, y(*), yp(*)
-integer :: indx, nindx, k
+integer :: indx, nindx, k, iclast
+real(8) :: mass
+type(osteoclast_type), pointer :: pclast
 
 call OCforces(y,F,NF)
 
@@ -822,14 +883,17 @@ call OCforces(y,F,NF)
 !enddo
 nindx = OC_NV/4
 do indx = 1,nindx
+	iclast = index_to_OC(indx)
+	pclast => clast(iclast)
+	mass = OC_MASS*pclast%count/12		! interim measure
 	k = (indx-1)*4 + 1
 	yp(k) = y(k+1)
 	k = k+1
-	yp(k) = (F(indx,1) - K_OC_DRAG*y(k))/OC_MASS
+	yp(k) = (F(indx,1) - K_OC_DRAG*y(k))/mass
 	k = k+1
 	yp(k) = y(k+1)
 	k = k+1
-	yp(k) = (F(indx,2) - K_OC_DRAG*y(k))/OC_MASS
+	yp(k) = (F(indx,2) - K_OC_DRAG*y(k))/mass
 enddo
 !write(*,'(a,8f8.4)') 'y: ',y(1:OC_NV)
 !write(*,'(a,8f8.4)') 'yp: ',yp(1:OC_NV)
@@ -840,6 +904,7 @@ end subroutine
 ! tendency of cells to cluster together, and their occupation of space.
 ! Next need to include attraction towards bone signal.
 ! Pass with n = dimension of array F(:,2)
+! Add random perturbation to the force.
 !---------------------------------------------------------------------
 subroutine OCforces(y,F,n)
 real(8) :: y(*)
@@ -847,11 +912,12 @@ integer :: n
 real(8) :: F(n,2)
 integer :: iclast0, iclast1, indx0, indx1, nindx, nm0
 integer :: ix, iz, n0, idx, idz, ixx, izz, site0(3), site(3), idxmax, idzmax
-real(8) :: x0, z0, x1, z1, r0, r1, v(2), vn(2), d, df, s, fs(2), x, z, ax, az, dfac, dx, dz
+real(8) :: x0, z0, x1, z1, r0, r1, v(2), vn(2), d, df, s, fs_go(2), famp, fstop, x, z, ax, az, dfac, dx, dz
 real(8) :: ss(0:1,0:1), tot(-1:1,-1:1), tot0, sigmax
 type(osteoclast_type), pointer :: pclast0, pclast1
 real, parameter :: BS_REACH_FACTOR = 1.5
 integer, parameter :: idea = 0
+logical, parameter :: random_force = .true.
 
 nindx = OC_NV/4
 do indx0 = 1,nindx
@@ -923,55 +989,55 @@ do indx0 = 1,nindx
 	! which will be a global array, can be computed less frequently, e.g. every 10 timesteps.
 	
 	if (idea == 1) then
-	fs = 0
-	n0 = BS_REACH_FACTOR*r0 + 1
-	do idx = -n0,n0
-		x = x0 + idx
-		if (x < 1 .or. x > NX) cycle
-		
-		do idz = -n0,n0
-			z = z0 + idz
-			if (z < 1 .or. z > NZ) cycle
-!			if (dx == 0 .and. dz == 0) cycle
-			v(1) = x - x0
-			v(2) = z - z0
-			d = sqrt(v(1)**2 + v(2)**2)
-			if (d > n0) cycle
-			if (d < 1) then
-				dfac = 1
-			else
-				dfac = 1/d
-			endif
-			ax = x - int(x)
-			az = z - int(z)
-			vn = v/d
-			do ixx = 0,1
-				do izz = 0,1
-!					if (surface(ix+ixx,iz+izz)%seal == 1) then
-!						ss(ixx,izz) = 0
-!					else
-!						ss(ixx,izz) = surface(ix+ixx,iz+izz)%signal*(1-surface(ix+ixx,iz+izz)%seal)
-!					endif
-					if (surface(ix+ixx,iz+izz)%seal /= 0) then
-						ss(ixx,izz) = 0
-					else
-						ss(ixx,izz) = surface(ix+ixx,iz+izz)%signal
-					endif
+		fs_go = 0
+		n0 = BS_REACH_FACTOR*r0 + 1
+		do idx = -n0,n0
+			x = x0 + idx
+			if (x < 1 .or. x > NX) cycle
+			
+			do idz = -n0,n0
+				z = z0 + idz
+				if (z < 1 .or. z > NZ) cycle
+	!			if (dx == 0 .and. dz == 0) cycle
+				v(1) = x - x0
+				v(2) = z - z0
+				d = sqrt(v(1)**2 + v(2)**2)
+				if (d > n0) cycle
+				if (d < 1) then
+					dfac = 1
+				else
+					dfac = 1/d
+				endif
+				ax = x - int(x)
+				az = z - int(z)
+				vn = v/d
+				do ixx = 0,1
+					do izz = 0,1
+	!					if (surface(ix+ixx,iz+izz)%seal == 1) then
+	!						ss(ixx,izz) = 0
+	!					else
+	!						ss(ixx,izz) = surface(ix+ixx,iz+izz)%signal*(1-surface(ix+ixx,iz+izz)%seal)
+	!					endif
+						if (surface(ix+ixx,iz+izz)%seal /= 0) then
+							ss(ixx,izz) = 0
+						else
+							ss(ixx,izz) = surface(ix+ixx,iz+izz)%signal
+						endif
+					enddo
 				enddo
+				ix = x
+				iz = z
+	!			s = (1-ax)*(1-az)*surface(ix,iz)%signal*(1 - surface(ix,iz)%seal) &
+	!			  + ax*(1-az)*surface(ix+1,iz)%signal*(1 - surface(ix+1,iz)%seal) &
+	!			  + (1-ax)*az*surface(ix,iz+1)%signal*(1 - surface(ix,iz+1)%seal) &
+	!			  + ax*az*surface(ix+1,iz+1)%signal*(1 - surface(ix+1,iz+1)%seal)
+				s = (1-ax)*(1-az)*ss(0,0) + ax*(1-az)*ss(1,0) + (1-ax)*az*ss(0,1) + ax*az*ss(1,1)
+				fs_go = fs_go + K_SIGNAL*nm0*s*vn/dfac
+	!			if (dbug .and. iclast0 == 2) then
+	!				write(*,*) 
+	!			if (dbug .and. dz == 2) write(*,'(4f12.6)') x,z,s,s*vn(1)		!surface(x,z)%signal,surface(x,z)%seal
 			enddo
-			ix = x
-			iz = z
-!			s = (1-ax)*(1-az)*surface(ix,iz)%signal*(1 - surface(ix,iz)%seal) &
-!			  + ax*(1-az)*surface(ix+1,iz)%signal*(1 - surface(ix+1,iz)%seal) &
-!			  + (1-ax)*az*surface(ix,iz+1)%signal*(1 - surface(ix,iz+1)%seal) &
-!			  + ax*az*surface(ix+1,iz+1)%signal*(1 - surface(ix+1,iz+1)%seal)
-			s = (1-ax)*(1-az)*ss(0,0) + ax*(1-az)*ss(1,0) + (1-ax)*az*ss(0,1) + ax*az*ss(1,1)
-			fs = fs + K_SIGNAL*nm0*s*vn/dfac
-!			if (dbug .and. iclast0 == 2) then
-!				write(*,*) 
-!			if (dbug .and. dz == 2) write(*,'(4f12.6)') x,z,s,s*vn(1)		!surface(x,z)%signal,surface(x,z)%seal
 		enddo
-	enddo
 	elseif (idea == 2) then
 		if (x0 < 1 .or. z0 < 1) then
 			write(*,*) 'ERROR: OCforces: x0 or z0 < 0.5'
@@ -1013,13 +1079,9 @@ do indx0 = 1,nindx
 		tot(idx,idz) = TotalSignal(pclast0,site)
 		tot0 = (1-ax)*(1-az)*tot(0,0) + ax*(1-az)*tot(idx,0) &
 		     + (1-ax)*az*tot(0,idz)   + ax*az*tot(idx,idz)
-		if (tot0 > 0.4*pclast0%npit) then	! arbitrary threshold
-!			if (dbug) then
-!				write(*,*) 'ax,az: ',idx,idz,ax,az
-!				write(*,*) 'tot0: ',tot0,0.4*pclast0%npit,tot(idx,idz)
-!			endif
-			fs = 0
-		else
+!		if (tot0 > 0.4*pclast0%npit) then	! arbitrary threshold
+!			fs = 0
+!		else
 			sigmax = 0
 			do idx = -1,1
 				do idz = -1,1
@@ -1036,35 +1098,44 @@ do indx0 = 1,nindx
 					endif
 				enddo
 			enddo
-			if (sigmax > tot0) then
+!			if (sigmax > tot0) then
 				v(1) = site0(1) + idxmax - x0
 				v(2) = site0(3) + idzmax - z0
 				d = sqrt(v(1)**2 + v(2)**2)
 				if (d == 0) then
-					fs = 0
+					fs_go = 0
 				else
 					vn = v/d
-					fs = K_SIGNAL*nm0*(sigmax-tot0)*vn
+					fs_go = K_SIGNAL*nm0*(sigmax-tot0)*vn
 				endif
-			else
-				fs = 0
-			endif
-		endif
-!		if (dbug) then
-!			write(*,*) 'fs: ',fs
-!			stop
+!			else
+!				fs = 0
+!			endif
 !		endif
 	endif
 !	if (dbug .and. iclast0 == 1) then
 !		write(*,'(a,i3,4f8.4)') 'iclast0, F_S, F_OC: ',iclast0,fs,F(indx0,:)
 !	endif
-	pclast0%foc = F(indx0,:)
+!	pclast0%foc = F(indx0,:)
 	if (idea == 0) then
-		F(indx0,:) = F(indx0,:) + FSIG(indx0,:)
+		F(indx0,:) = F(indx0,:) + Fsig_go(indx0,:)
+		if (F(indx0,1) == 0 .and. F(indx0,2) == 0) then
+			famp = 0
+		else
+			famp = sqrt(F(indx0,1)*F(indx0,1) + F(indx0,2)*F(indx0,2))
+		endif
+		fstop = Fsig_stop(indx0)
+		if (fstop > famp) then
+			F(indx0,:) = 0
+		else
+			vn = F(indx0,:)/famp
+			F(indx0,:) = (famp - fstop)*vn
+		endif
 	else
-		F(indx0,:) = F(indx0,:) + fs
+		F(indx0,:) = F(indx0,:) + fs_go
 	endif
-	pclast0%ftot = F(indx0,:)
+!	if (random_force) then
+!	pclast0%ftot = F(indx0,:)
 enddo
 F = SPEEDUP*F
 end subroutine
@@ -1078,15 +1149,15 @@ end subroutine
 ! RESORBING OC: two steps
 ! (a) Measure totsignal0 under OC
 !     If totsignal0 > threshold
-!         FS = 0
+!         FS = 0	(this needs to be revisited, because it fails to simulate the tendency to stay put)
 !     else
-!         Choose best direction of movement.  Consider OC located at a set of
+!         Choose best direction of movement.  Consider the OC to be located at a set of
 !         sites nearby, evaluate totsignal at each.  Select maximum = sigmax
 !         if (sigmax < totsignal)
 !             FS = 0
 !         else
-!             FS magnitude ~ (sigmax-totsignal0)
-!             FS direction is site-cm
+!             FS magnitude ~ (sigmax - totsignal0)
+!             FS direction is (site - cm)
 !         endif
 !     endif
 !
@@ -1100,9 +1171,9 @@ subroutine OCfsignal(y)
 real(8) :: y(*)
 integer :: iclast0, indx0, nindx, nm0
 integer :: ix, iz, n0, idx, idz, ixx, izz, site0(3), site(3), idxmax, idzmax
-real(8) :: x0, z0, r0, v(2), vn(2), d, fs(2), x, z, ax, az, dx, dz
+real(8) :: x0, z0, r0, v(2), vn(2), d, fs_go(2), fs_stop, x, z, ax, az, dx, dz
 integer, parameter :: Q=2
-real(8) :: tot(-Q:Q,-Q:Q), tot0, sigmax
+real(8) :: tot(-Q:Q,-Q:Q), tot0, sigmax, fthreshold
 type(osteoclast_type), pointer :: pclast0
 
 nindx = OC_NV/4
@@ -1114,6 +1185,7 @@ do indx0 = 1,nindx
 		call logger(logmsg)
 		stop
 	endif
+	fthreshold = 0.4*pclast0%npit	! arbitrary threshold =================<<<<<<<<<<<<<<<<<<<<
 	x0 = y((indx0-1)*4+1)	! pclast0%cm(1)
 	z0 = y((indx0-1)*4+3)	! pclast0%cm(3)
 	r0 = pclast0%radius
@@ -1129,13 +1201,15 @@ do indx0 = 1,nindx
 !		stop
 	endif
 	
-	fs = 0
+	fs_go = 0
+	fs_stop = 0
 	if (pclast0%status == RESORBING .or. pclast0%status == JOINING) then
 		tot = -1
 		site0(1) = x0 + 0.5
 		site0(2) = NBY + 1
 		site0(3) = z0 + 0.5
 		tot(0,0) = TotalSignal(pclast0,site0)
+		pclast0%totalsignal = tot(0,0)
 		site = site0
 		dx = x0 - site0(1)
 		dz = z0 - site0(3)
@@ -1163,13 +1237,15 @@ do indx0 = 1,nindx
 		tot(idx,idz) = TotalSignal(pclast0,site)
 		tot0 = (1-ax)*(1-az)*tot(0,0) + ax*(1-az)*tot(idx,0) &
 			 + (1-ax)*az*tot(0,idz)   + ax*az*tot(idx,idz)
-		if (pclast0%status == RESORBING .and. tot0 > 0.4*pclast0%npit) then	! arbitrary threshold
+!		if (pclast0%status == RESORBING .and. tot0 > fthreshold) then	
+!		if (pclast0%status == RESORBING) then	
 !			if (dbug) then
 !				write(*,*) 'ax,az: ',idx,idz,ax,az
 !				write(*,*) 'tot0: ',tot0,0.4*pclast0%npit,tot(idx,idz)
 !			endif
-			fs = 0
-		else
+!			fs = 0
+!		else
+			fs_stop = K_SIGNAL*nm0*tot0
 			sigmax = 0
 			do idx = -Q,Q
 				do idz = -Q,Q
@@ -1191,32 +1267,34 @@ do indx0 = 1,nindx
 				v(2) = site0(3) + idzmax - z0
 				d = sqrt(v(1)**2 + v(2)**2)
 				if (d == 0) then
-					fs = 0
+					fs_go = 0
 				else
 					vn = v/d
 !					if (dbug) write(*,*) 'vn: ',vn
-					fs = K_SIGNAL*nm0*(sigmax-tot0)*vn
+					fs_go = K_SIGNAL*nm0*(sigmax-tot0)*vn
 				endif
 			else
-				fs = 0
+				fs_go = 0
 			endif
 			if (WOK .and. dbug) then
-				write(*,'(a,4f10.6)') 'sigmax, tot0, fs: ',sigmax,tot0,fs
+				write(*,'(a,4f10.6)') 'sigmax, tot0, fs_go: ',sigmax,tot0,fs_go
 				do idz = -Q,Q
 					write(*,'(5f10.6)') (tot(idx,idz),idx=-Q,Q)
 				enddo
 			endif
 			if (pclast0%status == JOINING) then
-				fs = K_JOINING*fs
+				fs_go = K_JOINING*fs_go
+				fs_stop = 0
 			endif
 		endif
-		pclast0%fsig = fs
+!		pclast0%fsig = fs
 
-	endif
+!	endif
 !	if (dbug) then
 !		write(*,*) 'fs: ',fs
 !	endif
-	FSIG(indx0,:) = fs
+	Fsig_go(indx0,:) = fs_go
+	Fsig_stop(indx0) = fs_stop
 enddo
 !write(*,'(a,4(2x,2e12.3))') 'FS: ',(FSIG(iclast0,:),iclast0=1,nclast)	
 end subroutine
