@@ -152,61 +152,65 @@ allocate(surface(NX,NZ))
 surface%signal = 0
 !MAX_PIT_DEPTH = MAX_PIT_DEPTH/DELTA_X
 
-! Create a test capillary
-ncap = 1
-allocate(capillary(ncap))
-capillary(1)%radius = CAPILLARY_DIAMETER/2
-capillary(1)%pos1 = (/ 0.5, NY/2., NZ/2. /)
-capillary(1)%pos2 = (/ NX+0.5, NY/2., NZ/2. /)
-v = capillary(1)%pos2 - capillary(1)%pos1
-capillary(1)%length = rnorm(v)
-capillary(1)%surface_area = PI*capillary(1)%radius**2*capillary(1)%length
+if (use_capillary) then
+	! Create a test capillary
+	ncap = 1
+	allocate(capillary(ncap))
+	capillary(1)%radius = CAPILLARY_DIAMETER/2
+	capillary(1)%pos1 = (/ 0.5, NY/2., NZ/2. /)
+	capillary(1)%pos2 = (/ NX+0.5, NY/2., NZ/2. /)
+	v = capillary(1)%pos2 - capillary(1)%pos1
+	capillary(1)%length = rnorm(v)
+	capillary(1)%surface_area = PI*capillary(1)%radius**2*capillary(1)%length
 
-! Set up capillary sites - this is currently VERY CRUDE
-! If the centre of a site (cube) falls inside the capillary tube,
-! the site is tagged BLOOD.
-! Note that (xc,yc,zc), which lies on the capillary centreline,
-! is in (x,y,z) coord values, offset from site index values by 0.5
-! E.g. if site(:) = (/2, 3, 4/), corresponding (x,y,z) = (/1.5, 2.5, 3.5/)
-! This has the origin of the axis system at the lower left rear corner
-! of the region.  (Note that in OpenGL/VTK Z axis is out of the screen.)
+	! Set up capillary sites - this is currently VERY CRUDE
+	! If the centre of a site (cube) falls inside the capillary tube,
+	! the site is tagged BLOOD.
+	! Note that (xc,yc,zc), which lies on the capillary centreline,
+	! is in (x,y,z) coord values, offset from site index values by 0.5
+	! E.g. if site(:) = (/2, 3, 4/), corresponding (x,y,z) = (/1.5, 2.5, 3.5/)
+	! This has the origin of the axis system at the lower left rear corner
+	! of the region.  (Note that in OpenGL/VTK Z axis is out of the screen.)
 
-ndiv = 100
-do icap = 1,ncap
-	del = capillary(icap)%radius + 2
-	do k = 1,ndiv
-		alfa = (k-1.0)/(ndiv-1.0)
-		xc = (1-alfa)*capillary(icap)%pos1(1) + alfa*capillary(icap)%pos2(1)
-		yc = (1-alfa)*capillary(icap)%pos1(2) + alfa*capillary(icap)%pos2(2)
-		zc = (1-alfa)*capillary(icap)%pos1(3) + alfa*capillary(icap)%pos2(3)
-		do dx = -del,del
-			x = xc + dx
-			if (x < 1 .or. x > NX) cycle
-			do dy = -del,del
-				y = yc + dy
-				if (y <= NBY .or. y > NY) cycle
-				do dz = -del,del
-					z = zc + dz
-					if (z < 1 .or. z > NZ) cycle
-!					x2 = (x - 0.5 - xc)*(x - 0.5 - xc)
-!					y2 = (y - 0.5 - yc)*(y - 0.5 - yc)
-!					z2 = (z - 0.5 - zc)*(z - 0.5 - zc)
-					x2 = (x - xc)*(x - xc)
-					y2 = (y - yc)*(y - yc)
-					z2 = (z - zc)*(z - zc)
-					! These are the squared distances, in three axis directions, from the
-					! site (cube) midpoint to the capillary centreline location (xc,yc,zc)
-					if (x2+y2+z2 <= (capillary(icap)%radius)**2) then
-						occupancy(x,y,z)%region = BLOOD
-!						if (k <= 10) then
-!							write(nflog,'(4f6.1,3i4)') xc,yc,zc,sqrt(x2+y2+z2),x,y,z
-!						endif
-					endif
+	ndiv = 100
+	do icap = 1,ncap
+		del = capillary(icap)%radius + 2
+		do k = 1,ndiv
+			alfa = (k-1.0)/(ndiv-1.0)
+			xc = (1-alfa)*capillary(icap)%pos1(1) + alfa*capillary(icap)%pos2(1)
+			yc = (1-alfa)*capillary(icap)%pos1(2) + alfa*capillary(icap)%pos2(2)
+			zc = (1-alfa)*capillary(icap)%pos1(3) + alfa*capillary(icap)%pos2(3)
+			do dx = -del,del
+				x = xc + dx
+				if (x < 1 .or. x > NX) cycle
+				do dy = -del,del
+					y = yc + dy
+					if (y <= NBY .or. y > NY) cycle
+					do dz = -del,del
+						z = zc + dz
+						if (z < 1 .or. z > NZ) cycle
+	!					x2 = (x - 0.5 - xc)*(x - 0.5 - xc)
+	!					y2 = (y - 0.5 - yc)*(y - 0.5 - yc)
+	!					z2 = (z - 0.5 - zc)*(z - 0.5 - zc)
+						x2 = (x - xc)*(x - xc)
+						y2 = (y - yc)*(y - yc)
+						z2 = (z - zc)*(z - zc)
+						! These are the squared distances, in three axis directions, from the
+						! site (cube) midpoint to the capillary centreline location (xc,yc,zc)
+						if (x2+y2+z2 <= (capillary(icap)%radius)**2) then
+							occupancy(x,y,z)%region = BLOOD
+	!						if (k <= 10) then
+	!							write(nflog,'(4f6.1,3i4)') xc,yc,zc,sqrt(x2+y2+z2),x,y,z
+	!						endif
+						endif
+					enddo
 				enddo
 			enddo
 		enddo
 	enddo
-enddo
+else
+	ncap = 0
+endif
 ! Now set up a list of all marrow sites that are adjacent to a blood site
 allocate(templist(3,NX*NZ*10))
 na = 0
@@ -1258,14 +1262,16 @@ nmono_list = k
 
 ! Capillary section
 !do icap = 1,ncap
-!	write(nfpos,'(a,6f6.1,f5.2)') 'C ',capillary(icap)%pos1,capillary(icap)%pos2,capillary(icap)%radius + 0.25
+!	write(nfpos,'(a,6f6.1,f5.2)') 'C ',capillary(icap)%pos1,capillary(icap)%pos2,capillary(icap)%radius + 0.25 
 !enddo
-do icap = 1,ncap
-	j = (icap-1)*7
-	cap_list(j+1:j+3) = capillary(icap)%pos1
-	cap_list(j+4:j+6) = capillary(icap)%pos2
-	cap_list(j+7) = capillary(icap)%radius+0.25
-enddo
+if (use_capillary) then
+	do icap = 1,ncap
+		j = (icap-1)*7
+		cap_list(j+1:j+3) = capillary(icap)%pos1
+		cap_list(j+4:j+6) = capillary(icap)%pos2
+		cap_list(j+7) = capillary(icap)%radius+0.25
+	enddo
+endif
 ncap_list = ncap
 
 ! Pit section
@@ -1436,7 +1442,12 @@ NX = X_SIZE/DELTA_X									! convert um -> grids
 NY = Y_SIZE/DELTA_X	+NBY							! convert um -> grids
 if (mod(NX,2) /= 0) NX = NX+1						! ensure that NX is even (why?)
 NZ = NX
-CAPILLARY_DIAMETER = CAPILLARY_DIAMETER/DELTA_X		! convert um -> grids
+if (CAPILLARY_DIAMETER == 0) then
+	use_capillary = .false.
+else
+	use_capillary = .true.
+	CAPILLARY_DIAMETER = CAPILLARY_DIAMETER/DELTA_X		! convert um -> grids
+endif
 !chemo_radius = chemo_radius/DELTA_X					! convert um -> grids
 STEM_CYCLETIME = 60*STEM_CYCLETIME					! convert hours -> minutes
 CLAST_LIFETIME = CLAST_LIFETIME*24*60				! convert days -> minutes

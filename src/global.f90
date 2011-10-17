@@ -104,6 +104,7 @@ real :: CXCL12_GRADLIM = 5.0e-4			! was equal to the initial max CXCL12 gradient
 										! Now need to guess the value to use!!!!!!!!
 logical :: stuck
 logical :: initiated
+logical :: use_capillary
 
 logical, parameter :: TESTING_OC = .true.
 
