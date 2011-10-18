@@ -414,41 +414,125 @@ end subroutine
 ! an OC that has fewer nuclei relative to the local signal intensity, not
 ! the total signal.  The appropriate measure of intensity would be 
 ! totalsignal/OCarea.
+!
+! The ability of an OC to attract a monocyte should be proportional to the
+! need for extra eroding power.  The signal intensity indicates the work
+! to be done.  Hypothesize a relationship that prescribes the nucleus count
+! appropriate for a given signal intensity.  For low levels of signal this
+! should be roughly proportional to the signal, but there should be an
+! upper bound.
+!
+!   Nopt(S) = Min(Nmax,K1.S)
+! 
+! If the current value of N exceeds Nopt, the attractivity is zero.
+! Otherwise attractivity is proportional to Nopt-N:
+!
+! If N < Nopt then
+!    A = K2.(Nopt - N)
+! else
+!    A = 0
+!
+! For now we have to assume that there is a monocyte available, and scale
+! the probability of capture by MONOCYTE_CAPTURE_RATE
 !--------------------------------------------------------------------------
 subroutine UpdateNuclei
 integer :: kpar = 0
-integer :: iclast
-real(8) :: R, ploss, pgain, pfac, sig
+integer :: iclast, x, z, site(3)
+real(8) :: R, ploss, pgain, pfac, sig, Nopt, asum
 type(osteoclast_type), pointer :: pclast
 real(8) :: max_sig = 1.0
 real(8) :: MONOCYTE_CAPTURE_RATE = 0.0002
-real(8) :: prob_nucleus_death = 0.000002
+!real(8) :: prob_nucleus_death = 0.000002
+real(8), allocatable :: attract(:)
+integer, parameter :: option = 2
+real(8), parameter :: K1 = 7.5, K2 = 1, Nmax = 15
 
 do iclast = 1,nclast
 	pclast => clast(iclast)
 	if (pclast%status /= RESORBING) cycle
-	ploss = pclast%count*prob_nucleus_death
+	if (option == 1) then
+		if (pclast%count < 12) then
+			pfac = 1.0
+		elseif (pclast%count > 15) then
+			pfac = 0
+		else
+			pfac = 1 - (pclast%count - 12)/(15-12)
+		endif
+		sig = pclast%totalsignal/(PI*pclast%radius**2)
+!		write(nflog,'(2i4,3f8.3)') iclast,pclast%count,pclast%totalsignal,pclast%radius,sig
+		pgain = min(sig/max_sig, 1.0)*pfac*MONOCYTE_CAPTURE_RATE
+		R = par_uni(kpar)
+		if (R < pgain) then
+			pclast%count = pclast%count + 1
+			pclast%radius = (25/DELTA_X)*sqrt(pclast%count/20.)
+		endif
+	endif
+	ploss = pclast%count*NUCLEUS_DEATH_RATE
 	R = par_uni(kpar)
-	if (pclast%count > 3 .and. R < ploss) then
+	if (R < ploss) then
 		pclast%count = pclast%count - 1
-		pclast%radius = (25/DELTA_X)*sqrt(pclast%count/20.)
-	endif
-	if (pclast%count < 12) then
-		pfac = 1.0
-	elseif (pclast%count > 15) then
-		pfac = 0
-	else
-		pfac = 1 - (pclast%count - 12)/(15-12)
-	endif
-	sig = pclast%totalsignal/(PI*pclast%radius**2)
-	write(nflog,'(2i4,3f8.3)') iclast,pclast%count,pclast%totalsignal,pclast%radius,sig
-	pgain = min(sig/max_sig, 1.0)*pfac*MONOCYTE_CAPTURE_RATE
-	R = par_uni(kpar)
-	if (R < pgain) then
-		pclast%count = pclast%count + 1
-		pclast%radius = (25/DELTA_X)*sqrt(pclast%count/20.)
+		if (pclast%count < 3) then
+			! OC dies
+			call ClastDeath(iclast)
+!			call logger('OC dies')
+		else
+			pclast%radius = (25/DELTA_X)*sqrt(pclast%count/20.)
+		endif
 	endif
 enddo
+if (option == 2) then
+!	call logger('option = 2')
+	allocate(attract(nclast))
+	attract = 0
+	asum = 0
+	do iclast = 1,nclast
+		pclast => clast(iclast)
+		if (pclast%status /= RESORBING) cycle
+		site = pclast%cm
+		x = site(1)
+		z = site(3)
+!		write(logmsg,*) 'iclast: ',iclast,x,z
+!		call logger(logmsg)
+		! sig approximates the peak signal intensity
+		if (SEAL_SWITCH) then
+			if (surface(x,z)%seal /= 0) then
+				sig = 0
+			else
+				sig = surface(x,z)%signal
+			endif
+		else
+			sig = surface(x,z)%signal*(1 - surface(x,z)%seal)
+		endif
+!		write(logmsg,*) 'sig: ',sig
+!		call logger(logmsg)
+		Nopt = K1*sig
+		if (pclast%count >= Nopt) then
+			attract(iclast) = 0
+		else
+			attract(iclast) = (Nopt - Nmax)
+			asum = asum + attract(iclast)
+		endif
+	enddo
+!	write(logmsg,'(a,f6.2)') 'asum: ',asum
+!	call logger(logmsg)
+	attract = attract/asum
+	if (par_uni(kpar) < asum*K2*MONOCYTE_CAPTURE_RATE) then
+		! A monocyte is captured by an OC	
+		R = par_uni(kpar)
+		asum = 0
+		do iclast = 1,nclast
+			if (pclast%status /= RESORBING) cycle
+			asum = asum + attract(iclast)
+			if (asum > R) then
+				pclast => clast(iclast)
+				pclast%count = pclast%count + 1
+				pclast%radius = (25/DELTA_X)*sqrt(pclast%count/20.)
+				exit
+			endif
+		enddo
+	endif
+	deallocate(attract)
+endif
 end subroutine
 
 !--------------------------------------------------------------------------
@@ -472,6 +556,8 @@ do iclast = 1,nOClist
 		pclast%status = JOINING
 		joined = .true.
 		nclast = nclast + 1
+		write(logmsg,*) 'Joined: ',iclast,nclast
+		call logger(logmsg)
 		clast(nclast) = OClist(iclast)
 		pclast => clast(nclast)
 		call SetJoiningLocation(pclast)
@@ -520,6 +606,33 @@ pclast0%cm(1) = cm(1) + 1.5*pclast0%radius
 pclast0%totalsignal = 0
 end subroutine
 
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+subroutine ClastDeath(i)
+integer :: i
+integer :: k, site(3), kcell
+integer :: x,y,z
+
+!do k = 1,clast(i)%npit
+!	if (clast(i)%pit(k)%fraction > 0 .and. clast(i)%pit(k)%fraction < 0.5) then
+!		site = clast(i)%pit(k)%site
+!		occupancy(site(1),site(2),site(3))%region = PIT
+!		occupancy(site(1),site(2),site(3))%indx = 0
+!	endif
+!enddo
+write(logmsg,*) 'clast death: ',i
+call logger(logmsg)
+clast(i)%status = DEAD
+deallocate(clast(i)%pit)
+!do k = 1,clast(i)%count
+!	kcell = clast(i)%mono(k)
+!	site = mono(kcell)%site
+!	mono(kcell)%status = DEAD
+!	occupancy(site(1),site(2),site(3))%indx = 0
+!enddo
+nliveclast = nliveclast - 1
+call UpdateSurface
+end subroutine
 !--------------------------------------------------------------------------
 ! Set up a test surface, with a target line.
 ! For initial testing, remove seal wherever there is signal.

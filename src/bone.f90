@@ -1057,33 +1057,7 @@ call logger(logmsg)
 call UpdateSurface
 end subroutine
 
-!------------------------------------------------------------------------------------------------
-!------------------------------------------------------------------------------------------------
-subroutine ClastDeath(i)
-integer :: i
-integer :: k, site(3), kcell
-integer :: x,y,z
 
-!do k = 1,clast(i)%npit
-!	if (clast(i)%pit(k)%fraction > 0 .and. clast(i)%pit(k)%fraction < 0.5) then
-!		site = clast(i)%pit(k)%site
-!		occupancy(site(1),site(2),site(3))%region = PIT
-!		occupancy(site(1),site(2),site(3))%indx = 0
-!	endif
-!enddo
-write(logmsg,*) 'clast death: ',i
-call logger(logmsg)
-clast(i)%status = DEAD
-deallocate(clast(i)%pit)
-!do k = 1,clast(i)%count
-!	kcell = clast(i)%mono(k)
-!	site = mono(kcell)%site
-!	mono(kcell)%status = DEAD
-!	occupancy(site(1),site(2),site(3))%indx = 0
-!enddo
-nliveclast = nliveclast - 1
-call UpdateSurface
-end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
@@ -1418,7 +1392,7 @@ read(nfinp,*) MAX_RESORPTION_RATE			! maximum bone removal rate (/grid cell) (0.
 read(nfinp,*) MAX_RESORPTION_D				! maximum pit depth (for scaling resorption rate) (50) (um)
 read(nfinp,*) MAX_RESORPTION_N				! number of monos in osteoclast corresponding to MAX_RESORPTION_RATE (30)
 
-!read(nfinp,*) SIGNAL_RADIUS					! radius of influence of bone signal (um -> grids) (10)
+!read(nfinp,*) SIGNAL_RADIUS				! radius of influence of bone signal (um -> grids) (10)
 !read(nfinp,*) SIGNAL_THRESHOLD				! defines the high-signal region, near the source (0.14)
 !read(nfinp,*) SIGNAL_AFACTOR				! field amplification factor (0.4)
 !read(nfinp,*) MTHRESHOLD					! number of monocytes in the high-signal region that triggers fusing (25)

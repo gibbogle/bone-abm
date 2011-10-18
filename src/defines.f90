@@ -121,6 +121,8 @@ real, parameter :: DT_FAST_MOVE = 10.0
 real, parameter :: CLAST_RADIUS_FACTOR = 0.5	! relates OC radius to the sqrt of the number of monocytes
 real, parameter :: OC_SIGNAL_THRESHOLD = 0.5
 real, parameter :: OC_MARGIN = 2
+real, parameter :: NUCLEUS_DEATH_RATE = 0.08/(24*60)	! /min = 8%/day (according to Parfitt)
+
 ! Pit parameters
 logical, parameter :: HALF_ELLIPSE = .true.
 real, parameter :: LACUNA_A = 40		! Parameters of the elliptical region to be excavated
