@@ -273,4 +273,12 @@ enddo
 BlastSignal = OB_SIGNAL_FACTOR*sum
 end function
 
+!------------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------
+real function OCradius(n)
+integer :: n
+
+OCradius = (25/DELTA_X)*sqrt(n/20.)
+end function
+
 end module

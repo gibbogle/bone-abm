@@ -1,5 +1,7 @@
 module rkf45
 
+use global
+
 implicit none
 
 private
@@ -1181,7 +1183,8 @@ subroutine r8_rkf45 ( f, neqn, y, yp, t, tout, relerr, abserr, flag )
         kflag == 6 .and. &
         relerr <= relerr_save .and. &
         abserr <= abserr_save ) then
-        write(*,*) 'ERROR: r8_rkf45: kflag=6, relerr,abserr too small'
+        write(logmsg,*) 'ERROR: r8_rkf45: kflag=6, relerr,abserr too small'
+        call logger(logmsg)
         stop
 
       end if
