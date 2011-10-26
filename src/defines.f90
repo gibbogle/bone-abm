@@ -122,6 +122,7 @@ real, parameter :: CLAST_RADIUS_FACTOR = 0.5	! relates OC radius to the sqrt of 
 real, parameter :: OC_SIGNAL_THRESHOLD = 0.5
 real, parameter :: OC_MARGIN = 2
 real, parameter :: NUCLEUS_DEATH_RATE = 0.08/(24*60)	! /min = 8%/day (according to Parfitt)
+real, parameter :: NUCLEUS_LIFETIME = 12.5				! days (according to Parfitt)
 
 ! Pit parameters
 logical, parameter :: HALF_ELLIPSE = .true.
@@ -189,7 +190,8 @@ type osteoclast_type
     real :: entrytime			! time that the cell became a mature osteoclast
     real :: movetime			! time that the cell will be checked for move
     real :: blocktime			! time that the cell became blocked
-    real :: dietime             ! time cell will die
+    real :: dietime             ! time OC will die
+    real :: nucleus_dietime(20) ! time nucleus will die
 	integer :: count
 !	integer :: mono(100)
 	integer :: targetsite(3)
