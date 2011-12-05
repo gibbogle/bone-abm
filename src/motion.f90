@@ -9,16 +9,18 @@ save
 
 real, parameter :: Kchemo = 1.0
 real, parameter :: K_MUTUAL_ATTRACT = 1.5	!0.6 
-real, parameter :: K_MUTUAL_REPELL = 0.5
-real, parameter :: K_SIGNAL = 0.005	!0.001
+real, parameter :: K_MUTUAL_REPELL = 1.5
+real, parameter :: K_SIGNAL = 0.005	!0.005
 real, parameter :: K_JOINING = 100
 real, parameter :: SEAL_REMOVAL_RATE = 0.002	!0.0001
-real, parameter :: JOIN_DISP_THRESHOLD = 0.0005
+real, parameter :: JOIN_DISP_THRESHOLD = 0.001
 real, parameter :: JOIN_TIME_LIMIT = 100
 real, parameter :: K_OC_DRAG = 10.0
 real, parameter :: OC_MASS = 0.1
 real, parameter :: SPEEDUP = 1
 logical, parameter :: SEAL_SWITCH = .false.
+real :: MONOCYTE_CAPTURE_RATE = 0.0005
+
 
 ! For testing OC dynamics, need lookup tables to translate between
 ! OC index and state index (actually (index-1)/4 + 1)
@@ -233,7 +235,7 @@ dbug = .false.
 ts_dbug = .false.
 call CheckJoining(t,changed)
 if (changed) then
-	write(logmsg,*) 'New OC joined the team: ',istep,istep_OC
+	write(logmsg,*) 'New OC joining the team: ',istep,istep_OC
 	call logger(logmsg)
 	call ReinitState	!(OCstate,OCstatep)
 	first_OC = .true.
@@ -287,7 +289,7 @@ end subroutine
 !--------------------------------------------------------------------------
 subroutine OCsetup
 type(osteoclast_type), pointer :: pclast
-integer :: iclast, i
+integer :: iclast, i, n
 integer :: kpar = 0
 real, parameter :: interval = 5	! days
 
@@ -299,21 +301,58 @@ do iclast = 1,nOClist
 	pclast%entrytime = 60 + (iclast-1)*interval*24*60
 	pclast%cm(1) = 3.0
 	pclast%cm(2) = NBY + 1
-	pclast%cm(3) = NZ/2 + 1
-	pclast%count = random_int(4,8,kpar)
+	pclast%cm(3) = NZ/2 + 4*(par_uni(kpar)-0.5)
+	n = random_int(4,8,kpar)
 !	pclast%count = 4
-	pclast%radius = OCradius(pclast%count)
+	do i = 1,n
+		pclast%nucleus_dietime(i) = pclast%entrytime + get_nucleuslifetime()	!((NUCLEUS_LIFETIME*i)/pclast%count)*24.*60.
+		write(logmsg,'(a,2i4,f8.1)') 'OCsetup: iclast, nucleus, dietime: ',iclast,i,pclast%nucleus_dietime(i)
+		call logger(logmsg)
+		pclast%count = i
+		call order_dietimes(pclast)
+	enddo
+	pclast%last_nucleus_add_time = 0
+	pclast%radius = OCradius(n)
 	pclast%status = QUEUED
 	pclast%prevcm = -999
 	call MakePits(pclast)
-	do i = 1,pclast%count
-		pclast%nucleus_dietime(i) = pclast%entrytime + ((NUCLEUS_LIFETIME*i)/pclast%count)*24*60
-	enddo
 enddo
 nclast = 0
 !OClist(1)%status = RESORBING
 !clast(nclast) = OClist(1)
 
+end subroutine
+
+!--------------------------------------------------------------------------
+!--------------------------------------------------------------------------
+real function get_nucleuslifetime()
+integer :: kpar=0
+real(8) :: R
+
+R = par_uni(kpar)
+get_nucleuslifetime = NUCLEUS_LIFETIME*24*60*(0.5 + R)
+end function
+
+!--------------------------------------------------------------------------
+!--------------------------------------------------------------------------
+subroutine order_dietimes(pclast)
+type(osteoclast_type), pointer :: pclast
+integer :: i, n, in
+real :: tnew
+
+n = pclast%count
+if (n == 1) return
+tnew = pclast%nucleus_dietime(n)
+do in = 1,n-1
+	if (tnew < pclast%nucleus_dietime(in)) then
+		exit
+	endif
+enddo
+if (in == n) return
+do i = n,in+1,-1
+	pclast%nucleus_dietime(i) = pclast%nucleus_dietime(i-1)
+enddo
+pclast%nucleus_dietime(in) = tnew
 end subroutine
 
 !--------------------------------------------------------------------------
@@ -335,6 +374,22 @@ do ipit = 1,pclast%npit
 	write(*,'(4i4,f8.3)') ipit,pclast%pit(ipit)%delta,pclast%pit(ipit)%cover
 enddo
 end subroutine
+
+!--------------------------------------------------------------------------
+! The optimal number of nuclei in an OC for a given average signal under it.
+!--------------------------------------------------------------------------
+real(8) function required_nuclei(sig)
+real(8) :: sig
+integer, parameter :: NNmin = 5
+real(8), parameter :: sig_threshold = 0.25
+
+if (sig > sig_threshold) then
+	required_nuclei = MAX_NUCLEI
+else
+	required_nuclei = NNmin + (sig/sig_threshold)*(MAX_NUCLEI - NNmin)
+endif
+end function
+
 
 !--------------------------------------------------------------------------
 ! In a time step an OC may lose a nucleus (monocyte), since the mean life
@@ -360,7 +415,7 @@ end subroutine
 ! should be roughly proportional to the signal, but there should be an
 ! upper bound.
 !
-!   Nopt(S) = Min(Nmax,K1.S)
+!   Nopt(S) = Min(NNmax,K1.S)
 ! 
 ! If the current value of N exceeds Nopt, the attractivity is zero.
 ! Otherwise attractivity is proportional to Nopt-N:
@@ -380,17 +435,17 @@ integer :: iclast, x, z, i, site(3)
 real(8) :: R, ploss, pgain, pfac, sig, Nopt, asum, tnow
 type(osteoclast_type), pointer :: pclast
 real(8) :: max_sig = 1.0
-real(8) :: MONOCYTE_CAPTURE_RATE = 0.0002
 !real(8) :: prob_nucleus_death = 0.000002 
 real(8), allocatable :: attract(:)
 integer, parameter :: option = 2
-real(8), parameter :: K1 = 6, K2 = 5, Nmax = 20, Amin = 4
+real(8), parameter :: K1 = 6, K2 = 5, NNmax = 20, Amin = 4, ADD_INTERVAL = 8*60
 
 tnow = istep_OC*DELTA_T_OC
-do iclast = 1,nclast
-	pclast => clast(iclast)
-	if (pclast%status /= RESORBING) cycle
-	if (option == 1) then
+if (option == 1) then
+	do iclast = 1,nclast
+		pclast => clast(iclast)
+		if (pclast%status /= RESORBING) cycle
+		if (tnow - pclast%last_nucleus_add_time < ADD_INTERVAL) cycle
 		if (pclast%count < 12) then
 			pfac = 1.0
 		elseif (pclast%count > 15) then
@@ -405,23 +460,12 @@ do iclast = 1,nclast
 		if (R < pgain) then
 			pclast%count = pclast%count + 1
 			pclast%radius = (25/DELTA_X)*sqrt(pclast%count/20.)
-			pclast%nucleus_dietime(pclast%count) = tnow + NUCLEUS_LIFETIME*24*60
+			pclast%nucleus_dietime(pclast%count) = tnow + get_nucleuslifetime()	!NUCLEUS_LIFETIME*24*60
+			call order_dietimes(pclast)
+			pclast%last_nucleus_add_time = tnow
 		endif
-	endif
-!	ploss = pclast%count*NUCLEUS_DEATH_RATE
-!	R = par_uni(kpar)
-!	if (R < ploss) then
-!		pclast%count = pclast%count - 1
-!		if (pclast%count < 3) then
-!			! OC dies
-!			call ClastDeath(iclast)
-!			changed = .true.
-!		else
-!			pclast%radius = (25/DELTA_X)*sqrt(pclast%count/20.)
-!		endif
-!	endif
-enddo
-if (option == 2) then
+	enddo
+elseif (option == 2) then
 !	call logger('option = 2')
 	allocate(attract(nclast))
 	attract = 0
@@ -446,14 +490,18 @@ if (option == 2) then
 !		else
 !			sig = surface(x,z)%signal*(1 - surface(x,z)%seal)
 !		endif
-		sig = pclast%totalsignal
-		Nopt = min(K1*sig,real(Nmax))
+
+!		sig = pclast%totalsignal
+!		Nopt = min(K1*sig,real(NNmax))
+		sig = pclast%totalsignal/pclast%npit	! this ensure a maximum value of sig = 1
+		Nopt = required_nuclei(sig)
 		if (pclast%count >= Nopt) then
 			attract(iclast) = 0
 !			write(logmsg,'(a,2i4,5f8.4)') 'attract=0: ',iclast,pclast%count,Nopt,surface(x,z)%signal,(1 - surface(x,z)%seal),sig,pclast%totalsignal
 !			call logger(logmsg)
 		else
-			attract(iclast) = Amin + (Nopt - pclast%count)
+!			attract(iclast) = Amin + (Nopt - pclast%count)
+			attract(iclast) = (Nopt - pclast%count)
 			asum = asum + attract(iclast)
 		endif
 	enddo
@@ -467,11 +515,17 @@ if (option == 2) then
 		do iclast = 1,nclast
 			pclast => clast(iclast)
 			if (pclast%status /= RESORBING) cycle
+			if (tnow - pclast%last_nucleus_add_time < ADD_INTERVAL) cycle
 			asum = asum + attract(iclast)
 			if (asum > R) then
 				pclast%count = pclast%count + 1
 				pclast%radius = (25/DELTA_X)*sqrt(pclast%count/20.)
-				pclast%nucleus_dietime(pclast%count) = tnow + NUCLEUS_LIFETIME*24*60
+				pclast%nucleus_dietime(pclast%count) = tnow + get_nucleuslifetime()	!NUCLEUS_LIFETIME*24*60	! the last nucleus always has latest dietime
+				write(logmsg,'(a,2i4,f8.1)') 'UpdateNuclei: iclast, nucleus, dietime: ', &
+					iclast,pclast%count,pclast%nucleus_dietime(pclast%count)
+				call logger(logmsg)
+				call order_dietimes(pclast)
+				pclast%last_nucleus_add_time = tnow
 				exit
 			endif
 		enddo
@@ -491,7 +545,7 @@ do iclast = 1,nclast
 		do i = 1,pclast%count
 			pclast%nucleus_dietime(i) = pclast%nucleus_dietime(i+1)
 		enddo
-		if (pclast%count < 3) then
+		if (pclast%count < 2) then
 			call logger('OC dies')
 			call ClastDeath(iclast)
 			changed = .true.
@@ -524,11 +578,12 @@ do iclast = 1,nOClist
 		pclast%status = JOINING
 		joined = .true.
 		nclast = nclast + 1
-		write(logmsg,*) 'Joined: ',iclast,nclast
+		write(logmsg,*) 'Joining: ',iclast,t
 		call logger(logmsg)
 		clast(nclast) = OClist(iclast)
 		pclast => clast(nclast)
 		call SetJoiningLocation(pclast)
+		pclast%dcm = 10
 		do i = 1,pclast%count
 			write(logmsg,'(a,i4,f8.1)') 'nucleus_dietime: ',i,pclast%nucleus_dietime(i)
 			call logger(logmsg)
@@ -544,6 +599,8 @@ do iclast = 1,nclast
 !	write(*,'(a,i3,3f10.6)') 'd: ',iclast,pclast%dcm(1),pclast%dcm(3),d 
 	if (d < JOIN_DISP_THRESHOLD .or. t-pclast%entrytime > JOIN_TIME_LIMIT) then
 		pclast%status = RESORBING
+		write(logmsg,*) 'Joined: ',iclast,d, t-pclast%entrytime, JOIN_TIME_LIMIT
+		call logger(logmsg)
 	endif
 enddo
 end subroutine
@@ -573,8 +630,13 @@ cm = clast(imax)%cm
 !else
 !	pclast0%cm(3) = NZ/2 + 2*(1 + par_uni(kpar))
 !endif
-pclast0%cm(3) = NZ/2 + (par_uni(kpar) - 0.5)
-pclast0%cm(1) = cm(1) + 1.5*pclast0%radius
+if (cm(3) < patch%z0) then
+	pclast0%cm(3) = cm(3) + clast(imax)%radius + 3*par_uni(kpar)
+else
+	pclast0%cm(3) = cm(3) - clast(imax)%radius - 3*par_uni(kpar)
+endif
+!pclast0%cm(3) = NZ/2 + 3*(par_uni(kpar) - 0.5)
+pclast0%cm(1) = cm(1) + pclast0%radius + clast(imax)%radius
 pclast0%totalsignal = 0
 end subroutine
 
@@ -623,8 +685,10 @@ do x = 1,NX
 		surface(x,z)%target_depth = 0
 		surface(x,z)%seal = 1
 		c = ((z-patch%z0)/patch%b)**2
+!		c = abs((z-patch%z0)/patch%b)
 		if (c < 1) then
 			surface(x,z)%target_depth = (1 - c)*MAX_PIT_DEPTH
+!			surface(x,z)%target_depth = 0.5*(1 + cos(c*PI))*MAX_PIT_DEPTH
 			surface(x,z)%signal = GetSignal(x,z)
 			surface(x,z)%seal = 1
 !			if (x <= 2) then	! TEMPORARY measure for startup
@@ -1073,10 +1137,10 @@ do indx0 = 1,nindx
 		v(1) = x1 - x0
 		v(2) = z1 - z0
 		d = sqrt(v(1)**2 + v(2)**2)
-		if (d > 3*r0) cycle		! otherwise remote OCs exert attraction - probably not a good idea
+!		if (d > 3*r0) cycle		! otherwise remote OCs exert attraction - probably not a good idea
 		vn = v/d
 		df = OCattraction(d,r0,r1)
-!		F(indx0,:) = F(indx0,:) + K_MUTUAL*df*vn
+!		F(indx0,:) = F(indx0,:) + K_MUTUAL*df*vn 
 		if (df > 0) then
 			F(indx0,:) = F(indx0,:) + K_MUTUAL_ATTRACT*df*vn
 		else
@@ -1244,8 +1308,6 @@ do indx0 = 1,nindx
 !	pclast0%foc = F(indx0,:)
 	if (idea == 0) then
 		F(indx0,:) = F(indx0,:) + Fsig_go(indx0,:)
-!		write(logmsg,'(a,4f8.4)') 'b: ',F(indx0,:)
-!		call logger(logmsg)
 		if (F(indx0,1) == 0 .and. F(indx0,2) == 0) then
 			famp = 0
 		else
@@ -1277,11 +1339,14 @@ end subroutine
 ! A JOINING OC must be responsive to signals that are quite remote, in order
 ! to be able to squeeze into the BMU team.  This is not an issue for a RESORBING OC.
 !
-! RESORBING OC: two steps
+! RESORBING OC: determine:
+! (a) the force vector Fsig_go() that tends to move the OC towards higher signal,
+! (b) a scalar Fsig_stop, representing stiction - the tendency of an OC to stay where
+!     it is unless there is a strong enough reason to move.  When the motion is
+!     simulated, the magnitude of the total force acting on the OC (signal + intracellular)
+!     is compared with Fsig_stop, and motion is allowed only if Fsig_stop is exceeded,
+!     and the magnitude of the effective force is equal to the amount of the excess.
 ! (a) Measure totsignal0 under OC
-!     If totsignal0 > threshold
-!         FS = 0	(this needs to be revisited, because it fails to simulate the tendency to stay put)
-!     else
 !         Choose best direction of movement.  Consider the OC to be located at a set of
 !         sites nearby, evaluate totsignal at each.  Select maximum = sigmax
 !         if (sigmax < totsignal)
@@ -1293,7 +1358,7 @@ end subroutine
 !     endif
 !
 ! JOINING OC:
-! Needs to push its way in.
+! Needs to push its way in.  Only Fsig_go() applies (no Fsig_stop)
 !
 ! This module can be removed from the OCforces subroutine, and FSIG(:,2),
 ! which will be a global array, can be computed less frequently, e.g. every 10 timesteps.
@@ -1304,7 +1369,7 @@ integer :: iclast0, indx0, nindx, nm0
 integer :: ix, iz, n0, idx, idz, ixx, izz, site0(3), site(3), idxmax, idzmax
 real(8) :: x0, z0, r0, v(2), vn(2), d, fs_go(2), fs_stop, x, z, ax, az, dx, dz
 integer, parameter :: Q=2
-real(8) :: tot(-Q:Q,-Q:Q), tot0, sigmax, fthreshold
+real(8) :: tot(-Q:Q,-Q:Q), tot0, sigmax
 type(osteoclast_type), pointer :: pclast0
 
 nindx = OC_NV/4
@@ -1316,7 +1381,10 @@ do indx0 = 1,nindx
 		call logger(logmsg)
 		stop
 	endif
-	fthreshold = 0.4*pclast0%npit	! arbitrary threshold =================<<<<<<<<<<<<<<<<<<<<
+	if (pclast0%status == JOINING) then
+		write(logmsg,*) 'OCfsignal: joining: indx0, iclast0: ',indx0,iclast0
+		call logger(logmsg)
+	endif
 	x0 = y((indx0-1)*4+1)	! pclast0%cm(1)
 	z0 = y((indx0-1)*4+3)	! pclast0%cm(3)
 	r0 = pclast0%radius
@@ -1368,62 +1436,49 @@ do indx0 = 1,nindx
 		tot(idx,idz) = TotalSignal(pclast0,site)
 		tot0 = (1-ax)*(1-az)*tot(0,0) + ax*(1-az)*tot(idx,0) &
 			 + (1-ax)*az*tot(0,idz)   + ax*az*tot(idx,idz)
-!		if (pclast0%status == RESORBING .and. tot0 > fthreshold) then	
-!		if (pclast0%status == RESORBING) then	
-!			if (dbug) then
-!				write(*,*) 'ax,az: ',idx,idz,ax,az
-!				write(*,*) 'tot0: ',tot0,0.4*pclast0%npit,tot(idx,idz)
-!			endif
-!			fs = 0
-!		else
-			fs_stop = K_SIGNAL*nm0*tot0
-			sigmax = 0
-			do idx = -Q,Q
-				do idz = -Q,Q
-					if (tot(idx,idz) < 0) then
-						site(1) = site0(1) + idx
-						site(2) = NBY + 1
-						site(3) = site0(3) + idz
-						tot(idx,idz) = TotalSignal(pclast0,site)
-					endif
-					if (tot(idx,idz) > sigmax) then
-						idxmax = idx
-						idzmax = idz
-						sigmax = tot(idx,idz)
-					endif
-				enddo
-			enddo
-			if (sigmax > tot0) then
-				v(1) = site0(1) + idxmax - x0
-				v(2) = site0(3) + idzmax - z0
-				d = sqrt(v(1)**2 + v(2)**2)
-				if (d == 0) then
-					fs_go = 0
-				else
-					vn = v/d
-!					if (dbug) write(*,*) 'vn: ',vn
-					fs_go = K_SIGNAL*nm0*(sigmax-tot0)*vn
+		fs_stop = K_SIGNAL*nm0*tot0
+		sigmax = 0
+		do idx = -Q,Q
+			do idz = -Q,Q
+				if (tot(idx,idz) < 0) then
+					site(1) = site0(1) + idx
+					site(2) = NBY + 1
+					site(3) = site0(3) + idz
+					tot(idx,idz) = TotalSignal(pclast0,site)
 				endif
-			else
+				if (tot(idx,idz) > sigmax) then
+					idxmax = idx
+					idzmax = idz
+					sigmax = tot(idx,idz)
+				endif
+			enddo
+		enddo
+		if (sigmax > tot0) then
+			v(1) = site0(1) + idxmax - x0
+			v(2) = site0(3) + idzmax - z0
+			d = sqrt(v(1)**2 + v(2)**2)
+			if (d == 0) then
 				fs_go = 0
+			else
+				vn = v/d
+				fs_go = K_SIGNAL*nm0*(sigmax-tot0)*vn
 			endif
-			if (WOK .and. dbug) then
-				write(*,'(a,4f10.6)') 'sigmax, tot0, fs_go: ',sigmax,tot0,fs_go
-				do idz = -Q,Q
-					write(*,'(5f10.6)') (tot(idx,idz),idx=-Q,Q)
-				enddo
-			endif
-			if (pclast0%status == JOINING) then
-				fs_go = K_JOINING*fs_go
-				fs_stop = 0
-			endif
+		else
+			fs_go = 0
 		endif
-!		pclast0%fsig = fs
-
-!	endif
-!	if (dbug) then
-!		write(*,*) 'fs: ',fs
-!	endif
+		if (WOK .and. dbug) then
+			write(*,'(a,4f10.6)') 'sigmax, tot0, fs_go: ',sigmax,tot0,fs_go
+			do idz = -Q,Q
+				write(*,'(5f10.6)') (tot(idx,idz),idx=-Q,Q)
+			enddo
+		endif
+		if (pclast0%status == JOINING) then
+			fs_go = K_JOINING*fs_go
+			fs_stop = 0
+			write(logmsg,'(a,3f6.3)') 'joining: fs_go: ',fs_go
+			call logger(logmsg)
+		endif
+	endif
 	Fsig_go(indx0,:) = fs_go
 	Fsig_stop(indx0) = fs_stop
 enddo
@@ -1519,6 +1574,8 @@ if (x <= 1) then
 	OCattraction = -b/(x-1+a) + b/a
 !	if (dbug) write(*,*) -b/(x-1+a),b/a
 else
+	! try this
+	x = min(x,1.3)
 	OCattraction = h*exp(-k*(x-1))*(exp(g*(x-1))-1)/(exp(g*(x-1))+1)
 endif
 end function

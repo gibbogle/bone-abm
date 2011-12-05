@@ -168,7 +168,7 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Minimum length of time that an osteoclast remains in one spot, before moving one grid\n\
 [mins]"},
 
-{"MAX_RESORPTION_RATE", 300000, 0.0, 0.0,
+{"MAX_RESORPTION_RATE", 350000, 0.0, 0.0,
 "Maximum resorption rate",
 "Maximum rate of bone removal by an osteoclast\n\
 [um3/day]"},

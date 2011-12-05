@@ -54,6 +54,7 @@ integer, parameter :: MAX_CAP = 100
 integer, parameter :: MAX_SIGNAL = 10000
 integer, parameter :: MAX_NCLUMP = 50
 integer, parameter :: MAX_CLUMP_CELLS = 50
+integer, parameter :: MAX_NUCLEI = 25
 real, parameter :: DELTA_T = 1.0		! minutes 
 !real, parameter :: DELTA_T_OC = 4		! minutes (for OC simulation)
 real, parameter :: BIGTIME = 1.0e10
@@ -191,8 +192,9 @@ type osteoclast_type
     real :: movetime			! time that the cell will be checked for move
     real :: blocktime			! time that the cell became blocked
     real :: dietime             ! time OC will die
-    real :: nucleus_dietime(20) ! time nucleus will die
+    real :: nucleus_dietime(MAX_NUCLEI) ! time nucleus will die
 	integer :: count
+	real :: last_nucleus_add_time
 !	integer :: mono(100)
 	integer :: targetsite(3)
 	integer :: npit
