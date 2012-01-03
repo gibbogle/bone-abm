@@ -463,6 +463,7 @@ if (option == 1) then
 			pclast%nucleus_dietime(pclast%count) = tnow + get_nucleuslifetime()	!NUCLEUS_LIFETIME*24*60
 			call order_dietimes(pclast)
 			pclast%last_nucleus_add_time = tnow
+			call MakePits(pclast)
 		endif
 	enddo
 elseif (option == 2) then
@@ -526,6 +527,7 @@ elseif (option == 2) then
 				call logger(logmsg)
 				call order_dietimes(pclast)
 				pclast%last_nucleus_add_time = tnow
+				call MakePits(pclast)
 				exit
 			endif
 		enddo
@@ -551,6 +553,7 @@ do iclast = 1,nclast
 			changed = .true.
 		else
 			pclast%radius = OCradius(pclast%count) 
+			call MakePits(pclast)
 		endif
 	endif
 enddo
