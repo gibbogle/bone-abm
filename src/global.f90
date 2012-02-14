@@ -33,7 +33,7 @@ logical :: use_CPORT1 = .true.
 
 ! Parameters read from inputfile
 real :: MONOCYTE_DIAMETER = 10			! um
-real :: BETA							! speed: 0 < beta < 1
+real :: BETA							! speed: 0 < beta < 1 
 real :: RHO								! persistence: 0 < rho < 1
 real :: S1P_CHEMOLEVEL
 real :: S1P_KDIFFUSION
