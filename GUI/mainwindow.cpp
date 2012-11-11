@@ -636,10 +636,11 @@ void MainWindow::showMore(QString moreText)
 	LOG_MSG("label clicked!");
 	LOG_QMSG(moreText);
 	
-	if ((int)sender() != currentDescription) {
-        text_more->setEnabled(true); // self.ui.text_description.setEnabled(1) #show()
+//	if ((int)sender() != currentDescription) {
+	if ((uintptr_t)sender() != currentDescription) {
+		text_more->setEnabled(true); // self.ui.text_description.setEnabled(1) #show()
         text_more->setText(moreText); // text_description
-        currentDescription = (int)sender();
+		currentDescription = (uintptr_t)sender();
     } else {
         text_more->clear(); // text_description
         text_more->setEnabled(false); // hide()#text_description
