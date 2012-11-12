@@ -212,8 +212,8 @@ end function
 !	(d = the distance of the target bone site from the osteoclast centre
 !   The depth factor df decreases linearly to zero as d goes from 0 to MAX_RESORPTION_D)
 ! The volume rate of resorption per pit site is:
-!   (MAX_RESORPTION_RATE/MAX_RESORPTION)*(Nm/Np) um^3/day
-! which is converted to grids/min, /(24*60*DELTA_X^3)
+!   (MAX_RESORPTION_RATE/MAX_RESORPTION)*(Nm/Np) um^3/min
+! which is converted to grids/min, /(DELTA_X^3)
 ! Note: currently not using d dependence, using %fraction
 !------------------------------------------------------------------------------------------------
 real function resorptionRate(Nm,Np)
@@ -226,7 +226,7 @@ integer :: Nm, Np
 !else
 !	df = 1 - d/MAX_RESORPTION_D
 !endif
-resorptionRate = (MAX_RESORPTION_RATE*Nm)/(MAX_RESORPTION_N*Np*24*60*DELTA_X**3)
+resorptionRate = (MAX_RESORPTION_RATE*Nm)/(MAX_RESORPTION_N*Np*DELTA_X**3)
 !write(*,*) 'resorptionRate: ',Nm,Np,resorptionRate
 !write(*,*) MAX_RESORPTION_RATE,Nm,MAX_RESORPTION_N,Np,24*60,DELTA_X 
 end function

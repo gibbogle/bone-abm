@@ -19,7 +19,7 @@ real, parameter :: K_OC_DRAG = 10.0
 real, parameter :: OC_MASS = 0.1
 real, parameter :: SPEEDUP = 1
 logical, parameter :: SEAL_SWITCH = .false.
-real :: MONOCYTE_CAPTURE_RATE = 0.0005
+real :: MONOCYTE_CAPTURE_RATE = 0.0010
 
 
 ! For testing OC dynamics, need lookup tables to translate between
@@ -197,7 +197,7 @@ call OCsetup
 
 call PrepareSurface
 
-OC_NV = 4*nclast
+OC_NV = 5*nclast
 if (OC_NV > 0) then
 	! Initialize state, statep
 	call InitState	!(OCstate,OCstatep)
