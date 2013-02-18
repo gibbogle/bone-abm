@@ -1475,7 +1475,7 @@ Nsteps = days*60*24/DELTA_T
 !    call save_parameters
 !	call save_inputfile(fixedfile)
 !endif
-!write(*,*) 'open resultfile: ',resultfile
+!write(*,*) 'open resultfile: ',resultfile 
 
 ok = .true.
 
