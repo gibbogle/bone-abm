@@ -88,13 +88,13 @@ character*(13), parameter :: pausefile = 'pause_dll'
 !real, parameter :: CLAST_DWELL_TIME = 3*60 
 
 
-! S1P1 parameters
+! S1PR1 parameters
 logical, parameter :: S1P_chemotaxis = .true.
 
 !real, parameter :: S1P_CHEMOLEVEL = 0.1		! 0 -> 1
 !real, parameter :: S1P_GRADLIM = 0.02
-!real, parameter :: S1P1_THRESHOLD = 0.5
-!real, parameter :: S1P1_BASERATE = 1.0/(6*60)	! 6 hours 
+!real, parameter :: S1PR1_THRESHOLD = 0.5
+!real, parameter :: S1PR1_BASERATE = 1.0/(6*60)	! 6 hours 
 
 ! RANKL parameters
 logical, parameter :: use_CXCL12 = .true.
@@ -149,8 +149,8 @@ type monocyte_type
 	integer(1) :: region
     integer(1) :: status
 	integer(1) :: lastdir
-	real :: S1P1				! level of S1P1 expression
-	real :: CXCL12SIGNAL		! integrated CXCL12 signal
+	real :: S1PR1				! level of S1PR1 expression
+!	real :: CXCL12SIGNAL		! integrated CXCL12 signal
 	real :: RANKSIGNAL			! integrated RANK signal
 	real :: stickiness
     real :: entrytime			! time that the cell entered the marrow (from blood or stem cell division)

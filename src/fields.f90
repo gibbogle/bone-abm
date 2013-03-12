@@ -30,7 +30,7 @@ end function
 ! once, compute the gradient field from it, and use this for all chemotaxis calculations.
 !
 ! This all works, but there is now serious doubt as to whether there is such a thing as
-! S1P chemotaxis.  According to Irina Grigorova, S1P1 on a T cell enables it to cross
+! S1P chemotaxis.  According to Irina Grigorova, S1PR1 on a T cell enables it to cross
 ! the endothelial boundary into a sinus (high-S1P), but the cell must reach the sinus
 ! by random motion.
 !----------------------------------------------------------------------------------------
@@ -188,7 +188,8 @@ do iblast = 1,nblast
 	z = pblast%site(3)
 	CXCL12_influx(x,y,z) = BlastSignal(pblast)
 	sum = sum + CXCL12_influx(x,y,z)
-!	write(*,*) iblast,x,z,CXCL12_influx(x,y,z)
+	write(logmsg,*) iblast,x,z,CXCL12_influx(x,y,z)
+	call logger(logmsg)
 enddo
 if (sum == 0) return
 
@@ -267,25 +268,17 @@ do iblast = 1,nblast
 	x = pblast%site(1)
 	z = pblast%site(3)
 	sig = BlastSignal(pblast)
-	write(nflog,*) 'sig: ',iblast,sig
+	write(nflog,'(a,4i6,f8.3)') 'sig: ',iblast,nblast,x,z,sig
 	if (sig > OB_SIGNAL_THRESHOLD) then
 		CXCL12_influx(x,y,z) = sig
 	endif
 	totsig = totsig + CXCL12_influx(x,y,z)
 enddo
 !write(nflog,*) 'evolveCXCL12: totsig: ',istep,totsig
-if (totsig > 0) then
+!if (totsig > 0) then
 	call evolve(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc,dt)
 	call gradient(CXCL12_influx,CXCL12_conc,CXCL12_grad)
-!	y = NBY+4
-!	do x = 20,30
-!		write(nflog,'(i4,9e12.3)') x,(CXCL12_grad(:,x,y,z),z=20,22)
-!	enddo
-endif
-
-!write(logmsg,*) 'Mean patch CXCL12: ',sum/nsignal, totsig
-!call logger(logmsg)
-!deallocate(factor)
+!endif
 end subroutine
 
 !----------------------------------------------------------------------------------------
@@ -427,6 +420,17 @@ do z = 1,NZ
 			else
 				g(3) = MISSING_VAL
 			endif
+			if (isnan(g(1)) .or. isnan(g(2)) .or. isnan(g(3))) then
+				write(logmsg,'(a,3i6,3f8.4)') 'gradient: ',x,y,z,g
+				call logger(logmsg)
+				write(logmsg,'(a,5i6,2f8.4)') 'x: ',x,y,z,x1,x2,C(x1,y,z),C(x2,y,z)
+				call logger(logmsg)
+				write(logmsg,'(a,5i6,2f8.4)') 'y: ',x,y,z,y1,y2,C(x,y1,z),C(x,y2,z)
+				call logger(logmsg)
+				write(logmsg,'(a,5i6,2f8.4)') 'z: ',x,y,z,z1,z2,C(x,y,z1),C(x,y,z2)
+				call logger(logmsg)
+				stop
+			endif
 			grad(:,x,y,z) = g
 		enddo
 	enddo
@@ -462,17 +466,21 @@ enddo
 end subroutine
 
 !----------------------------------------------------------------------------------------
+! This is a crude explicit solver.  If dt is too large it goes unstable.
+! Should be replaced by a higher order solver, e.g. Runge-Kutta-Chebychev
 !----------------------------------------------------------------------------------------
 subroutine evolve(influx,Kdiffusion,Kdecay,C,dt)
 real :: influx(:,:,:), C(:,:,:)
 real :: Kdiffusion, Kdecay, dt
-real :: dx2diff, total, maxchange, C0, dC, sum, dV, dMdt
+real :: dx2diff, total, maxchange, C0, dC, sum, dV, dMdt, Cmin, Cmax
 real, parameter :: alpha = 0.99
 integer :: x, y, z, xx, yy, zz, nb, nc, k, it
 real, allocatable :: Ctemp(:,:,:)
 
 dV = DELTA_X**3
 allocate(Ctemp(NX,NY,NZ))
+Cmin = 1.0e20
+Cmax = -Cmin
 do z = 1,NZ
 	do y = NBY+1,NY
 		do x = 1,NX
@@ -491,6 +499,8 @@ do z = 1,NZ
 			enddo
 			dMdt = Kdiffusion*DELTA_X*(sum - nb*C0) - Kdecay*C0*dV + influx(x,y,z)
 			Ctemp(x,y,z) = (C(x,y,z)*dV + dMdt*dt)/dV
+			Cmin = min(Cmin,Ctemp(x,y,z))
+			Cmax = max(Cmax,Ctemp(x,y,z))
 !			if (x == NX/2 .and. y == NBY+2 .and. z == NZ/2) write(*,*) 'dMdt: ',dMdt
 !			Ctemp(x,y,z) = dt*(alpha*(sum + dC)/(Kdecay*dx2diff + dC + nb) +
 		enddo
@@ -498,7 +508,8 @@ do z = 1,NZ
 enddo
 C = Ctemp
 deallocate(Ctemp)
-
+!write(logmsg,'(a,2e12.3)') 'Cmin, Cmax: ',Cmin,Cmax
+!call logger(logmsg)
 end subroutine
 
 
