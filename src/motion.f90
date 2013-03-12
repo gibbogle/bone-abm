@@ -191,6 +191,7 @@ contains
 subroutine test_OCdynamics
 !integer :: it
 
+call logger('test_OCdynamics')
 WOK = .not.use_TCP
 DELTA_T_OC = DELTA_T
 call OCsetup
@@ -233,6 +234,7 @@ dt = DELTA_T_OC
 t = istep_OC*DELTA_T_OC
 dbug = .false.
 ts_dbug = .false.
+ierr = 0
 call CheckJoining(t,changed)
 if (changed) then
 	write(logmsg,*) 'New OC joining the team: ',istep,istep_OC
@@ -245,6 +247,8 @@ if (changed) then
 !		pclast =>clast(4)
 !		call show(pclast)
 endif
+if (nclast == 0) return
+
 call UpdateNuclei(changed)
 if (changed) then
 	write(logmsg,*) 'OC left the team: '
@@ -293,6 +297,7 @@ integer :: iclast, i, n
 integer :: kpar = 0
 real, parameter :: interval = 5	! days
 
+call logger('OCsetup')
 nOClist = 4
 allocate(OClist(nOClist))
 do iclast = 1,nOClist
@@ -908,8 +913,8 @@ subroutine InitState	!(state,statep)
 integer :: iclast, indx, k
 type(osteoclast_type), pointer :: pclast
 
-!write(logmsg,*) 'InitState: nclast: ',nclast
-!call logger(logmsg)
+write(logmsg,*) 'InitState: nclast: ',nclast
+call logger(logmsg)
 OClist(1)%status = RESORBING
 clast(nclast) = OClist(1)
 first_OC = .true.
@@ -955,6 +960,7 @@ type(osteoclast_type), pointer :: pclast
 
 call logger('ReinitState')
 if (OC_NV == 0) then
+	call logger('OC_NV = 0')
 	call InitState
 	return
 endif
@@ -971,7 +977,7 @@ enddo
 OC_NV = 4*indx
 allocate(OCstate(OC_NV))
 allocate(OCstatep(OC_NV))
-
+call logger('allocated OCstate')
 indx = 0
 do iclast = 1,nclast
 	pclast => clast(iclast)
@@ -1984,12 +1990,17 @@ type(osteoclast_type), pointer :: pclast
 integer :: iclast, i, site(3), x, z
 real :: r2, d2
 
+call logger('UpdateSurface')
 surface%iclast = 0
 do iclast = 1,nclast
+	write(logmsg,*) 'iclast,nclast: ',iclast,nclast
+	call logger(logmsg)
 	pclast => clast(iclast)
 	if (pclast%status == DEAD) cycle 
 	r2 = pclast%radius**2
 	pclast%site = pclast%cm + 0.5
+	write(logmsg,*) 'r2, site: ',r2,pclast%site
+	call logger(logmsg)
 	do i = 1,pclast%npit
 		d2 = pclast%pit(i)%delta(1)**2 + pclast%pit(i)%delta(3)**2
 		if (d2 > r2) cycle
@@ -2082,7 +2093,7 @@ do kcell = 1,nmono
 			occupancy(site(1),site(2),site(3))%indx = 0
 			mono_cnt = mono_cnt - 1
 			nleft = nleft + 1
-!			write(*,'(a,2i6,2f6.3,i6)') 'monocyte leaves: ',istep,kcell,mono(kcell)%S1P1,mono_cnt
+!			write(*,'(a,2i6,2f6.3,i6)') 'monocyte leaves: ',istep,kcell,mono(kcell)%S1PR1,mono_cnt
 		endif
 	elseif (status >= MOTILE .and. pmono%iclump == 0) then	! interim criterion
 		call MonoJumper(kcell,go,kpar)
@@ -2148,11 +2159,7 @@ f0 = 0
 !	f0 = occupancy(site1(1),site1(2),site1(3))%intensity
 !endif
 
-! TESTING!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-field = .false.
-
 R = par_uni(kpar)
-!call random_number(R)
 if (R <= dirprob(0)) then    ! case of no jump
 	return
 endif
@@ -2163,12 +2170,22 @@ endif
 if (S1P_chemotaxis) then
 	g = S1P_grad(:,site1(1),site1(2),site1(3))
 	gamp = sqrt(dot_product(g,g))	! Magnitude of S1P gradient
-	g = g/gamp
-	call chemo_weights(g,wS1P)		! w(:) now holds the normalized gradient vector components
-	S1Pfactor = S1P_CHEMOLEVEL*min(1.0,gamp/S1P_GRADLIM)*cell%S1P1
+	if (gamp /= 0) then
+		g = g/gamp
+!		if (isnan(g(1)) .or. isnan(g(2)) .or. isnan(g(3))) then
+!			call logger('S1P g is NAN')
+!			write(logmsg,'(a,3i6,3f8.4)') 'site1, g: ',site1,g
+!			call logger(logmsg)
+!			stop
+!		endif
+		call chemo_weights(g,wS1P)		! w(:) now holds the normalized gradient vector components
+		S1Pfactor = S1P_CHEMOLEVEL*min(1.0,gamp/S1P_GRADLIM)*cell%S1PR1
+	else
+		S1Pfactor = 0
+	endif
 !	write(*,*) 'g,gamp: ',g,gamp
 !	write(*,*) 'wS1P: ',wS1P
-!	write(*,*) 'S1P1: ',cell%S1P1
+!	write(*,*) 'S1PR1: ',cell%S1PR1
 endif
 ! Set up weights in the 6 principal axis directions corresponding to CXCL12_grad(:,:,:,:)
 if (CXCL12_chemotaxis .and. initiated) then
@@ -2179,14 +2196,15 @@ if (CXCL12_chemotaxis .and. initiated) then
 		wCXCL12 = 0
 	else
 		g = g/gamp
+!		if (isnan(g(1)) .or. isnan(g(2)) .or. isnan(g(3))) then
+!			call logger('CXCL12 g is NAN')
+!			write(logmsg,'(a,3i6,3f8.4)') 'site1, g: ',site1,g
+!			call logger(logmsg)
+!			stop
+!		endif
 		call chemo_weights(g,wCXCL12)		! w(:) now holds the normalized gradient vector components
 	!	CXCL12factor = CXCL12_CHEMOLEVEL*min(1.0,gamp/CXCL12_GRADLIM)*cell%RANKSIGNAL
 		CXCL12factor = CXCL12_CHEMOLEVEL*min(1.0,gamp/CXCL12_GRADLIM)
-		if (istep >= 5760 .and. kcell == 300) then
-			write(nflog,*) 'g,gamp: ',g,gamp,CXCL12_GRADLIM
-			write(nflog,*) 'wCXCL12: ',wCXCL12
-			write(nflog,*) 'CXCL12factor: ',CXCL12factor
-		endif
 	endif
 else
 	CXCL12factor = 0
@@ -2213,23 +2231,44 @@ do irel = 1,nreldir
 	free = free_site(site2,region,kcell2)
 	if (free) then
 		p(irel) = motility_factor*dirprob(irel)
+		if (isnan(p(irel))) then
+			call logger('prel is NAN: motility_factor*dirprob')
+			stop
+		endif
 		if (field) then
 			! The probability of a jump is modified by the relative signal intensities of the two sites
 			! This is a very crude interim treatment
 !			f = occupancy(site2(1),site2(2),site2(3))%intensity
+			f = 0
 			if (f >= SIGNAL_THRESHOLD) then
 				p(irel) = max(0.0,f-f0)
 			else
 				p(irel) = max(0.0,p(irel) + SIGNAL_AFACTOR*(f-f0))
 			endif
+			if (isnan(p(irel))) then
+				call logger('prel is NAN: f')
+				stop
+			endif
 		endif
 		if (S1P_chemotaxis) then
 			! the increment to the probability depends on S1Pfactor and wS1P(dir1)
 			p(irel) = p(irel) + S1Pfactor*wS1P(dir1)
+!			if (isnan(p(irel))) then
+!				call logger('prel is NAN: S1Pfactor*wS1P')
+!				write(logmsg,*) irel,S1Pfactor,dir1,wS1P(dir1),g
+!				call logger(logmsg)
+!				stop
+!			endif
 		endif
 		if (CXCL12_chemotaxis) then
 			! the increment to the probability depends on CXCL12factor and wCXCL12(dir1)
 			p(irel) = p(irel) + CXCL12factor*wCXCL12(dir1)
+!			if (isnan(p(irel))) then
+!				call logger('prel is NAN: CXCL12factor*wCXCL12')
+!				write(logmsg,*) irel,CXCL12factor,dir1,wCXCL12(dir1)
+!				call logger(logmsg)
+!				stop
+!			endif
 		endif
 		jmpdir(irel) = dir1
 		psum = psum + p(irel)
@@ -2243,10 +2282,6 @@ do irel = 1,nreldir
 enddo
 
 if (psum == 0) then
-!	cell%lastdir = random_int(1,6,kpar)
-!	if (field) then
-!		write(*,*) 'clustering: ',kcell
-!	endif
 	write(logmsg,*) 'psum = 0: ',cell%ID
 	call logger(logmsg)
 	return
@@ -2254,6 +2289,12 @@ else
     go = .true.
 endif
 
+!if (isnan(psum)) then
+!	call logger('psum is NAN in MonoJumper')
+!	write(logmsg,'(30f8.4)') p(1:nreldir)
+!	call logger(logmsg)
+!	stop
+!endif
 ! Now choose a direction on the basis of these probs p()
 R = par_uni(kpar)
 !call random_number(R)
@@ -2269,6 +2310,7 @@ if (irel > nreldir) then
 	irel = nreldir
 endif
 site2 = savesite2(:,irel)
+!write(nflog,*) psum,R,irel,site2
 if (irel <= nreldir) then
 	dir1 = reldir(lastdir1,irel)
 	if (dir1 == 0) then
@@ -2310,6 +2352,11 @@ if (g(3) < 0) then		! -z
 	w(13) = -g(3)		! reldir26(5,1)
 else					! +z
 	w(15) = g(3)		! reldir26(6,1)
+	if (isnan(w(15))) then
+		write(logmsg,*) 'chemo_weights: w(15): ',w(15),g
+		call logger(logmsg)
+		stop
+	endif
 endif
 end subroutine
 
@@ -2508,15 +2555,15 @@ real :: tnow
 
 cell => mono(kcell)
 crossToBlood = .false.
-if (cell%S1P1 > S1P1_THRESHOLD) then
-	prob = CROSS_PROB*(cell%S1P1 - S1P1_THRESHOLD)/(1 - S1P1_THRESHOLD)
+if (cell%S1PR1 > S1PR1_THRESHOLD) then
+	prob = CROSS_PROB*(cell%S1PR1 - S1PR1_THRESHOLD)/(1 - S1PR1_THRESHOLD)
 	R = par_uni(kpar)
 	if (R < prob) then
 		tnow = istep*DELTA_T
 		crossToBlood = .true.
 		cell%status = CROSSING
 		cell%exittime = tnow + CROSSING_TIME
-!		write(logmsg,*) 'S1P1, prob, R: ',cell%S1P1,prob,R,cell%exittime
+!		write(logmsg,*) 'S1PR1, prob, R: ',cell%S1PR1,prob,R,cell%exittime
 !		call logger(logmsg)
 	endif
 endif

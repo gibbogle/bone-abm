@@ -24,22 +24,18 @@
 
 LOG_USE();
 
-Params *parm;	// I don't believe this is the right way, but it works
+Params *parm;	// I don't believe this is the best way, but it works
 int showingVTK;
 int VTKbuffer[100];
 int mono_list[5*MAX_MONO];
 int nmono_list;
 float cap_list[7*MAX_CAP];
-//float cap_list[];
 int ncap_list;
 float pit_list[4*MAX_PIT];
-//float pit_list[];
 int npit_list;
 float clast_list[7*MAX_CLAST];
-//float clast_list[];
 int nclast_list;
 int blast_list[5*MAX_BLAST];
-//int blast_list[];
 int nblast_list;
 QMutex mutex1, mutex2;
 
@@ -94,14 +90,7 @@ MainWindow::MainWindow(QWidget *parent)
 	for (int i=0; i<Plot::ncmax; i++) {
 		graphResultSet[i] = 0;
 	}
-    stopfile = "stop_dll";
-    pausefile = "pause_dll";
     cellfile = "cell_pos.dat";
-#ifdef __GFORTRAN_DLL__
-	dll_path = "libbone.dll";
-#else
-	dll_path = "bone.dll";
-#endif
 	vtkfile = "basecase.pos";
 	savepos_start = 0;
 	ntimes = 0;
@@ -114,11 +103,6 @@ MainWindow::MainWindow(QWidget *parent)
 	LOG_QMSG(cellfile_info.fileName());
 	if (QFile::exists(cellfile))
 		QFile::remove(cellfile);
-	if (QFile::exists(stopfile))
-		QFile::remove(stopfile);
-	if (QFile::exists(pausefile))
-		QFile::remove(pausefile);
-
 	param_to_sliderIndex = NULL;
 	defaultInputFile = "basecase.inp";
 	inputFile = defaultInputFile;
@@ -127,19 +111,12 @@ MainWindow::MainWindow(QWidget *parent)
 	nParams = parm->nParams;
 	createLists();
 	createActions(); 
-//	drawDistPlots();
 	loadParams();
 	writeout();
     timer = new QTimer(this);
-//	vtk = new MyVTK(page_VTK);
 	vtk = new MyVTK(mdiArea_VTK);
 	vtk->init();
 	tabs->setCurrentIndex(0);
-	if (DISABLE_TABS) {
-//		tab_monocyte->setEnabled(false);
-//		tab_osteoclast->setEnabled(false);
-//		tab_signal->setEnabled(false);
-	}
 	goToInputs();
 }
 
@@ -174,11 +151,7 @@ void MainWindow::createActions()
 		}
 	}
 	// Graph menu
-//    connect(action_add_graph, SIGNAL(triggered()), this, SLOT(addGraph()));
-//    connect(action_remove_graph, SIGNAL(triggered()), this, SLOT(removeGraph()));
-//    connect(action_remove_all, SIGNAL(triggered()), this, SLOT(removeAllGraphs()));
     connect(action_save_snapshot, SIGNAL(triggered()), this, SLOT(saveSnapshot()));
-
 //	connect((QObject *)lcdNumber_hour, SIGNAL(hourUpdate(double)), this, SLOT(Display(double)));
 	cbox_fastdisplay->setChecked(true);
 }
@@ -222,7 +195,6 @@ void MainWindow::createLists()
         QString wname = w->objectName();
 		if (wname.startsWith("line_")) {
 			connect(w, SIGNAL(textChanged(QString)), this, SLOT(changeParam()));
-//			connect(w, SIGNAL(textChanged(QString)), this, SLOT(redrawDistPlot()));
 		}
 		if (wname.startsWith("spin_")) {
 			connect(w, SIGNAL(valueChanged(int)), this, SLOT(changeParam()));
@@ -237,19 +209,6 @@ void MainWindow::createLists()
 			connect(w, SIGNAL(toggled(bool)), this, SLOT(changeParam()));
 		}
 	}
-
-//	QwtPlot *qp;
-
-//	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_TC_AVIDITY");
-//	distplot_list[0] = qp;
-//	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DIVIDE1");
-//	distplot_list[1] = qp;
-//	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DIVIDE2");
-//	distplot_list[1] = qp;
-//	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DC_ANTIGEN");
-//	distplot_list[2] = qp;
-//	qp = (QwtPlot *)qFindChild<QObject *>(this, "qwtPlot_DC_LIFETIME");
-//	distplot_list[2] = qp;
 }
 
 //--------------------------------------------------------------------------------------------------------
@@ -267,31 +226,6 @@ void MainWindow:: drawDistPlots()
 		qp = distplot_list[j];
         QString name = qp->objectName();
 		LOG_QMSG(name);
-		/*
-		if (j == 0) {
-			qp->setTitle("Receptor Avidity");
-			median_qstr = line_TC_AVIDITY_MEDIAN->text();
-			shape_qstr = line_TC_AVIDITY_SHAPE->text();
-		} else if (j == 1) {
-			qp->setTitle("First division time (hrs)");
-			median_qstr = line_DIVIDE1_MEDIAN->text();
-			shape_qstr = line_DIVIDE1_SHAPE->text();
-
-		} else if (j == 2) {
-			qp->setTitle("Later division time (hrs)");
-			median_qstr = line_DIVIDE2_MEDIAN->text();
-			shape_qstr = line_DIVIDE2_SHAPE->text();
-		} else if (j == 2) {
-			qp->setTitle("DC antigen density");
-			median_qstr = line_DC_ANTIGEN_MEDIAN->text();
-			shape_qstr = line_DC_ANTIGEN_SHAPE->text();
-
-		} else if (j == 2) {
-			qp->setTitle("Cell lifetime (days)");
-			median_qstr = line_DC_LIFETIME_MEDIAN->text();
-			shape_qstr = line_DC_LIFETIME_SHAPE->text();
-		}
-		*/
 		LOG_MSG("drawDistPlots (a)")
 		median = median_qstr.toDouble();
 		shape = shape_qstr.toDouble();
@@ -342,7 +276,6 @@ void MainWindow::loadParams()
 		if (qsname.startsWith("line_") || qsname.startsWith("spin_") 
 			|| qsname.startsWith("comb_") || qsname.startsWith("cbox_")
 			|| qsname.startsWith("rbut_")) {
-//			LOG_QMSG(qsname);
 			QString wtag = qsname.mid(5);
 			int rbutton_case = 0;
 			if (qsname.startsWith("rbut_")) {
@@ -361,13 +294,11 @@ void MainWindow::loadParams()
 					if (qsname.startsWith("line_")) {
                         double val = p.value;
 						QString val_str = QString::number(val);
-//						LOG_QMSG(val_str);
 						QLineEdit *w_l = (QLineEdit *)w;
                         w_l->setText(val_str);
 						if (USE_RANGES) {
 							// Set max and min values. If min=max=0, there're no restrictions.
 							if (!(vmin == 0 && vmax == 0)) {
-//	                            QValidator *aValidator = new QDoubleValidator(vmin, vmax, 10, w_l);
 								QValidator *aValidator = new MyDoubleValidator(vmin, vmax, 8, w_l);
 								w_l->setValidator(aValidator);
 							}
@@ -387,6 +318,7 @@ void MainWindow::loadParams()
                         int val = p.value - 1;	//0-based indexing
 						QComboBox *w_c = (QComboBox *)w;
                         w_c->setCurrentIndex(val);
+                        /*
 					} else if (qsname.startsWith("cbox_")) {
 						QCheckBox *w_cb = (QCheckBox *)w;
 						bool in_vitro = qsname.contains("IN_VITRO");
@@ -419,6 +351,7 @@ void MainWindow::loadParams()
 							if (use_traffic)
 								disableUseTraffic();
 						}
+                        */
 					} else if (qsname.startsWith("rbut_")) {
 						QRadioButton *w_rb = (QRadioButton *)w;
 						if (p.value == rbutton_case) {
@@ -501,7 +434,6 @@ void MainWindow::loadParams()
                         s->setMinimum(0);
                         s->setMaximum(splus->nTicks());
                         s->setSliderPosition(ival);
- //                       sliderParam.append(w);	// associates jth slider s with w and ptag
 						sliderParam[j] = w;
                         connect(s, SIGNAL(valueChanged(int)), this, SLOT(updateSliderBox())); //sliderReleased
                         
@@ -509,11 +441,6 @@ void MainWindow::loadParams()
 					}                  
                     found = true;
                     break;
-
-//					if (!found) {
-//						sprintf(msg,"%s was not found in the parameter list",(wtag.toStdString()).data());
-//						LOG_MSG(msg);
-//					}
 				}
 			}
 		}
@@ -529,9 +456,6 @@ QString MainWindow::parse_rbutton(QString wtag, int *rbutton_case)
 	QString suffix = wtag.mid(j+1);
 	// the prefix becomes wtag, the suffix becomes rbutton_case, an integer 0,1,2,...
 	wtag = wtag.mid(0,j);
-//	LOG_QMSG("RadioButton");
-//	LOG_QMSG(wtag);
-//	LOG_QMSG(suffix);
 	bool ok;
 	*rbutton_case = suffix.toInt(&ok);
 	return wtag;
@@ -564,7 +488,6 @@ void MainWindow::reloadParams()
 					if (qsname.startsWith("line_")) {
                         double val = p.value;
 						QString val_str = QString::number(val);
-//						LOG_QMSG(val_str);
 						QLineEdit *w_l = (QLineEdit *)w;
                         w_l->setText(val_str);
 					} else if (qsname.startsWith("spin_")) {
@@ -578,6 +501,7 @@ void MainWindow::reloadParams()
                         int val = p.value - 1;	//0-based indexing
 						QComboBox *w_c = (QComboBox *)w;
                         w_c->setCurrentIndex(val);
+                        /*
 					} else if (qsname.startsWith("cbox_")) {
 						QCheckBox *w_cb = (QCheckBox *)w;
 						bool in_vitro = qsname.contains("IN_VITRO");
@@ -610,6 +534,7 @@ void MainWindow::reloadParams()
 							if (use_traffic)
 								disableUseTraffic();
 						}
+                        */
 					} else if (qsname.startsWith("rbut_")) {
 						QRadioButton *w_rb = (QRadioButton *)w;
 						if (p.value == rbutton_case) {
@@ -714,6 +639,7 @@ void MainWindow::readInputFile()
 }
 
 //--------------------------------------------------------------------------------------------------------
+// NOT USED
 //--------------------------------------------------------------------------------------------------------
 void MainWindow::loadResultFile()
 {
@@ -995,8 +921,6 @@ void MainWindow::runServer()
 			vtk->playon();
 		} else {
 			exthread->unpause();
-			if (QFile::exists(pausefile))
-				QFile::remove(pausefile);
 		}
         action_run->setEnabled(false);
         action_pause->setEnabled(true);
@@ -1055,16 +979,10 @@ void MainWindow::runServer()
 
 		if (QFile::exists(cellfile))
 			QFile::remove(cellfile);
-		if (QFile::exists(stopfile))
-			QFile::remove(stopfile);
-
 
 		// Port 5001
 		sthread1 = new SocketHandler(CPORT1);
 		connect(sthread1, SIGNAL(sh_output(QString)), this, SLOT(outputData(QString)));
-//		connect(sthread1, SIGNAL(sh_connected()), this, SLOT(preConnection()));
-//		connect(sthread1, SIGNAL(sh_disconnected()), this, SLOT(postConnection()));
-	//	connect(sthread0, SIGNAL(sh_disconnected()), this, SLOT(postConnection()));
 		sthread1->start();
 	}
 
@@ -1073,7 +991,6 @@ void MainWindow::runServer()
 	connect(sthread0, SIGNAL(sh_output(QString)), box_outputLog, SLOT(append(QString))); //self.outputLog)
 	connect(sthread0, SIGNAL(sh_connected()), this, SLOT(preConnection()));
 	connect(sthread0, SIGNAL(sh_disconnected()), this, SLOT(postConnection()));
-//    connect(sthread0, SIGNAL(sh_error(QString)), this, SLOT(errorPopup(QString)));	// doesn't work
 	sthread0->start();
 	vtk->cleanup();
 	Sleep(100);
@@ -1089,9 +1006,13 @@ void MainWindow::runServer()
 			nt_vtk = p.value;
 		}
 	}
-//	firstVTK = true;
-	started = true;
-	exthread = new ExecThread(inputFile,dll_path);
+
+    started = true;
+    if (rbut_RUNCASE_0->isChecked())
+        runcase = MONO_CASE;
+    else
+        runcase = OC_CASE;
+    exthread = new ExecThread(runcase,inputFile);
 	connect(exthread, SIGNAL(display()), this, SLOT(displayScene()));
 	connect(exthread, SIGNAL(summary()), this, SLOT(showSummary()));
 	connect(exthread, SIGNAL(initialized()), this, SLOT(setInitialized()));
@@ -1127,7 +1048,6 @@ void MainWindow::preConnection()
 	QString casename = QFileInfo(inputFile).baseName();
 	vtkfile = casename + ".pos";
 	newR->casename = casename;
-//	LOG_QMSG(newR->casename);
 	int nsteps = int(hours+1.5);
 	sprintf(msg,"preConnection: nsteps: %d",nsteps);
 	LOG_MSG(msg);
@@ -1142,7 +1062,6 @@ void MainWindow::preConnection()
 	newR->teffgen = new double[nsteps];
 	LOG_MSG("preconnection: Allocated result set arrays");
 
-	step = -1;
 	newR->tnow[0] = 0;	// These are not the right initial values
 	newR->nDC[0] = 0;
 	newR->nborn[0] = 0;
@@ -1152,22 +1071,21 @@ void MainWindow::preConnection()
 	newR->ndead[0] = 0;
 	newR->teffgen[0] = 0;
 
-	// Initialize graphs
+    step = -1;
+    // Initialize graphs
 	initializeGraphs(newR);
     posdata = false;
 	if (cbox_savepos->isChecked()) {
-//		savepos_start = 0;
-//		setSavePosStart();
 		if (QFile::exists(vtkfile))
 			QFile::remove(vtkfile);
 	}
 	LOG_MSG("preconnection: done");
 }
 
+//--------------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------------
 void MainWindow::errorPopup(QString errmsg)
 {
-//	QMessageBox::warning(this, tr("DLL error"), tr((errmsg.toStdString()).data()));
-//	QMessageBox::warning(this, tr("DLL error"), tr("Got an error message"));
 	LOG_QMSG(errmsg);
 	QMessageBox msgBox;
 	msgBox.setText(errmsg);
@@ -1196,49 +1114,6 @@ void MainWindow::initializeGraphs(RESULT_SET *R)
 	graph_nborn->show();
 	graph_nborn->setAxisScale(QwtPlot::xBottom, 0, R->nsteps, 0);
 
-	/*
-    graph_ncog = new Plot("ncog",R->casename);
-    graph_ncog->setTitle("Cognate T Cells");
-	graph_ncog->setAxisTitle(QwtPlot::yLeft, "No. of Cells");
-
-	if (!show_outputdata) {
-		graph_ncogseed = new Plot("ncogseed",R->casename);
-		graph_ncogseed->setTitle("Seed Cognate Cells");
-		graph_ncogseed->setAxisTitle(QwtPlot::yLeft, "No. of Cells");
-	}
-
-	graph_nDC = new Plot("nDC",R->casename);
-    graph_nDC->setTitle("Antigen Presenting Cells");
-	graph_nDC->setAxisTitle(QwtPlot::yLeft, "No. of Cells");
-
-    graph_teffgen = new Plot("teffgen",R->casename);
-    graph_teffgen->setTitle("Efferent Cognate Cells");
-	graph_teffgen->setAxisTitle(QwtPlot::yLeft, "No. of Cells");    
-	nGraphCases = 1;
-	graphResultSet[0] = R;
-
-	mdiArea_plots->addSubWindow(graph_ncog);
-	mdiArea_plots->addSubWindow(graph_nDC);
-	mdiArea_plots->addSubWindow(graph_teffgen);
-    if (show_outputdata) 
-		mdiArea_plots->addSubWindow(box_outputData);
-	else
-		mdiArea_plots->addSubWindow(graph_ncogseed);
-
-    graph_ncog->show();
-    graph_nDC->show();
-    graph_teffgen->show();
-    if (show_outputdata) 
-	    box_outputData->show();
-	else
-		graph_ncogseed->show();
-
-    graph_ncog->setAxisScale(QwtPlot::xBottom, 0, R->nsteps, 0);
-    graph_nDC->setAxisScale(QwtPlot::xBottom, 0, R->nsteps, 0);
-    graph_teffgen->setAxisScale(QwtPlot::xBottom, 0, R->nsteps, 0);
-	if (!show_outputdata)
-	    graph_ncogseed->setAxisScale(QwtPlot::xBottom, 0, R->nsteps, 0);
-	*/
 	mdiArea_plots->tileSubWindows();
 }
 
@@ -1254,45 +1129,18 @@ void MainWindow::drawGraphs()
 			graph_ntot->redraw(R->tnow, R->ntot, R->nsteps, R->casename);
 			ntot_max = max(ntot_max,R->max_ntot);
 			nborn_max = max(nborn_max,R->max_nborn);
-			/*
-			graph_act->redraw(R->tnow, R->act, R->nsteps, R->casename);
-			graph_nDC->redraw(R->tnow, R->nDC, R->nsteps, R->casename);
-			graph_teffgen->redraw(R->tnow, R->teffgen, R->nsteps, R->casename);
-			graph_ncog->redraw(R->tnow, R->ncog, R->nsteps, R->casename);
-			if (!show_outputdata)
-				graph_ncogseed->redraw(R->tnow, R->ncogseed, R->nsteps, R->casename);
-
-			nDC_max = max(nDC_max,R->max_nDC);
-			teffgen_max = max(teffgen_max,R->max_teffgen);
-			ncog_max = max(ncog_max,R->max_ncog);
-			ncogseed_max = max(ncogseed_max,R->max_ncogseed);
-			*/
 		}
 	}
 	graph_ntot->setYScale(ntot_max);
 	graph_ntot->replot();
 	graph_nborn->setYScale(nborn_max);
 	graph_nborn->replot();
-	/*
-	graph_ncog->setYScale(ncog_max);
-	graph_nDC->setYScale(nDC_max);
-	graph_teffgen->setYScale(teffgen_max);
-	if (!show_outputdata)
-		graph_ncogseed->setYScale(ncogseed_max);
-	graph_ncog->replot();
-	graph_nDC->replot();
-	graph_teffgen->replot();
-	if (!show_outputdata)
-		graph_ncogseed->replot();
-	*/
 }
 
 //--------------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------------
 void MainWindow::displayScene()
 {
-//	LOG_MSG("displayScene");
-
 	started = true;
 	mutex2.lock();
 	bool fast = cbox_fastdisplay->isChecked();
@@ -1335,7 +1183,6 @@ void MainWindow::showSummary()
 //--------------------------------------------------------------------------------------------------------
 void MainWindow::outputData(QString qdata)
 {
-//	if (qdata.compare("VTK") == 0) {
 	if (qdata.startsWith("VTK")) {
 		qdata.replace(0,3,"");
 		bool savepos = cbox_savepos->isChecked();
@@ -1390,22 +1237,6 @@ void MainWindow::outputData(QString qdata)
 	graph_ntot->redraw(newR->tnow, newR->ntot, step+1, casename);
 	newR->nborn[step] = data[2];
 	graph_nborn->redraw(newR->tnow, newR->nborn, step+1, casename);
-
-	/*
-	newR->nDC[step] = data[2];
-    newR->ncogseed[step] = data[5];
-    newR->ncog[step] = data[6];
-    newR->ndead[step] = data[7];
-    newR->teffgen[step] = data[8];
-	
-    graph_nDC->redraw(newR->tnow, newR->nDC, step+1, casename);
-    graph_teffgen->redraw(newR->tnow, newR->teffgen, step+1, casename);
-//    graph_ncog->redraw2(tnow, ncogseed, ncog, step+1);	
-//    graph_ncog->redraw2(newR->tnow, newR->ncogseed, newR->tnow, newR->ncog, step+1, step+1);	
-    graph_ncog->redraw(newR->tnow, newR->ncog, step+1, casename);	
-	if (!show_outputdata)
-		graph_ncogseed->redraw(newR->tnow, newR->ncogseed, step+1, casename);	
-	*/
 }
 
 //--------------------------------------------------------------------------------------------------------
@@ -1423,21 +1254,6 @@ void MainWindow::postConnection()
 		}
 	}
 
-	/*
-	sthread0->socket->close();
-	sthread0->tcpServer->close();
-	sthread0->quit();
-	sthread0->wait(100);
-	if (sthread0->isRunning()) {
-		LOG_MSG("sthread0 did not terminate");
-	}
-	*/
-/*
-	exthread->wait(1000);
-	if (exthread->isRunning()) {
-		LOG_MSG("exthread did not terminate");
-	}
-*/
     action_run->setEnabled(true);
     action_pause->setEnabled(false);
     action_stop->setEnabled(false);
@@ -1455,8 +1271,6 @@ void MainWindow::postConnection()
 			result_list.removeAt(i);
 		}
 	}
-//	LOG_MSG("render_cells");
-//	vtk->renderCells(true,true);		// for the case that the VTK page is viewed only after the execution is complete
     posdata = false;
 	LOG_MSG("completed postConnection");
 }
@@ -1475,9 +1289,6 @@ void MainWindow::pauseServer()
 		vtk->pause();
 		LOG_MSG("Paused the player");
 	} else {
-		QFile file(pausefile);
-		file.open(QIODevice::WriteOnly);
-		file.close();
 		exthread->pause();
 		LOG_MSG("Paused the ABM program.");
 	}
@@ -1505,22 +1316,11 @@ void MainWindow::stopServer()
 		LOG_MSG("exthread->stop");
 		exthread->stop();
 		LOG_MSG("exthread->stop return");
-//		QFile file(stopfile);
-//		file.open(QIODevice::WriteOnly);
-//		file.close();
 		sleep(1);		// delay for Fortran to wrap up (does this help?)
 		if (use_CPORT1) {
 			sthread1->quit();
 			sthread1->terminate();
 		}
-//		LOG_MSG("exthread->quit");
-//		exthread->quit();
-//		LOG_MSG("exthread->terminate");
-//		exthread->terminate();
-
-//		sthread0->quit();
-//		sthread0->terminate();
-//	    postConnection();
 		sthread0->stop();
 		newR->nsteps = step+1;
 	}
@@ -1602,7 +1402,7 @@ void MainWindow::addGraph()
 
 	for (int k=0; k<result_list.size(); k++) {
 		if (casename.compare(result_list[k]->casename) == 0) {
-			R = result_list[k];		// OK after doing a run or a load, followed by another load
+            R = result_list[k];		// OK after doing a run or a load, followed by another load
 			break;
 		}
 	}
@@ -1760,39 +1560,9 @@ void MainWindow::changeParam()
 				}
 			}
 		} else if (wname.contains("cbox_")) {
-			QCheckBox *checkBox = (QCheckBox *)w;
-			bool in_vitro = wname.contains("IN_VITRO");
-			int v;
-			if (checkBox->isChecked()) {
-				v = 1;
-				if (in_vitro) 
-					enableInVitro();
-			} else {
-				v = 0;
-				if (in_vitro) 
-					disableInVitro();
-			}
-			bool dc_injection = wname.contains("DC_INJECTION");
-			if (checkBox->isChecked()) {
-				v = 1;
-				if (dc_injection)
-					enableDCInjection();
-			} else {
-				v = 0;
-				if (dc_injection)
-					disableDCInjection();
-			}
-			bool use_traffic = wname.contains("USE_TRAFFIC");
-			if (checkBox->isChecked()) {
-				v = 1;
-				if (use_traffic)
-					enableUseTraffic();
-			} else {
-				v = 0;
-				if (use_traffic)
-					disableUseTraffic();
-			}
 
+			QCheckBox *checkBox = (QCheckBox *)w;
+			int v;
 			QString wtag = wname.mid(5);
 			for (int k=0; k<parm->nParams; k++) {
 				PARAM_SET p = parm->get_param(k);
@@ -1824,97 +1594,6 @@ void MainWindow::changeParam()
 	}
 }
 
-//--------------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------------
-void MainWindow::enableInVitro()
-{
-	for (int i=0; i<lineEdit_list.length(); i++) {
-		QLineEdit *w = lineEdit_list[i];
-		QString wname = w->objectName();
-		if (wname.contains("line_IV_") || wname.contains("cbox_IV_SHOW_NONCOGNATE")) {
-			w->setEnabled(true);
-		}
-	}
-	for (int i=0; i<checkbox_list.length(); i++) {
-		QCheckBox *w = checkbox_list[i];
-		QString wname = w->objectName();
-		if (wname.contains("cbox_IV_SHOW_NONCOGNATE")) {
-			w->setEnabled(true);
-		}
-	}
-}
-
-//--------------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------------
-void MainWindow::disableInVitro()
-{
-	for (int i=0; i<lineEdit_list.length(); i++) {
-		QLineEdit *w = lineEdit_list[i];
-		QString wname = w->objectName();
-		if (wname.contains("line_IV_") || wname.contains("cbox_IV_SHOW_NONCOGNATE")) {
-			w->setEnabled(false);
-		}
-	}
-	for (int i=0; i<checkbox_list.length(); i++) {
-		QCheckBox *w = checkbox_list[i];
-		QString wname = w->objectName();
-		if (wname.contains("cbox_IV_SHOW_NONCOGNATE")) {
-			w->setEnabled(false);
-		}
-	}
-}
-
-//--------------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------------
-void MainWindow::enableDCInjection()
-{
-	for (int i=0; i<lineEdit_list.length(); i++) {
-		QLineEdit *w = lineEdit_list[i];
-		QString wname = w->objectName();
-		if (wname.contains("line_T_DC_INJECTION")) {	// || wname.contains("cbox_IV_SHOW_NONCOGNATE")) {
-			w->setEnabled(true);
-		}
-	}
-}
-
-//--------------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------------
-void MainWindow::disableDCInjection()
-{
-	for (int i=0; i<lineEdit_list.length(); i++) {
-		QLineEdit *w = lineEdit_list[i];
-		QString wname = w->objectName();
-		if (wname.contains("line_T_DC_INJECTION")) {	//|| wname.contains("cbox_IV_SHOW_NONCOGNATE")) {
-			w->setEnabled(false);
-		}
-	}
-}
-
-//--------------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------------
-void MainWindow::enableUseTraffic()
-{
-	for (int i=0; i<lineEdit_list.length(); i++) {
-		QLineEdit *w = lineEdit_list[i];
-		QString wname = w->objectName();
-		if (wname.contains("line_RESIDENCE_TIME")) {	// || wname.contains("cbox_IV_SHOW_NONCOGNATE")) {
-			w->setEnabled(true);
-		}
-	}
-}
-
-//--------------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------------
-void MainWindow::disableUseTraffic()
-{
-	for (int i=0; i<lineEdit_list.length(); i++) {
-		QLineEdit *w = lineEdit_list[i];
-		QString wname = w->objectName();
-		if (wname.contains("line_RESIDENCE_TIME")) {	//|| wname.contains("cbox_IV_SHOW_NONCOGNATE")) {
-			w->setEnabled(false);
-		}
-	}
-}
 //--------------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------------
 void MainWindow::redrawDistPlot()
@@ -2158,193 +1837,3 @@ int SliderPlus::wIndex() {
 int SliderPlus::nTicks() {
     return n;
 }
-
-
-/*
-//==================================================================================================================
-// Code below here is not used
-//----------------------------
-void MainWindow::closeEvent(QCloseEvent *event)
-{
-    event->accept();
-
-    if (maybeSave()) {
-        writeSettings();
-        event->accept();
-    } else {
-        event->ignore();
-    }
-
-}
-
-void MainWindow::newFile()
-{
-    if (maybeSave()) {
-        textEdit->clear();
-        setCurrentFile("");
-    }
-}
-
-void MainWindow::open()
-{
-    if (maybeSave()) {
-        QString fileName = QFileDialog::getOpenFileName(this);
-        if (!fileName.isEmpty())
-            loadFile(fileName);
-    }
-}
-
-void MainWindow::about()
-{
-   QMessageBox::about(this, tr("About Application"),
-            tr("The <b>Application</b> example demonstrates how to "
-               "write modern GUI applications using Qt, with a menu bar, "
-               "toolbars, and a status bar."));
-}
-
-void MainWindow::documentWasModified()
-{
-    setWindowModified(textEdit->document()->isModified());
-}
-
-void MainWindow::createMenus()
-{
-    fileMenu = menuBar()->addMenu(tr("&File"));
-    fileMenu->addAction(newAct);
-    fileMenu->addAction(openAct);
-    fileMenu->addAction(saveAct);
-    fileMenu->addAction(saveAsAct);
-    fileMenu->addSeparator();
-    fileMenu->addAction(exitAct);
-
-    editMenu = menuBar()->addMenu(tr("&Edit"));
-    editMenu->addAction(cutAct);
-    editMenu->addAction(copyAct);
-    editMenu->addAction(pasteAct);
-
-    menuBar()->addSeparator();
-
-    helpMenu = menuBar()->addMenu(tr("&Help"));
-    helpMenu->addAction(aboutAct);
-    helpMenu->addAction(aboutQtAct);
-}
-
-void MainWindow::createToolBars()
-{
-    fileToolBar = addToolBar(tr("File"));
-    fileToolBar->addAction(newAct);
-    fileToolBar->addAction(openAct);
-    fileToolBar->addAction(saveAct);
-
-    editToolBar = addToolBar(tr("Edit"));
-    editToolBar->addAction(cutAct);
-    editToolBar->addAction(copyAct);
-    editToolBar->addAction(pasteAct);
-}
-
-void MainWindow::createStatusBar()
-{
-    statusBar()->showMessage(tr("Ready"));
-}
-
-void MainWindow::readSettings()
-{
-    QSettings settings("Trolltech", "Application Example");
-    QPoint pos = settings.value("pos", QPoint(200, 200)).toPoint();
-    QSize size = settings.value("size", QSize(400, 400)).toSize();
-    resize(size);
-    move(pos);
-}
-
-void MainWindow::writeSettings()
-{
-    QSettings settings("Trolltech", "Application Example");
-    settings.setValue("pos", pos());
-    settings.setValue("size", size());
-}
-
-bool MainWindow::maybeSave()
-{
-    if (textEdit->document()->isModified()) {
-        QMessageBox::StandardButton ret;
-        ret = QMessageBox::warning(this, tr("Application"),
-                     tr("The document has been modified.\n"
-                        "Do you want to save your changes?"),
-                     QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
-        if (ret == QMessageBox::Save)
-            return save();
-        else if (ret == QMessageBox::Cancel)
-            return false;
-    }
-    return true;
-}
-
-void MainWindow::loadFile(const QString &fileName)
-{
-    QFile file(fileName);
-    if (!file.open(QFile::ReadOnly | QFile::Text)) {
-        QMessageBox::warning(this, tr("Application"),
-                             tr("Cannot read file %1:\n%2.")
-                             .arg(fileName)
-                             .arg(file.errorString()));
-        return;
-    }
-
-    QTextStream in(&file);
-//#ifndef QT_NO_CURSOR
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-//#endif
-    textEdit->setPlainText(in.readAll());
-//#ifndef QT_NO_CURSOR
-    QApplication::restoreOverrideCursor();
-//#endif
-
-    setCurrentFile(fileName);
-    statusBar()->showMessage(tr("File loaded"), 2000);
-}
-
-bool MainWindow::saveFile(const QString &fileName)
-{
-    QFile file(fileName);
-    if (!file.open(QFile::WriteOnly | QFile::Text)) {
-        QMessageBox::warning(this, tr("Application"),
-                             tr("Cannot write file %1:\n%2.")
-                             .arg(fileName)
-                             .arg(file.errorString()));
-        return false;
-    }
-
-    QTextStream out(&file);
-//#ifndef QT_NO_CURSOR
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-//#endif
-	QString text = "This is a test string";
-	text += "\n";
-    out << text;
-	text = "This is another test string";
-	text += "\n";
-    out << text;
-//#ifndef QT_NO_CURSOR
-    QApplication::restoreOverrideCursor();
-//#endif
-
-    return true;
-}
-
-void MainWindow::setCurrentFile(const QString &fileName)
-{
-    curFile = fileName;
-    textEdit->document()->setModified(false);
-    setWindowModified(false);
-
-    QString shownName = curFile;
-    if (curFile.isEmpty())
-        shownName = "untitled.txt";
-    setWindowFilePath(shownName);
-}
-
-QString MainWindow::strippedName(const QString &fullFileName)
-{
-    return QFileInfo(fullFileName).fileName();
-}
-*/

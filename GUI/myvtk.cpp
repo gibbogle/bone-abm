@@ -96,11 +96,8 @@ MyVTK::MyVTK(QWidget *page)
     renWin = qvtkWidget->GetRenderWindow();
     renWin->AddRenderer(ren);
 	ren->SetBackground(backgroundColor);
-//	ren->SetBackground(0.1, 0.2, 0.4);		// backgroundColor
 	ren->ResetCamera();
 	iren = qvtkWidget->GetInteractor();
-//	iren->Initialize();
-//	ren->RemoveAllViewProps();
 
 	vtkSmartPointer<MouseInteractorStyle4> style =
 	  vtkSmartPointer<MouseInteractorStyle4>::New();
@@ -147,30 +144,11 @@ MyVTK::MyVTK(QWidget *page)
 	//Create the square
 	// Setup points
 	vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
-//	vtkSmartPointer<vtkCellArray> vertices = vtkSmartPointer<vtkCellArray>::New();
 	points->InsertNextPoint(-0.5, 0.0, -0.5);
 	points->InsertNextPoint( 0.5, 0.0, -0.5);
 	points->InsertNextPoint( 0.5, 0.0,  0.5);
 	points->InsertNextPoint(-0.5, 0.0,  0.5);
 	// a unit square in the XY plane, at y=0
-
-	/*
-	vtkSmartPointer<vtkPolygon> polygon = vtkSmartPointer<vtkPolygon>::New();
-	polygon->GetPointIds()->SetNumberOfIds(4); //make a quad
-	polygon->GetPointIds()->SetId(0, 0);
-	polygon->GetPointIds()->SetId(1, 1);
-	polygon->GetPointIds()->SetId(2, 2);
-	polygon->GetPointIds()->SetId(3, 3);
-
-	//Add the polygon to a list of polygons
-	vtkSmartPointer<vtkCellArray> polygons = vtkSmartPointer<vtkCellArray>::New();
-	polygons->InsertNextCell(polygon);
-
-	//Create a PolyData
-	vtkSmartPointer<vtkPolyData> polygonPolyData = vtkSmartPointer<vtkPolyData>::New();
-	polygonPolyData->SetPoints(points);
-	polygonPolyData->SetPolys(polygons);
-	*/
 
 	vtkSmartPointer<vtkIdList> pointsIds= vtkSmartPointer< vtkIdList>::New();
 
@@ -264,12 +242,8 @@ MyVTK::MyVTK(QWidget *page)
 
 	makeEllipsoid();
 
-	//legendScaleActor = vtkSmartPointer<vtkLegendScaleActor>::New();
-
 	// Create image filter for save Snapshot()
 	w2img = vtkWindowToImageFilter::New();
-//	pngwriter = vtkSmartPointer<vtkPNGWriter>::New();
-//	jpgwriter = vtkSmartPointer<vtkJPEGWriter>::New();
 
 	bone_array = 0;
 	glypher = 0;
@@ -411,8 +385,6 @@ void MyVTK::get_cell_positions(bool fast)
 		MCpos_list.append(cp);
 		if (cp.tag > maxtag) maxtag = cp.tag;
 	}
-//	sprintf(msg,"npit_list: %d",npit_list);
-//	LOG_MSG(msg);
 	for (int i=0; i<npit_list; i++) {
 		int j = 4*i;
 		PIT_POS pp;
@@ -455,17 +427,14 @@ void MyVTK::get_cell_positions(bool fast)
 		ob.state = blast_list[j+4];
 		blastpos_list.append(ob);
 	}
-//	LOG_MSG("VTK: did get_cell_positions");
 }
 
 //-----------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------
 void MyVTK::read_cell_positions(QString infileName, QString outfileName, bool savepos)
 {	
-//	LOG_MSG("VTK: read_cell_positions");
     TCpos_list.clear();
 	MCpos_list.clear();
-//	bondpos_list.clear();
 	capillary_list.clear();
 	pitpos_list.clear();
 	QString line, saveline;
@@ -479,7 +448,6 @@ void MyVTK::read_cell_positions(QString infileName, QString outfileName, bool sa
 		}
 		out = new QTextStream(vtkdata);
 	}
-//	LOG_MSG("VTK: ready to read posdata");
 	QFile posdata(infileName);
 	if (posdata.open(QFile::ReadOnly)) {
 		QTextStream in(&posdata);
@@ -498,8 +466,6 @@ void MyVTK::read_cell_positions(QString infileName, QString outfileName, bool sa
 					cp.x = s[2].toInt();
 					cp.y = s[3].toInt();
 					cp.z = s[4].toInt();
-//					cp.diameter = s[5].toDouble();
-//					cp.state = s[6].toDouble();
 					TCpos_list.append(cp);
 				} else if (s[0].compare("M") == 0) {
 					CELL_POS cp;
@@ -507,7 +473,6 @@ void MyVTK::read_cell_positions(QString infileName, QString outfileName, bool sa
 					cp.x = s[2].toInt();
 					cp.y = s[3].toInt();
 					cp.z = s[4].toInt();
-//					cp.diameter = s[5].toDouble();
 					cp.state = s[5].toInt();
 					MCpos_list.append(cp);
 				} else if (s[0].compare("B") == 0) {
@@ -517,7 +482,6 @@ void MyVTK::read_cell_positions(QString infileName, QString outfileName, bool sa
 					NBY = s[4].toInt();
 				} else if (s[0].compare("C") == 0) {	// Capillary
 					CAPILLARY_SEGMENT cs;
-//					cs.tag = s[1].toInt();
 					cs.pos1[0] = s[1].toDouble();
 					cs.pos1[1] = s[2].toDouble();
 					cs.pos1[2] = s[3].toDouble();
@@ -540,7 +504,6 @@ void MyVTK::read_cell_positions(QString infileName, QString outfileName, bool sa
 		} while (!line.isNull());
 	}
 	posdata.close();
-//	LOG_MSG("VTK: did read posdata");
 	if (savepos) {
 		delete out;
 		vtkdata->close();
@@ -549,9 +512,6 @@ void MyVTK::read_cell_positions(QString infileName, QString outfileName, bool sa
 
 	if (QFile::exists(infileName)) {
 		QFile::rename(infileName,"TO_REMOVE");
-//		QFile::remove("TO_REMOVE");
-//		QFile::remove(infileName);
-		LOG_MSG("Did rename");
 	}
 }
 
@@ -642,25 +602,9 @@ void MyVTK::process_tiles()
 {
 	double pos[3];
 	vtkActor *actor;
-//	VERT_TILE tile;
-//	double v[3];
-//	char msg[256];
 	unsigned char col[3];
 	unsigned char white[3] = {255,255,255};
 	unsigned char red[3] = {255,0,0};
-	/*
-	double boneColor[] = {0.9,0.9,0.5};
-	double pitColor[] = {1.0,0.3,0.1};
-	double whiteColor[] = {1,1,1};
-	double redColor[] = {1,0,0};
-	double greenColor[] = {0,1,0};
-	double blueColor[] = {0,0,1};
-	double xColor[] = {0.0,1.0,0.0};
-	double zColor[] = {0.0,0.0,1.0};
-	unsigned char r[3] = {255,0,0};
-	unsigned char g[3] = {0,255,0};
-	unsigned char b[3] = {0,0,255};
-	*/
 	unsigned char bone[3] = {250,250,128};
 
 	vtkSmartPointer<vtkCellArray> dummycells;
@@ -674,18 +618,13 @@ void MyVTK::process_tiles()
 	// x:0.5-1.5, y:0.5-1.5, z:0.5-1.5.
 
 	if (bone_array == 0) {
-		LOG_MSG("allocate new bone_array");
 		bone_array = new BONE*[NX+1];
 		int npos = NX*NZ;
 		points = vtkSmartPointer<vtkPoints>::New();
-//		dummycells = vtkSmartPointer<vtkCellArray>::New();
 		points->SetNumberOfPoints(npos);         // number of squares
-//		dummycells->InsertNextCell(npos);           // size of dummy "verts" array
 		colors = vtkSmartPointer<vtkUnsignedCharArray>::New();
-//		vtkSmartPointer<vtkDoubleArray> colors = vtkSmartPointer<vtkDoubleArray>::New();
 		colors->SetName("colors");
 		colors->SetNumberOfComponents(3);
-		LOG_MSG("Start loop");
 		int x, z, ipos=0;
 		for (x = 0; x < NX+1; x++) {
 			bone_array[x] = new BONE[NZ+1];
@@ -700,22 +639,15 @@ void MyVTK::process_tiles()
 				pos[2] = z;
 				bone_array[x][z].y = pos[1];
 				points->SetPoint(ipos, pos[0], pos[1], pos[2]); // square glyph positions set here
-//				dummycells->InsertCellPoint(ipos);
 				colors->InsertNextTupleValue(bone);
 				ipos++;
 			}
 		}
-		LOG_MSG("Made positions, dummycells and colors");
 		ginput = vtkSmartPointer<vtkPolyData>::New();
 		ginput->SetPoints(points);
-//		ginput->SetVerts(dummycells);
 		ginput->GetPointData()->SetScalars(colors);
-//		vtkSmartPointer<vtkDataArray> c = ginput->GetPointData()->GetScalars();
-//		c->SetTuple3( 1000 , 1.0, 0.0, 0.0 );
-//		colors->SetTupleValue(1000,zColor);
 
 		if (glypher == 0) {
-//			glypher->Delete();
 			glypher = vtkSmartPointer<vtkGlyph3D>::New();
 		}
 		glypher->SetInput(ginput);
@@ -725,21 +657,14 @@ void MyVTK::process_tiles()
 		glypher->Update();
 
 		if (squareMapper == 0) {
-//			squareMapper->Delete();
 			squareMapper = vtkPolyDataMapper::New();
 		}
 		squareMapper->SetInputConnection(glypher->GetOutputPort());
-		LOG_MSG("did squareMapper->SetInputConnection");
 		if (glactor == 0) {
-			LOG_MSG("new glactor");
 			glactor = vtkActor::New();
 		}
 		glactor->SetMapper(squareMapper);
-		LOG_MSG("did glactor->SetMapper");
-	//	glactor->GetProperty()->SetColor(boneColor);
 		glactor->GetProperty()->SetAmbient(0.1);	// this washes out the tile colour, -> uniform pink
-//		glactor->GetProperty()->SetDiffuse(0.5);	// no effect
-//		glactor->GetProperty()->SetSpecular(0.2);
 		ren->AddActor(glactor);
 
 		makeBox();
@@ -767,8 +692,6 @@ void MyVTK::process_tiles()
 	}
 	verttile_list.clear();
 
-	//glypher->GetInput();
-//	vtkSmartPointer<vtkDataArray> c = ginput->GetPointData()->GetScalars();
 	for (int i=0; i<pitpos_list.length(); i++) {
 		int x = pitpos_list[i].pos[0];
 		int z = pitpos_list[i].pos[2];
@@ -779,11 +702,7 @@ void MyVTK::process_tiles()
 		pos[1] = ypit;
 		pos[2] = z;
 // Here is where the glyph position needs to be set
-//		bone_array[x][z].actor->SetPosition(pos);
-//		bone_array[x][z].actor->GetProperty()->SetColor(pitColor);
 		int idx = (x-1)*NZ + z-1;
-//		points->SetPoint(idx, pos[0], pos[1], pos[2]); // set point idx to (x,y,z)
-//		points->GetData();
 
 		bool USE_SIGNAL = true;
 		if (USE_SIGNAL) {	// Red intensity shows signal
@@ -810,7 +729,6 @@ void MyVTK::process_tiles()
 	for (int i=0; i<pitpos_list.length(); i++) {
 		double height;
 		int x = pitpos_list[i].pos[0];
-//		int ypit = pitpos_list[i].ypit;
 		int z = pitpos_list[i].pos[2];
 		if (x == 1 || x == NX) continue;
 		if (z == 1 || z == NZ) continue;
@@ -821,13 +739,10 @@ void MyVTK::process_tiles()
 			tile.pos[0] = x - 0.5;
 			tile.pos[2] = z;
 			tile.pos[1] =(bone_array[x-1][z].y + bone_array[x][z].y)/2;
-//			sprintf(msg,"X height: %f pos: %f %f %f",height,pos[0],pos[1],pos[2]);
-//			LOG_MSG(msg);
 			nnew++;
 			tile.actor = vtkActor::New();
 			tile.actor->SetMapper(tileMapper);
 			verttile_list.append(tile);
-//			LOG_MSG("appended tile");
 		}
 		height = bone_array[x+1][z].y - bone_array[x][z].y;
 		if (height > 0) {
@@ -958,7 +873,6 @@ void MyVTK::cleanup()
 			actor->Delete();
 			boxActor[i] = 0;
 		}
-		LOG_MSG("Deleting glactor");
 		ren->RemoveActor(glactor);
 		glactor->Delete();
 		glactor = 0;
@@ -993,7 +907,6 @@ void MyVTK::renderCells()
 	if (first_VTK) {
 		LOG_MSG("Initializing the renderer");
 		ren->ResetCamera();
-//		iren->Render();
 	}
 	iren->Render();
 	first_VTK = false;
@@ -1005,7 +918,6 @@ void MyVTK::process_Tcells()
 {
 	int i, tag;
 	double r, g, b, genfac;
-//	double activated = 9.0;
 	double TC_MAX_GEN = 15;
 	CELL_POS cp;
 	vtkActor *actor;
@@ -1035,12 +947,9 @@ void MyVTK::process_Tcells()
 			actor = vtkActor::New();
             actor->SetMapper(TcellMapper);
             actor->GetProperty()->SetColor(TCColor);
-//            actor->GetProperty()->SetColor(0.0,0.0,1.0);	// TCColor
             ren->AddActor(actor);
             T_Actor_list.append(actor);
             na = tag + 1;
-//			sprintf(msg,"added T_actor: %d  %p  %p",tag,ren,actor);
-//			LOG_MSG(msg);
 		}
 		if (cp.state == -1) {	// non-cognate
 			r = 0.5; g = 0.5; b = 0.5;
@@ -1090,8 +999,6 @@ void MyVTK::process_Mcells()
 
 	int na = M_Actor_list.length();
 	int np = MCpos_list.length();
-//	sprintf(msg,"process_Mcells: na, np: %d %d",na,np);
-//	LOG_MSG(msg);
     int n = na;
 	for (i=0; i<np; i++) {
 		cp = MCpos_list[i];
@@ -1117,15 +1024,11 @@ void MyVTK::process_Mcells()
 			nnew++;
 			actor = vtkActor::New();
 			actor->SetMapper(McellMapper);
-//			actor->GetProperty()->SetColor(MCColor);
-//            actor->GetProperty()->SetColor(0.7,0.2,0.3);	// DCColor
 
             ren->AddActor(actor);
 			M_Actor_list.append(actor);
             na = tag + 1;
 			newMC = true;
-//			sprintf(msg,"added M_actor: %d",tag);
-//			LOG_MSG(msg);
 		} else {
 			actor = M_Actor_list[tag];
 			if (actor == 0) {
@@ -1153,10 +1056,6 @@ void MyVTK::process_Mcells()
 				r = 1; g = 1; b = 1;
 			}
 			actor->GetProperty()->SetColor(r, g, b);
-		} else {
-//			sprintf(msg,"M_actor = 0: %d  %d",tag,cp.state);
-//			LOG_MSG(msg);
-//			exit(1);
 		}
 	}
 
@@ -1168,8 +1067,6 @@ void MyVTK::process_Mcells()
 			M_Actor_list[k] = 0;
 		}
 	}
-//	sprintf(msg,"nnew, nactive: %d %d",nnew,nactive);
-//	LOG_MSG(msg);
 }
 
 
@@ -1237,7 +1134,6 @@ void MyVTK::process_capillaries()
 void MyVTK::process_osteoclasts()
 {
 	int iclast, k;
-//	CAPILLARY_SEGMENT cs;
 	CLAST_POS oc;
 	vtkActor *actor;
 	double theta;
@@ -1263,8 +1159,6 @@ void MyVTK::process_osteoclasts()
 		actor->SetMapper(clastMapper);
 		actor->GetProperty()->SetColor(clastColor);
 		theta = (180./Pi)*atan2(oc.dir[2],oc.dir[0]);
-//		sprintf(msg,"x,z,theta: %d %f %f %f",iclast,oc.dir[0],oc.dir[2],-theta);
-//		LOG_MSG(msg);
 		actor->RotateWXYZ(-theta,0,1,0);
 
 		actor->SetScale(oc.size);
@@ -1303,8 +1197,6 @@ void MyVTK::process_osteoblasts()
 		actor->SetMapper(McellMapper);
 		actor->SetScale(1.5);
 		actor->GetProperty()->SetColor(blastColor);
-//		sprintf(msg,"OB, pos: %d %f %f %f\n",iblast,ob.pos[0],ob.pos[1],ob.pos[2]);
-//		LOG_MSG(msg);
 		actor->SetPosition(ob.pos);
 		ren->AddActor(actor);
 		OB_Actor_list.append(actor);
@@ -1315,9 +1207,7 @@ void MyVTK::process_osteoblasts()
 //-----------------------------------------------------------------------------------------
 bool MyVTK::startPlayer(QString posfile, QTimer *theTimer, bool save)
 {
-//	casename = acasename;
 	save_image = save;
-//	posfile = casename + ".pos";
 	LOG_QMSG(posfile);
 	timer = theTimer;
 	playerData = new QFile(posfile);
@@ -1335,20 +1225,11 @@ bool MyVTK::startPlayer(QString posfile, QTimer *theTimer, bool save)
 	if (save_image) {
 		w2i = vtkWindowToImageFilter::New();
 		w2i->SetInput(renWin);	//the render window
-//		writer = vtkSmartPointer<vtkPNGWriter>::New();
 		writer = vtkSmartPointer<vtkJPEGWriter>::New();
-
-//		castFilter = vtkSmartPointer<vtkImageCast>::New();
-//		castFilter->SetOutputScalarTypeToUnsignedChar ();
-//		castFilter->SetInputConnection(w2i->GetOutputPort());
-//		castFilter->Update();
-
 		writer->SetInputConnection(w2i->GetOutputPort()); 
 		framenum = 0;
-		LOG_MSG("set up writer");
 	}
 
-	LOG_MSG("playing");
 	return true;
 }
 
@@ -1356,7 +1237,6 @@ bool MyVTK::startPlayer(QString posfile, QTimer *theTimer, bool save)
 //-----------------------------------------------------------------------------------------
 bool MyVTK::nextFrame()
 {
-	LOG_MSG("VTK: nextFrame");
 	if (!playing)
 		return false;
 	if (paused)
@@ -1368,7 +1248,6 @@ bool MyVTK::nextFrame()
 	}
 	TCpos_list.clear();
 	MCpos_list.clear();
-//	bondpos_list.clear();
 	capillary_list.clear();
 	tile_list.clear();
 	int k = 0;
@@ -1384,8 +1263,6 @@ bool MyVTK::nextFrame()
 				cp.x = s[2].toInt();
 				cp.y = s[3].toInt();
 				cp.z = s[4].toInt();
-//				cp.diameter = s[5].toDouble();
-//				cp.state = s[6].toDouble();
 				TCpos_list.append(cp);
 			} else if (s[0].compare("M") == 0) {
 				CELL_POS cp;
@@ -1393,7 +1270,6 @@ bool MyVTK::nextFrame()
 				cp.x = s[2].toInt();
 				cp.y = s[3].toInt();
 				cp.z = s[4].toInt();
-//				cp.diameter = s[5].toDouble();
 				cp.state = s[5].toInt();
 				MCpos_list.append(cp);
 			} else if (s[0].compare("B") == 0) {
@@ -1403,7 +1279,6 @@ bool MyVTK::nextFrame()
 				cp.y = s[3].toInt();
 				cp.z = s[4].toInt();
 				cp.state = s[5].toInt();
-//				bondpos_list.append(cp);
 			} else if (s[0].compare("E") == 0) {
 				break;
 			}
@@ -1414,7 +1289,6 @@ bool MyVTK::nextFrame()
 	if (first_VTK) {
 		redo = true;
 	}
-//    renderCells(redo,false);
 	renderCells();
 	char numstr[5];
 	sprintf(numstr,"%04d",framenum);
@@ -1431,7 +1305,6 @@ bool MyVTK::nextFrame()
 //-----------------------------------------------------------------------------------------
 void MyVTK::saveSnapshot(QString fileName, QString imgType)
 {
-//	vtkWindowToImageFilter *w2img = vtkWindowToImageFilter::New();
 	w2img->SetInput(renWin);
 	if (imgType.compare("png") == 0) {
 		vtkSmartPointer<vtkPNGWriter> pngwriter = vtkPNGWriter::New();
@@ -1439,28 +1312,24 @@ void MyVTK::saveSnapshot(QString fileName, QString imgType)
 		w2img->Modified();
 		pngwriter->SetFileName((fileName.toStdString()).c_str()); 
 		pngwriter->Write();
-//		pngwriter->Delete();	// Note: using vtkSmartPointer, delete is not necessary.
 	} else if (imgType.compare("jpg") == 0) {
 		vtkJPEGWriter *jpgwriter = vtkJPEGWriter::New();
 		jpgwriter->SetInputConnection(w2img->GetOutputPort()); 
 		w2img->Modified();
 		jpgwriter->SetFileName((fileName.toStdString()).c_str()); 
 		jpgwriter->Write();
-//		jpgwriter->Delete();
 	} else if (imgType.compare("tif") == 0) {
 		vtkTIFFWriter *tifwriter = vtkTIFFWriter::New();
 		tifwriter->SetInputConnection(w2img->GetOutputPort()); 
 		w2img->Modified();
 		tifwriter->SetFileName((fileName.toStdString()).c_str()); 
 		tifwriter->Write();
-//		tifwriter->Delete();
 	} else if (imgType.compare("bmp") == 0) {
 		vtkBMPWriter *bmpwriter = vtkBMPWriter::New();
 		bmpwriter->SetInputConnection(w2img->GetOutputPort()); 
 		w2img->Modified();
 		bmpwriter->SetFileName((fileName.toStdString()).c_str()); 
 		bmpwriter->Write();
-//		bmpwriter->Delete();
 	}
 }
 

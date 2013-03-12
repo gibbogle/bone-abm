@@ -1,8 +1,6 @@
 #ifndef MISC_H
 #define MISC_H
 
-//#define __COMPILETIME_LOADING__
-
 #include <QThread>
 #include <QTcpServer>
 
@@ -41,11 +39,10 @@ signals:
 class ExecThread: public QThread
 {
 	Q_OBJECT
+    int run_case;
 	QString inputFile;
-	QString dll_path;
 public:
-//	ExecThread::ExecThread(QString, QString);
-	ExecThread(QString, QString);
+    ExecThread(int, QString);
 	void run();
 	void snapshot();
 	void pause();

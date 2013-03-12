@@ -47,7 +47,6 @@ void Plot::mousePressEvent (QMouseEvent *event) {
 		int w = this->width();
 		int h = this->height();
 		QPixmap pixmap(w, h);
-//		QPixmap pixmap(600, 600);
 		pixmap.fill(Qt::white); // Qt::transparent ?
 
 		QwtPlotPrintFilter filter;
@@ -58,7 +57,6 @@ void Plot::mousePressEvent (QMouseEvent *event) {
 
 		this->print(pixmap, filter);
 
-//		QString fileName = "zzz.png";
 		QString fileName = getImageFile();
 		if (fileName.isEmpty()) {
 			return;
