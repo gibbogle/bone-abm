@@ -2,13 +2,11 @@
 
 module fields
 use global
-use chemokine
 implicit none
 save
 
 real, allocatable :: S1P_conc(:,:,:), S1P_grad(:,:,:,:)
 real, allocatable :: CXCL12_conc(:,:,:), CXCL12_grad(:,:,:,:), CXCL12_influx(:,:,:)
-logical :: CXCL12_initialized
 
 contains
 
@@ -24,25 +22,6 @@ if (z < 1 .or. z > NZ) return
 outside = .false.
 end function
 
-!------------------------------------------------------------------------------------------------
-! Currently using chemo(:) for CXCL12 only
-!------------------------------------------------------------------------------------------------
-subroutine setupChemo
-
-chemo(CXCL12)%name = 'CXCL12'
-chemo(CXCL12)%used = .true.
-chemo(CXCL12)%diff_coef = CXCL12_KDIFFUSION
-chemo(CXCL12)%halflife = CXCL12_HALFLIFE
-chemo(CXCL12)%decay_rate = log(2.0)/chemo(CXCL12)%halflife    ! rate/min
-!CXCL12_KDECAY = log(2.0)/(CXCL12_HALFLIFE)    ! rate/min
-
-chemo(S1P)%name = 'S1P'
-chemo(S1P)%used = .true.
-chemo(S1P)%diff_coef = S1P_KDIFFUSION
-chemo(S1P)%halflife = S1P_HALFLIFE
-chemo(S1P)%decay_rate = log(2.0)/chemo(S1P)%halflife    ! rate/min
-end subroutine
-
 !----------------------------------------------------------------------------------------
 ! Since it is assumed that the cells in the marrow have an insignificant effect on the 
 ! cytokine concentration, and also that the concentration in the blood is relatively
@@ -51,18 +30,14 @@ end subroutine
 ! once, compute the gradient field from it, and use this for all chemotaxis calculations.
 !
 ! This all works, but there is now serious doubt as to whether there is such a thing as
-! S1P chemotaxis.  According to Irina Grigorova, S1P1 on a T cell enables it to cross
+! S1P chemotaxis.  According to Irina Grigorova, S1PR1 on a T cell enables it to cross
 ! the endothelial boundary into a sinus (high-S1P), but the cell must reach the sinus
 ! by random motion.
 !----------------------------------------------------------------------------------------
 subroutine init_fields
 
 if (use_CXCL12) then
-    allocate(CXCL12_conc(NX,NY,NZ))
-    allocate(CXCL12_grad(3,NX,NY,NZ))
-    allocate(CXCL12_influx(NX,NY,NZ))
 	call init_CXCL12
-    CXCL12_initialized = .false.
 endif
 if (S1P_chemotaxis) then
 	call init_S1P
@@ -119,7 +94,7 @@ do x = 1,NX
 enddo
 
 if (steady) then
-	call steadystate(influx,chemo(S1P)%diff_coef,chemo(S1P)%decay_rate,S1P_conc)
+	call steadystate(influx,S1P_KDIFFUSION,S1P_KDECAY,S1P_conc)
 else
 !	allocate(dCdt(NX,NY,NZ))
 !	dCdt = 0
@@ -181,10 +156,15 @@ integer :: isignal, site(3), x, y, z, it, nt, isig, iblast
 real :: dt, sum
 real :: g(3), gamp, gmax
 type(osteoblast_type), pointer :: pblast
+!real, parameter :: Kdecay = 0.00001, Kdiffusion = 0.001
 
-write(logmsg,*) 'Initializing CXCL12: decay_rate: ', chemo(CXCL12)%decay_rate
+write(logmsg,*) 'Initializing CXCL12: KDECAY: ', CXCL12_KDECAY
 !call formulate(CXCL12_KDIFFUSION,CXCL12_KDECAY)
+
 call logger(logmsg)
+allocate(CXCL12_conc(NX,NY,NZ))
+allocate(CXCL12_grad(3,NX,NY,NZ))
+allocate(CXCL12_influx(NX,NY,NZ))
 
 CXCL12_grad = 0
 CXCL12_influx = -1
@@ -208,33 +188,31 @@ do iblast = 1,nblast
 	z = pblast%site(3)
 	CXCL12_influx(x,y,z) = BlastSignal(pblast)
 	sum = sum + CXCL12_influx(x,y,z)
-	write(logmsg,'(4i4,e12.4)') iblast,x,y,z,CXCL12_influx(x,y,z)
+	write(logmsg,*) iblast,x,z,CXCL12_influx(x,y,z)
 	call logger(logmsg)
 enddo
 if (sum == 0) return
 
-call steadystate(CXCL12_influx,chemo(CXCL12)%diff_coef,chemo(CXCL12)%decay_rate,CXCL12_conc)
+call steadystate(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc)
 call gradient(CXCL12_influx,CXCL12_conc,CXCL12_grad)
+!write(*,*) 'CXCL12 gradient: ',CXCL12_grad(:,25,25,25)
+write(logmsg,*) 0,CXCL12_conc(NX/2,NBY+2,NZ/2)
+call logger(logmsg)
 ! Testing convergence
-!nt = 0
-!dt = 10*DELTA_T
-!do it = 1,nt
-!	call evolve(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc,dt)
-!	write(logmsg,*) it,CXCL12_conc(NX/2,NBY+2,NZ/2)
-!	call logger(logmsg)
-!	sum = 0
-!	do isig = 1,nsignal
-!		site = signal(isig)%site
-!		sum = sum + CXCL12_conc(site(1),NBY+1,site(3))
-!	enddo
-!	write(logmsg,*) 'Mean patch CXCL12: ',sum/nsignal
-!	call logger(logmsg)
-!	call gradient(CXCL12_influx,CXCL12_conc,CXCL12_grad)
-!	y = NBY+4
-!	do x = 20,30
-!		write(nflog,'(i4,9e12.3)') x,(CXCL12_grad(:,x,y,z),z=20,22)
-!	enddo
-!enddo
+nt = 10
+dt = 100*DELTA_T
+do it = 1,nt
+	call evolve(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc,dt)
+	write(logmsg,*) it,CXCL12_conc(NX/2,NBY+2,NZ/2)
+	call logger(logmsg)
+	sum = 0
+	do isig = 1,nsignal
+		site = signal(isig)%site
+		sum = sum + CXCL12_conc(site(1),NBY+1,site(3))
+	enddo
+	write(logmsg,*) 'Mean patch CXCL12: ',sum/nsignal
+	call logger(logmsg)
+enddo
 y = NBY + 3
 gmax = 0
 do x = 1,NX
@@ -246,17 +224,9 @@ do x = 1,NX
 		enddo
 !	enddo
 enddo
-write(logmsg,*) 'CXCL12 initialized'
-call logger(logmsg)
-y = NBY+4
-z = NZ/2
-do x = NX/2-4,NX/2+4
-	write(nflog,'(i4,9e12.3)') x,(CXCL12_grad(:,x,y,z))
-enddo
 write(logmsg,*) 'Max CXCL12 gradient at y=NBY+3: ',gmax
 call logger(logmsg)
 CXCL12_GRADLIM = gmax
-CXCL12_initialized = .true.
 end subroutine
 
 !----------------------------------------------------------------------------------------
@@ -298,25 +268,17 @@ do iblast = 1,nblast
 	x = pblast%site(1)
 	z = pblast%site(3)
 	sig = BlastSignal(pblast)
-	write(nflog,'(a,4i4,e12.3)') 'sig: ',iblast,x,y,z,sig
+	write(nflog,'(a,4i6,f8.3)') 'sig: ',iblast,nblast,x,z,sig
 	if (sig > OB_SIGNAL_THRESHOLD) then
 		CXCL12_influx(x,y,z) = sig
 	endif
 	totsig = totsig + CXCL12_influx(x,y,z)
 enddo
-write(nflog,*) 'evolveCXCL12: totsig: ',istep,totsig
-if (totsig > 0) then
-	call evolve(CXCL12_influx,chemo(CXCL12)%diff_coef,chemo(CXCL12)%decay_rate,CXCL12_conc,dt)
+!write(nflog,*) 'evolveCXCL12: totsig: ',istep,totsig
+!if (totsig > 0) then
+	call evolve(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc,dt)
 	call gradient(CXCL12_influx,CXCL12_conc,CXCL12_grad)
-	y = NBY+4
-	do x = 20,30
-		write(nflog,'(i4,9e12.3)') x,(CXCL12_grad(:,x,y,z),z=20,22)
-	enddo
-endif
-
-!write(logmsg,*) 'Mean patch CXCL12: ',sum/nsignal, totsig
-!call logger(logmsg)
-!deallocate(factor)
+!endif
 end subroutine
 
 !----------------------------------------------------------------------------------------
@@ -326,15 +288,12 @@ real :: influx(:,:,:), C(:,:,:)
 real :: Kdiffusion, Kdecay
 real :: dx2diff, total, maxchange, maxchange_par, total_par
 real, parameter :: alpha = 0.5
-real, parameter :: tol = 1.0e-5		! max change in C at any site as fraction of average C
+real, parameter :: tol = 1.0e-6		! max change in C at any site as fraction of average C
 integer :: nc, nc_par, k, it, kpar, dz
 integer :: zlim(2,16), z1, z2, zfr, zto, n	! max 16 threads
 real, allocatable :: C_par(:,:,:)
 integer :: nt = 10000
 real, allocatable :: Ctemp(:,:,:)
-
-write(logmsg,'(a,2e12.4)') 'steadystate: Kdiffusion, Kdecay: ',Kdiffusion, Kdecay
-call logger(logmsg)
 
 dz = NZ/Mnodes + 0.5
 do k = 1,Mnodes
@@ -461,6 +420,17 @@ do z = 1,NZ
 			else
 				g(3) = MISSING_VAL
 			endif
+			if (isnan(g(1)) .or. isnan(g(2)) .or. isnan(g(3))) then
+				write(logmsg,'(a,3i6,3f8.4)') 'gradient: ',x,y,z,g
+				call logger(logmsg)
+				write(logmsg,'(a,5i6,2f8.4)') 'x: ',x,y,z,x1,x2,C(x1,y,z),C(x2,y,z)
+				call logger(logmsg)
+				write(logmsg,'(a,5i6,2f8.4)') 'y: ',x,y,z,y1,y2,C(x,y1,z),C(x,y2,z)
+				call logger(logmsg)
+				write(logmsg,'(a,5i6,2f8.4)') 'z: ',x,y,z,z1,z2,C(x,y,z1),C(x,y,z2)
+				call logger(logmsg)
+				stop
+			endif
 			grad(:,x,y,z) = g
 		enddo
 	enddo
@@ -496,17 +466,21 @@ enddo
 end subroutine
 
 !----------------------------------------------------------------------------------------
+! This is a crude explicit solver.  If dt is too large it goes unstable.
+! Should be replaced by a higher order solver, e.g. Runge-Kutta-Chebychev
 !----------------------------------------------------------------------------------------
 subroutine evolve(influx,Kdiffusion,Kdecay,C,dt)
 real :: influx(:,:,:), C(:,:,:)
 real :: Kdiffusion, Kdecay, dt
-real :: dx2diff, total, maxchange, C0, dC, sum, dV, dMdt
-!real, parameter :: alpha = 0.99
+real :: dx2diff, total, maxchange, C0, dC, sum, dV, dMdt, Cmin, Cmax
+real, parameter :: alpha = 0.99
 integer :: x, y, z, xx, yy, zz, nb, nc, k, it
 real, allocatable :: Ctemp(:,:,:)
 
 dV = DELTA_X**3
 allocate(Ctemp(NX,NY,NZ))
+Cmin = 1.0e20
+Cmax = -Cmin
 do z = 1,NZ
 	do y = NBY+1,NY
 		do x = 1,NX
@@ -525,6 +499,8 @@ do z = 1,NZ
 			enddo
 			dMdt = Kdiffusion*DELTA_X*(sum - nb*C0) - Kdecay*C0*dV + influx(x,y,z)
 			Ctemp(x,y,z) = (C(x,y,z)*dV + dMdt*dt)/dV
+			Cmin = min(Cmin,Ctemp(x,y,z))
+			Cmax = max(Cmax,Ctemp(x,y,z))
 !			if (x == NX/2 .and. y == NBY+2 .and. z == NZ/2) write(*,*) 'dMdt: ',dMdt
 !			Ctemp(x,y,z) = dt*(alpha*(sum + dC)/(Kdecay*dx2diff + dC + nb) +
 		enddo
@@ -532,7 +508,8 @@ do z = 1,NZ
 enddo
 C = Ctemp
 deallocate(Ctemp)
-
+!write(logmsg,'(a,2e12.3)') 'Cmin, Cmax: ',Cmin,Cmax
+!call logger(logmsg)
 end subroutine
 
 

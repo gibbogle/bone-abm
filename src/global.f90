@@ -43,8 +43,8 @@ real :: S1P_CHEMOLEVEL
 real :: S1P_KDIFFUSION
 real :: S1P_HALFLIFE
 real :: S1P_GRADLIM
-real :: S1P1_THRESHOLD
-real :: S1P1_BASERATE
+real :: S1PR1_THRESHOLD
+real :: S1PR1_BASERATE
 
 real :: OB_PER_MM3
 real :: OB_SIGNAL_FACTOR
@@ -113,7 +113,7 @@ logical :: stuck
 logical :: initiated
 logical :: use_capillary
 
-logical, parameter :: TESTING_OC = .false.
+logical :: OC_model						! this flag turns on the osteoclast simulation
 
 contains
 
@@ -262,7 +262,6 @@ if (pblast%status /= ALIVE) return
 bsite = pblast%site
 if (surface(bsite(1),bsite(3))%seal == 1) return
 r2 = OB_SIGNAL_RADIUS**2
-factor = 1.0
 sum = 0
 do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
 	x = bsite(1) + dx
@@ -270,6 +269,7 @@ do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
 		z = bsite(3) + dz
 		d2 = dx**2 + dz**2
 		if (d2 > r2) cycle
+		factor = 1.0
 		if (surface(x,z)%iclast > 0) then
 			factor = 0.5
 		endif

@@ -35,16 +35,12 @@
 #include <vtkUnsignedCharArray.h>
 #include <vtkDoubleArray.h>
 
-//#include <vtkLegendScaleActor.h>
-
-//#include <vtkConfigure.h>
 
 using namespace std;
 
 struct cell_pos {
 	int tag;
 	int x, y, z;
-//	double diameter;
 	int state;
 };
 typedef cell_pos CELL_POS;
@@ -185,8 +181,6 @@ public:
 	vtkSmartPointer<vtkImageCast> castFilter;
 	vtkWindowToImageFilter *w2i;
 	vtkWindowToImageFilter *w2img;
-//	vtkSmartPointer<vtkPNGWriter> pngwriter;
-//	vtkSmartPointer<vtkJPEGWriter> jpgwriter;
 
 	char msg[2048];
 	double zoomlevel;
@@ -205,13 +199,6 @@ public:
 	QTextStream *playerStream;
 	vtkActor *boxActor[8];
 
-//	double *TCColor, *DCColor;
-
-//	vtkSmartPointer<vtkPoints> points;
-//	vtkSmartPointer<vtkCellArray> vertices;
-//	vtkSmartPointer<vtkPolygon> polygon;
-//	vtkSmartPointer<vtkCellArray> polygons;
-//	vtkSmartPointer<vtkPolyData> polygonPolyData;
 };
 
 #endif

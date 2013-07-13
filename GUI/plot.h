@@ -30,7 +30,6 @@ public:
 	void removeCurve(QString);
 	void removeAllCurves();
 	void redraw(double *, double *, int, QString);
-//    void redraw2(double *, double *, double *, int);
     void redraw2(double *, double *, double *, double *, int, int);
     void draw2(double *, double *, double *, double *, int, int);
 	void setYScale(double);
@@ -43,8 +42,6 @@ public:
 	double yscale;
 	int ncurves;
 	char msg[1024];
-//signals:
-//	void rButtonClicked(QString text, int w, int h);
 
 };
 

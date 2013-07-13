@@ -21,6 +21,9 @@ using namespace std;
 #include "result_set.h"
 #include "log.h"
 
+#define MONO_CASE 1
+#define OC_CASE 2
+
 QT_BEGIN_NAMESPACE
 class QAction;
 class QMenu;
@@ -65,14 +68,8 @@ public:
 	int VTKbuffer[100];
 
 protected:
-//    void closeEvent(QCloseEvent *event);
 
 private slots:
-//    void newFile();
-//    void open();
-//    void about();
-//    void documentWasModified();
-
     bool save();
     bool saveAs();
 	void readInputFile();
@@ -115,12 +112,6 @@ private:
 	void setupParamList();
 	void loadParams();
 	void reloadParams();
-	void enableInVitro();
-	void disableInVitro();
-	void enableDCInjection();
-	void disableDCInjection();
-	void enableUseTraffic();
-	void disableUseTraffic();
 	void writeout();
 	void execute_para();
 	void init_VTK();
@@ -149,7 +140,6 @@ private:
     void writeSettings();
     bool maybeSave();
     void loadFile(const QString &fileName);
-//    bool saveFile(const QString &fileName);
     void setCurrentFile(const QString &fileName);
     QString strippedName(const QString &fullFileName);
 
@@ -208,16 +198,12 @@ private:
 	int currentDescription;
 	QString defaultInputFile;
 	QString inputFile;
-	QString stopfile;
-	QString pausefile;
 	QString cellfile;
-	QString dll_path;
 	QString vtkfile;
 	QTextBrowser *box_outputData;
 	SocketHandler *sthread0;
 	SocketHandler *sthread1;
 	QTimer *timer;
-//	ExecThread *exthread;
 
 	int step;
 	int ntimes;
@@ -226,6 +212,7 @@ private:
 	double hours;
 	double hour;
 	int progress;
+    int runcase;
 
 	bool DISABLE_TABS;
 
@@ -262,7 +249,6 @@ public:
 
 	QValidator::State validate ( QString &input, int &pos ) const
 	{
-//		LOG_QMSG(input);
 		if ( input.isEmpty() || input == "." ) {
 			return Intermediate;
 		}
