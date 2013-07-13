@@ -6,7 +6,7 @@ extern "C" {
 #endif
 //
 //
-void execute(char *, int *);
+void execute(char *, int *, int *, int *);
 void simulate_step(int *);
 void terminate_run(int *);
 void get_dimensions(int *,int *,int *,int *);

@@ -4,70 +4,6 @@
 Params::Params()
 {
 	PARAM_SET params[] = {
-/*
-{"TC_AVIDITY_MEDIAN", 1.0, 0.1, 10.0,
-"Receptor avidity median parameter",
-"TCR avidity has a lognormal distribution, described by the median and shape parameters.\n\
-(TCR stimulation rate is proportional to the product of TC avidity and DC antigen density.)"},
-
-{"TC_AVIDITY_SHAPE", 1.1, 1.01, 3.0,
-"Receptor avidity shape parameter",
-"TCR avidity has a lognormal distribution, described by the median and shape parameters.\n\
-The shape value must be greater than 1, and values close to 1 give distributions that are close to normal."},
-
-{"TC_STIM_RATE_CONSTANT", 1, 0.0, 0.0,
-"Stimulation rate constant",
-"Rate constant Ks for TCR stimulation, where:\n\
-rate of TCR stimulation = Ks*(TCR avidity)*(DC antigen density)\n\
-[molecules/min]"},
-	
-{"TC_STIM_HALFLIFE", 24.0, 0.0, 100.0,
-"Stimulation halflife",
-"Integrated TCR stimulation decays with a specified halflife. \n\
-[hours]"},
-
-{"DIVIDE1_MEDIAN", 6.0, 0.0, 0.0,
-"1st division time median parameter",
-"The time taken for the first T cell division, after full activation, has a lognormal distribution, described by the median and shape parameters. \n\
-[hours]"},
-
-{"DIVIDE1_SHAPE", 1.1, 1.01, 3.0,
-"1st division time shape parameter",
-"The time taken for the first T cell division, after full activation, has a lognormal distribution, described by the median and shape parameters."},
-
-{"DC_LIFETIME_MEDIAN", 3.0, 1.0, 20.0,
-"Lifetime median parameter",
-"DC lifetime has a lognormal distribution, described by the median and shape parameters.\n\
-[days]"},
-
-{"DC_LIFETIME_SHAPE", 1.2, 1.01, 3.0,
-"Lifetime shape parameter",
-"DC lifetime has a lognormal distribution, described by the median and shape parameters."},
-
-{"IL2_THRESHOLD", 150, 10.0, 500.0,
-"Stimulation threshold for IL-2",
-"Integrated TCR stimulation needed to initiate IL-2/CD5 production."},
-
-{"ACTIVATION_THRESHOLD", 150, 10.0, 500.0,
-"Stimulation threshold for activation",
-"Integrated TCR stimulation level needed for full activation."},
-
-{"FIRST_DIVISION_THRESHOLD", 300, 10.0, 1000.0,
-"Stimulation threshold for first division",
-"Integrated TCR stimulation level needed for first division."},
-
-{"DIVISION_THRESHOLD", 80, 10.0, 1000.0,
-"Stimulation threshold for subsequent divisions",
-"Integrated TCR stimulation level needed for subsequent divisions."},
-
-{"EXIT_THRESHOLD", 480, 10.0, 1000.0,
-"Stimulation threshold for exit",
-"Integrated TCR stimulation level below which exit is permitted (using Exit Rule #2)."},
-
-{"STIMULATION_LIMIT", 1000, 0.0, 0.0,
-"Maximum stimulation level",
-"Maximum integrated TCR stimulation level (saturation level)."},
-*/
 
 {"MONOCYTE_DIAMETER", 10.0, 5.0, 25.0,
 "Diameter of a monocyte",
@@ -146,7 +82,7 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Dimension of the modelled region in Y direction.\n\
 [um]"},
 
-{"CAPILLARY_DIAMETER", 20.0, 20.0, 200.0,
+{"CAPILLARY_DIAMETER", 30.0, 20.0, 200.0,
 "Diameter of a capillary",
 "(Currently we consider only a single capillary with a fixed diameter)\n\
 [um]"},
@@ -209,21 +145,6 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 is given by: probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1P1_THRESHOLD)\n\
 [0-1]"},
 
-/*
-{"CHEMO_RADIUS", 30.0, 10.0, 200.0,
-"Radius of chemotactic influence",
-"Range of chemotactic influence of an exit site or DC on T cell motion.  At this distance the influence is reduced to 5% of its maximum value.\n\
-[um]"},
-
-{"CHEMO_K_EXIT", 0.5, 0.0, 1.0,
-"Exit chemotaxis influence parameter",
-"Strength of chemotactic influence on T cell motion towards exits."},
-
-{"CHEMO_K_DC", 0.0, 0.0, 10.0,
-"DC chemotaxis influence parameter",
-"Strength of chemotactic influence on T cell motion towards DCs."},
-*/
-
 {"NDAYS", 100.0, 0, 0,
 "Number of days",
 "Length of the simulation.\n\
@@ -245,9 +166,9 @@ is given by: probability = (Max capillary egress probability)*(S1P1 - S1P1_THRES
  "Animation interval (timesteps)",
  "Interval between animation screen updates (timesteps).  One timestep = 15 sec."},
 
-{"SPECIES", 1, 0, 1,
-"Species",
-"Animal species (mouse or human)"}
+{"RUNCASE", 0, 0, 1,
+"Run case",
+"Monocyte or osteoclast model run"}
 
 };
 	nParams = sizeof(params)/sizeof(PARAM_SET);

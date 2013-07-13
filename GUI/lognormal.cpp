@@ -8,7 +8,8 @@
     // from Chebyshev fitting formula for erf(z) from Numerical Recipes, 6.2
     //-----------------------------------------------------------------------------------------
 #include <math.h>
-       double erf(double z)
+
+    double erf(double z)
 	{
        double t = 1.0 / (1.0 + 0.5 * fabs(z));
        // use Horner's method

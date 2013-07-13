@@ -12,7 +12,6 @@
 !     the remodelling patch.
 
 module bone_mod
-!!DEC$ ATTRIBUTES DLLEXPORT :: BONE_MOD
 use, intrinsic :: ISO_C_binding
 use global
 use fields
@@ -53,13 +52,9 @@ integer :: npr, nth
 
 ok = .true.
 if (Mnodes == 1) return
-!!DEC$ IF ( DEFINED (_OPENMP) .OR. DEFINED (IBM))
 #if defined(OPENMP) || defined(_OPENMP)
 write(logmsg,'(a,i2)') 'Requested Mnodes: ',Mnodes
 call logger(logmsg)
-!close(nflog)
-!ok = .false.
-!return
 npr = omp_get_num_procs()
 write(logmsg,'(a,i2)') 'Machine processors: ',npr
 call logger(logmsg)
@@ -80,22 +75,6 @@ write(logmsg,*) 'Threads, max: ',nth,omp_get_max_threads()
 call logger(logmsg)
 !$omp end parallel
 #endif
-!!DEC$ END IF
-!write(*,*) 'Threads: ',nth
-!if (nth > npr) then
-!    write(*,*) 'Number of threads exceeds CPUs'
-!    stop
-!endif
-
-!stop
-
-!call set_affinity
-!write(*,*) 'set affinity mappings'
-
-!if (track_DCvisits) then
-!    write(*,*) 'To track DC visits %DClist(:) must be allocated for cells'
-!    stop
-!endif
 call logger('did omp_initialisation')
 end subroutine
 
@@ -155,89 +134,98 @@ allocate(surface(NX,NZ))
 surface%signal = 0
 !MAX_PIT_DEPTH = MAX_PIT_DEPTH/DELTA_X
 
-if (use_capillary) then
-	! Create a test capillary
-	ncap = 1
-	allocate(capillary(ncap))
-	capillary(1)%radius = CAPILLARY_DIAMETER/2
-	capillary(1)%pos1 = (/ 0.5, NY/2., NZ/2. /)
-	capillary(1)%pos2 = (/ NX+0.5, NY/2., NZ/2. /)
-	v = capillary(1)%pos2 - capillary(1)%pos1
-	capillary(1)%length = rnorm(v)
-	capillary(1)%surface_area = PI*capillary(1)%radius**2*capillary(1)%length
+if (OC_model) then
+	use_capillary = .false.
+	nentrysites = 0
+else
+	if (use_capillary) then
+		! Create a test capillary
+		ncap = 1
+		allocate(capillary(ncap))
+		capillary(1)%radius = CAPILLARY_DIAMETER/2
+		capillary(1)%pos1 = (/ 0.5, (NY+NBY)/2., NZ/2. /)
+		capillary(1)%pos2 = (/ NX+0.5, (NY+NBY)/2., NZ/2. /)
+		v = capillary(1)%pos2 - capillary(1)%pos1
+		capillary(1)%length = rnorm(v)
+		capillary(1)%surface_area = PI*capillary(1)%radius**2*capillary(1)%length
 
-	! Set up capillary sites - this is currently VERY CRUDE
-	! If the centre of a site (cube) falls inside the capillary tube,
-	! the site is tagged BLOOD.
-	! Note that (xc,yc,zc), which lies on the capillary centreline,
-	! is in (x,y,z) coord values, offset from site index values by 0.5
-	! E.g. if site(:) = (/2, 3, 4/), corresponding (x,y,z) = (/1.5, 2.5, 3.5/)
-	! This has the origin of the axis system at the lower left rear corner
-	! of the region.  (Note that in OpenGL/VTK Z axis is out of the screen.)
+		! Set up capillary sites - this is currently VERY CRUDE
+		! If the centre of a site (cube) falls inside the capillary tube,
+		! the site is tagged BLOOD.
+		! Note that (xc,yc,zc), which lies on the capillary centreline,
+		! is in (x,y,z) coord values, offset from site index values by 0.5
+		! E.g. if site(:) = (/2, 3, 4/), corresponding (x,y,z) = (/1.5, 2.5, 3.5/)
+		! This has the origin of the axis system at the lower left rear corner
+		! of the region.  (Note that in OpenGL/VTK Z axis is out of the screen.)
 
-	ndiv = 100
-	do icap = 1,ncap
-		del = capillary(icap)%radius + 2
-		do k = 1,ndiv
-			alfa = (k-1.0)/(ndiv-1.0)
-			xc = (1-alfa)*capillary(icap)%pos1(1) + alfa*capillary(icap)%pos2(1)
-			yc = (1-alfa)*capillary(icap)%pos1(2) + alfa*capillary(icap)%pos2(2)
-			zc = (1-alfa)*capillary(icap)%pos1(3) + alfa*capillary(icap)%pos2(3)
-			do dx = -del,del
-				x = xc + dx
-				if (x < 1 .or. x > NX) cycle
-				do dy = -del,del
-					y = yc + dy
-					if (y <= NBY .or. y > NY) cycle
-					do dz = -del,del
-						z = zc + dz
-						if (z < 1 .or. z > NZ) cycle
-	!					x2 = (x - 0.5 - xc)*(x - 0.5 - xc)
-	!					y2 = (y - 0.5 - yc)*(y - 0.5 - yc)
-	!					z2 = (z - 0.5 - zc)*(z - 0.5 - zc)
-						x2 = (x - xc)*(x - xc)
-						y2 = (y - yc)*(y - yc)
-						z2 = (z - zc)*(z - zc)
-						! These are the squared distances, in three axis directions, from the
-						! site (cube) midpoint to the capillary centreline location (xc,yc,zc)
-						if (x2+y2+z2 <= (capillary(icap)%radius)**2) then
-							occupancy(x,y,z)%region = BLOOD
-	!						if (k <= 10) then
-	!							write(nflog,'(4f6.1,3i4)') xc,yc,zc,sqrt(x2+y2+z2),x,y,z
-	!						endif
-						endif
+		ndiv = 100
+		do icap = 1,ncap
+			del = capillary(icap)%radius + 2
+			do k = 1,ndiv
+				alfa = (k-1.0)/(ndiv-1.0)
+				xc = (1-alfa)*capillary(icap)%pos1(1) + alfa*capillary(icap)%pos2(1)
+				yc = (1-alfa)*capillary(icap)%pos1(2) + alfa*capillary(icap)%pos2(2)
+				zc = (1-alfa)*capillary(icap)%pos1(3) + alfa*capillary(icap)%pos2(3)
+				do dx = -del,del
+					x = xc + dx
+					if (x < 1 .or. x > NX) cycle
+					do dy = -del,del
+						y = yc + dy
+						if (y <= NBY .or. y > NY) cycle
+						do dz = -del,del
+							z = zc + dz
+							if (z < 1 .or. z > NZ) cycle
+		!					x2 = (x - 0.5 - xc)*(x - 0.5 - xc)
+		!					y2 = (y - 0.5 - yc)*(y - 0.5 - yc)
+		!					z2 = (z - 0.5 - zc)*(z - 0.5 - zc)
+							x2 = (x - xc)*(x - xc)
+							y2 = (y - yc)*(y - yc)
+							z2 = (z - zc)*(z - zc)
+							! These are the squared distances, in three axis directions, from the
+							! site (cube) midpoint to the capillary centreline location (xc,yc,zc)
+							if (x2+y2+z2 <= (capillary(icap)%radius)**2) then
+								occupancy(x,y,z)%region = BLOOD
+		!						if (k <= 10) then
+		!							write(nflog,'(4f6.1,3i4)') xc,yc,zc,sqrt(x2+y2+z2),x,y,z
+		!						endif
+							endif
+						enddo
 					enddo
 				enddo
 			enddo
 		enddo
-	enddo
-else
-	ncap = 0
-endif
-! Now set up a list of all marrow sites that are adjacent to a blood site
-allocate(templist(3,NX*NZ*10))
-na = 0
-do x = 2,NX-1
-	do y = NBY+1,NY-1
-		do z = 2,NZ-1
-			if (occupancy(x,y,z)%region /= MARROW) cycle
-			site = (/x,y,z/)
-			do k = 1,6
-				nbr = site + neumann(:,k)
-				if (occupancy(nbr(1),nbr(2),nbr(3))%region == BLOOD) then
-					na = na + 1
-					templist(:,na) = site
-					exit
-				endif
+	else
+		ncap = 0
+	endif
+	! Now set up a list of all marrow sites that are adjacent to a blood site
+	allocate(templist(3,NX*NZ*10))
+	na = 0
+	do x = 2,NX-1
+		do y = NBY+1,NY-1
+			do z = 2,NZ-1
+				if (occupancy(x,y,z)%region /= MARROW) cycle
+				site = (/x,y,z/)
+				do k = 1,6
+					nbr = site + neumann(:,k)
+					if (occupancy(nbr(1),nbr(2),nbr(3))%region == BLOOD) then
+						na = na + 1
+						templist(:,na) = site
+						exit
+					endif
+				enddo
 			enddo
 		enddo
 	enddo
-enddo
-allocate(entrysite(3,na))
-entrysite(:,1:na) = templist(:,1:na)
-deallocate(templist)
-nentrysites = na
-
+	if (na == 0) then
+		call logger('No entry sites')
+		ok = .false.
+		return
+	endif
+	allocate(entrysite(3,na))
+	entrysite(:,1:na) = templist(:,1:na)
+	deallocate(templist)
+	nentrysites = na
+endif
 call CreatePatch
 
 NMONO_INITIAL = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*MONO_PER_MM3	! domain as fraction of 1 mm3 x rate of monocytes
@@ -248,7 +236,7 @@ NBLAST_INITIAL = (patch%volume*DELTA_X**3)*OB_PER_MM3*1.0e-9
 allocate(mono(MAX_MONO))
 allocate(clast(MAX_CLAST))
 allocate(blast(MAX_BLAST))
-if (TESTING_OC) then
+if (OC_model) then
 	NMONO_INITIAL = 0
 	NSTEM = 0
 	NBLAST_INITIAL = 0
@@ -336,8 +324,6 @@ do x = 1,NX
 			surface(x,z)%signal = GetSignal(x,z)
 			nsignal = nsignal + 1
 			signal(nsignal)%site = (/ x,NBY,z /)
-!			write(logmsg,'(2i5,f8.4)') x,z,surface(x,z)%target_depth
-!			call logger(logmsg)
 			vol = vol + surface(x,z)%target_depth
 		endif
 	enddo
@@ -364,7 +350,7 @@ real :: d2min = 10	!0.4*OB_SIGNAL_RADIUS**2
 real, parameter :: MINIMUM_SIGNAL = 0.7
 logical, parameter :: REGULAR = .false.
 
-!NBLAST_INITIAL = 0
+NBLAST_INITIAL = 6
 write(logmsg,*) 'InitialBlastPlacement: ',NBLAST_INITIAL
 call logger(logmsg)
 if (HALF_ELLIPSE) then
@@ -390,7 +376,7 @@ if (REGULAR) then
 		if (sig < MINIMUM_SIGNAL) exit
 		site = (/ x, NBY+1, z /)
 		call CreateOsteoblast(site)
-		write(logmsg,'(a,4i4)') 'Placed OB: ',nblast,site
+		write(logmsg,'(a,5i4)') 'Placed OB: ',nblast,NBLAST_INITIAL,site
 		call logger(logmsg)
 	enddo
 elseif (NBLAST_INITIAL > 0) then
@@ -417,7 +403,7 @@ elseif (NBLAST_INITIAL > 0) then
 		if (R < prob) then
 			site = (/ x, NBY+1, z /)
 			call CreateOsteoblast(site)
-			write(logmsg,'(a,4i4)') 'Placed OB: ',nblast,site
+			write(logmsg,'(a,5i4)') 'Placed OB: ',nblast,NBLAST_INITIAL,site
 			call logger(logmsg)
 			if (nblast == NBLAST_INITIAL) exit
 		endif
@@ -428,62 +414,80 @@ call logger(logmsg)
 end subroutine
 
 !------------------------------------------------------------------------------------------------
-! To initiate reformation, the surface seal near one OB is removed.
+! To initiate reformation, the surface seal near one or more OBs is removed.
 ! This could be:
+! all OBs
 ! the highest signal OB
 ! the leftmost OB
 !------------------------------------------------------------------------------------------------
 subroutine Initiation
 integer :: x, z, xmin, iblast, ibinit, bsite(3), dx, dz
 real :: d2, r2, sig, sigmax
-logical :: bstart(MAX_BLAST)
+logical, parameter :: ALL_OBS = .true.
 logical, parameter :: HIGHEST = .false., ALL = .true.
 
 call logger('Initiation')
 r2 = OB_SIGNAL_RADIUS**2
 bstart = .false.
-if (HIGHEST) then
-	sigmax = 0
-	do iblast = 1,nblast
-		bsite = blast(iblast)%site
-		sig = surface(bsite(1),bsite(3))%signal
-		if (sig > sigmax) then
-			sigmax = sig
-			ibinit = iblast
-		endif
+if (ALL_OBS) then
+	do ibinit = 1,nblast
+		bsite = blast(ibinit)%site
+		do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
+			x = bsite(1) + dx
+			if (x < 1) cycle
+			do dz = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
+				z = bsite(3) + dz
+				d2 = dx**2 + dz**2
+				if (d2 > r2) cycle
+				if (surface(x,z)%target_depth == 0) cycle
+				surface(x,z)%seal = 0
+			enddo
+		enddo
+		blast(ibinit)%status = ALIVE
 	enddo
-	bstart(ibinit) = .true.
+else
+	if (HIGHEST) then
+		sigmax = 0
+		do iblast = 1,nblast
+			bsite = blast(iblast)%site
+			sig = surface(bsite(1),bsite(3))%signal
+			if (sig > sigmax) then
+				sigmax = sig
+				ibinit = iblast
+			endif
+		enddo
+	else
 elseif (.not.ALL) then
-	xmin = 1000
-	do iblast = 1,nblast
-		bsite = blast(iblast)%site
-		if (bsite(1) < xmin) then
-			xmin = bsite(1)
-			ibinit = iblast
-		endif
-	enddo
+		xmin = 1000
+		do iblast = 1,nblast
+			bsite = blast(iblast)%site
+			if (bsite(1) < xmin) then
+				xmin = bsite(1)
+				ibinit = iblast
+			endif
+		enddo
 	bstart(ibinit) = .true.
 else
     bstart = .true.
-endif
+	endif
 
 do ibinit = 1,nblast
     if (.not.bstart(ibinit)) cycle
-    bsite = blast(ibinit)%site
-    do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
-	    x = bsite(1) + dx
-	    if (x < 1) cycle
-	    do dz = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
-		    z = bsite(3) + dz
-		    d2 = dx**2 + dz**2
-		    if (d2 > r2) cycle
-		    if (surface(x,z)%target_depth == 0) cycle
-		    surface(x,z)%seal = 0
-	    enddo
-    enddo
-    !blast%status = DORMANT
-    blast(ibinit)%status = ALIVE
-enddo
+	bsite = blast(ibinit)%site
+	do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
+		x = bsite(1) + dx
+		if (x < 1) cycle
+		do dz = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
+			z = bsite(3) + dz
+			d2 = dx**2 + dz**2
+			if (d2 > r2) cycle
+			if (surface(x,z)%target_depth == 0) cycle
+			surface(x,z)%seal = 0
+		enddo
+	enddo
+	!blast%status = DORMANT
+	blast(ibinit)%status = ALIVE
+endif
 CXCL12_chemotaxis = .true.
 initiated = .true.
 end subroutine
@@ -548,7 +552,6 @@ do i = 1,n
 	call mono_entry
 enddo
 if (dr > 0) then
-!	call random_number(R)
 	R = par_uni(kpar)
 	if (R < dr) then
 		call mono_entry
@@ -582,23 +585,28 @@ end subroutine
 subroutine mono_entry
 integer :: i, site(3), kpar=0
 
+write(logmsg,*) 'nentrysites: ',nentrysites
+if (dbug) call logger(logmsg)
 do
 	i = random_int(1,nentrysites,kpar)
 	site = entrysite(:,i)
+!	write(logmsg,*) i,nentrysites,site
+!	call logger(logmsg)
 	if (occupancy(site(1),site(2),site(3))%indx == 0) exit
 enddo
+if (dbug) call logger('addMono')
 call addMono('blood',site)
 end subroutine
 
 !------------------------------------------------------------------------------------------------
 !------------------------------------------------------------------------------------------------
-subroutine update_S1P1(pmono)
+subroutine update_S1PR1(pmono)
 type(monocyte_type), pointer :: pmono
 real :: S
 
-S = pmono%S1P1
-S = S + rate_S1P1(S)*DELTA_T
-pmono%S1P1 = min(S,1.0)
+S = pmono%S1PR1
+S = S + rate_S1PR1(S)*DELTA_T
+pmono%S1PR1 = min(S,1.0)
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -656,16 +664,19 @@ logical :: on_surface
 
 tnow = istep*DELTA_T
 ! Monocytes enter from the blood
+if (dbug) call logger('influx')
 call influx
-! Monocyte S1P1 level grows, RANKL signal accumulates
+if (dbug) call logger('S1PR1 RANK')
+! Monocyte S1PR1 level grows, RANKL signal accumulates
 do i = 1,nmono
 	pmono => mono(i)
 	if (pmono%status == LEFT) cycle
 	if (pmono%region /= MARROW) cycle
 	if (pmono%status < 1 .or. pmono%status > FUSING) cycle
-	call update_S1P1(pmono)
+	call update_S1PR1(pmono)
 	call update_RANK(pmono)
 enddo
+if (dbug) call logger('clumps')
 do iclump = 1,nclump
 	pclump => clump(iclump)
 	if (pclump%status < 0) cycle
@@ -719,6 +730,7 @@ do iclump = 1,nclump
 	endif
 enddo
 
+if (dbug) call logger('stem cells')
 ! Stem cells divide
 do i = 1,NSTEM
 	if (tnow > stem(i)%dividetime) then
@@ -740,83 +752,88 @@ do i = 1,NSTEM
 	endif
 enddo
 
-! Osteoclasts complete fusing, dissolve bone, move, or die.
-do iclast = 1,nclast
-	pclast => clast(iclast)
-	if (pclast%status == DEAD) cycle
-	if (tnow > pclast%dietime) then
-		call ClastDeath(iclast)
-		cycle
-	endif
-!	if (pclast%status == FUSING) then
-!		if (tnow >= pclast%entrytime) then
-!			call completeFusing(iclast)
-!			cycle
-!		endif
-!	endif
-
-	! The seal on uneroded bone under and near the OC is gradually removed.
-	rmargin = pclast%radius + OC_MARGIN
-	ir = rmargin + 0.5
-!	write(*,*) 'erode seal: ',pclast%radius,OC_MARGIN,rmargin,ir
-	do dx = -ir, ir
-		do dz = -ir,ir
-			if (dx**2 + dz**2 > rmargin**2) cycle
-			x = pclast%site(1) + dx
-			if (x < 1 .or. x > NX) cycle
-			z = pclast%site(3) + dz
-			if (z < 1 .or. z > NZ) cycle
-!			if (surface(x,z)%target_depth == 0) cycle
-			if (surface(x,z)%depth > 0) then
-				surface(x,z)%seal = 0
-			else
-!				write(*,*) dx,dz,x,z
-				surface(x,z)%seal = max(0.0,surface(x,z)%seal - SEAL_REMOVAL_RATE*DELTA_T)
-			endif
-		enddo
-	enddo
-	
-return  !  TESTING
-	
-	if (tnow > pclast%movetime) then
-!		write(*,*) 'Move osteoclast: ',tnow,iclast
-		call MoveClast(pclast,res)
-		if (res == 0) then			! no move
-			pclast%movetime = tnow + CLAST_DWELL_TIME
-			pclast%blocktime = 0
-			pclast%status = RESORBING
-		elseif (res == 1) then		! moved
-			pclast%movetime = tnow + CLAST_DWELL_TIME
-			pclast%blocktime = 0
-			pclast%status = RESORBING
-		elseif (res == 2) then		! osteoclast blocked	
-			call unblocker
-			pclast%movetime = tnow + CLAST_DWELL_TIME
-			pclast%blocktime = 0
-			pclast%status = RESORBING
-
-!			if (pclast%blocktime == 0) then
-!				write(logmsg,*) 'OC blocked: ',iclast,tnow
-!				call logger(logmsg)
-!				pclast%blocktime = tnow
-!			elseif (tnow - pclast%blocktime > CLAST_STOP_TIME) then
-!				write(logmsg,*) 'OC blocked too long: ',iclast,tnow
-!				call logger(logmsg)
-!				call clastDeath(iclast)
-!				cycle
-!			endif
-!			! osteoclast needs to be checked more often for possible move
-!			pclast%movetime = tnow + CLAST_DWELL_TIME/10
-!			pclast%status = ALIVE
-			
-		elseif (res == 3) then		
-			call logger('No signal left, OC dies')
+if (OC_model) then
+	if (dbug) call logger('osteoclasts')
+	! Osteoclasts complete fusing, dissolve bone, move, or die.
+	do iclast = 1,nclast
+		pclast => clast(iclast)
+		if (pclast%status == DEAD) cycle
+		if (tnow > pclast%dietime) then
 			call ClastDeath(iclast)
 			cycle
 		endif
-	endif
-	call resorber(pclast)
-enddo
+	!	if (pclast%status == FUSING) then
+	!		if (tnow >= pclast%entrytime) then
+	!			call completeFusing(iclast)
+	!			cycle
+	!		endif
+	!	endif
+
+		! The seal on uneroded bone under and near the OC is gradually removed.
+		rmargin = pclast%radius + OC_MARGIN
+		ir = rmargin + 0.5
+	!	write(*,*) 'erode seal: ',pclast%radius,OC_MARGIN,rmargin,ir
+		do dx = -ir, ir
+			do dz = -ir,ir
+				if (dx**2 + dz**2 > rmargin**2) cycle
+				x = pclast%site(1) + dx
+				if (x < 1 .or. x > NX) cycle
+				z = pclast%site(3) + dz
+				if (z < 1 .or. z > NZ) cycle
+	!			if (surface(x,z)%target_depth == 0) cycle
+				if (surface(x,z)%depth > 0) then
+					surface(x,z)%seal = 0
+				else
+	!				write(*,*) dx,dz,x,z
+					surface(x,z)%seal = max(0.0,surface(x,z)%seal - SEAL_REMOVAL_RATE*DELTA_T)
+				endif
+			enddo
+		enddo
+		
+return  !  TESTING
+	
+		if (tnow > pclast%movetime) then
+	!		write(*,*) 'Move osteoclast: ',tnow,iclast
+			call MoveClast(pclast,res)
+			if (res == 0) then			! no move
+				pclast%movetime = tnow + CLAST_DWELL_TIME
+				pclast%blocktime = 0
+				pclast%status = RESORBING
+			elseif (res == 1) then		! moved
+				pclast%movetime = tnow + CLAST_DWELL_TIME
+				pclast%blocktime = 0
+				pclast%status = RESORBING
+			elseif (res == 2) then		! osteoclast blocked	
+				call unblocker
+				pclast%movetime = tnow + CLAST_DWELL_TIME
+				pclast%blocktime = 0
+				pclast%status = RESORBING
+
+	!			if (pclast%blocktime == 0) then
+	!				write(logmsg,*) 'OC blocked: ',iclast,tnow
+	!				call logger(logmsg)
+	!				pclast%blocktime = tnow
+	!			elseif (tnow - pclast%blocktime > CLAST_STOP_TIME) then
+	!				write(logmsg,*) 'OC blocked too long: ',iclast,tnow
+	!				call logger(logmsg)
+	!				call clastDeath(iclast)
+	!				cycle
+	!			endif
+	!			! osteoclast needs to be checked more often for possible move
+	!			pclast%movetime = tnow + CLAST_DWELL_TIME/10
+	!			pclast%status = ALIVE
+				
+			elseif (res == 3) then		
+				call logger('No signal left, OC dies')
+				call ClastDeath(iclast)
+				cycle
+			endif
+		endif
+	!	call resorber(pclast)	! resorbing is turned off
+	enddo
+endif
+
+if (dbug) call logger('osteoblasts')
 ! Osteoblast state changes and motion
 do iblast = 1,nblast
 	pblast => blast(iblast)
@@ -935,11 +952,10 @@ mono(nmono)%region = MARROW
 mono(nmono)%status = MOTILE
 mono(nmono)%lastdir = random_int(1,6,kpar)
 mono(nmono)%iclump = 0
-mono(nmono)%S1P1 = 0
+mono(nmono)%S1PR1 = 0
 mono(nmono)%RANKSIGNAL = 0
 mono(nmono)%stickiness = 0
 mono(nmono)%lastmovestep = istep
-!nullify(mono(nmono)%clump)
 occupancy(site(1),site(2),site(3))%species = MONOCYTE
 !if (.not.use_TCP) then
 !	write(*,*) 'added monocyte: ',nmono,site,'  ',source
@@ -949,11 +965,11 @@ occupancy(site(1),site(2),site(3))%species = MONOCYTE
 end subroutine
 
 !------------------------------------------------------------------------------------------------
-! S1P1 (S1P receptor) expression is currently assumed to grow at a steady rate.
+! S1PR1 (S1P receptor) expression is currently assumed to grow at a steady rate.
 !------------------------------------------------------------------------------------------------
-real function rate_S1P1(S)
+real function rate_S1PR1(S)
 real :: S
-rate_S1P1 = S1P1_BASERATE
+rate_S1PR1 = S1PR1_BASERATE
 end function
 
 !------------------------------------------------------------------------------------------------
@@ -1003,7 +1019,7 @@ end subroutine
 !------------------------------------------------------------------------------------------------
 subroutine createOsteoclast(pclump)
 type(clump_type), pointer :: pclump
-integer :: bonesite(3,100), i, j, n, npit, dx, dz, x, z
+integer :: bonesite(3,100), i, j, n, npit, dx, dz, x, z, iblast
 type(osteoclast_type), pointer :: pclast
 real :: tnow, r, fract(100), fsum
 integer :: kpar = 0
@@ -1063,9 +1079,12 @@ call RemoveClump(pclump)
 call pitrates(pclast)
 write(logmsg,'(a,7i4)') 'clast site, count, npit: ',pclast%site,pclast%count,pclast%npit
 call logger(logmsg)
-call UpdateSurface
+!call UpdateSurface
+! For now, kill the osteoblast
+iblast = pclump%iblast
+blast(iblast)%status = DEAD
+call logger('did createOsteoclast')
 end subroutine
-
 
 
 !------------------------------------------------------------------------------------------------
@@ -1198,10 +1217,10 @@ nclast_list = 0
 nblast_list = 0
 
 tnow = istep*DELTA_T
+k = 0
 ! Monocyte section
 if (nmono > 0) then
 	nfused = 0
-	k = 0
     do kcell = 1,nmono
 		status = mono(kcell)%status
 		if (status == DEAD .or. status == LEFT) cycle
@@ -1322,11 +1341,8 @@ do iblast = 1,nblast
 	blast_list(j+1) = pblast%ID-1
 	blast_list(j+2:j+4) = pblast%site
 	blast_list(j+5) = pblast%status
-!	write(nflog,*) 'OB: ',blast_list(j+1:j+5)
 enddo
 nblast_list = k
-!write(logmsg,'(a,5i6)') '# of mono, cap, pit, OC, OB: ',nmono_list, ncap_list, npit_list, nclast_list, nblast_list
-!call logger(logmsg)
 end subroutine
 
 !-----------------------------------------------------------------------------------------
@@ -1349,7 +1365,7 @@ end subroutine
 !----------------------------------------------------------------------------------------
 subroutine read_inputfile(ok)
 logical :: ok
-real :: S1P1_RISETIME
+real :: S1PR1_RISETIME
 
 ok = .false.
 open(nfinp,file=inputfile,status='old')
@@ -1366,8 +1382,8 @@ read(nfinp,*) S1P_CHEMOLEVEL
 read(nfinp,*) S1P_KDIFFUSION
 read(nfinp,*) S1P_HALFLIFE
 read(nfinp,*) S1P_GRADLIM
-read(nfinp,*) S1P1_THRESHOLD
-read(nfinp,*) S1P1_RISETIME
+read(nfinp,*) S1PR1_THRESHOLD
+read(nfinp,*) S1PR1_RISETIME
 
 read(nfinp,*) OB_PER_MM3
 read(nfinp,*) OB_SIGNAL_FACTOR
@@ -1406,7 +1422,7 @@ close(nfinp)
 
 DELTA_X = MONOCYTE_DIAMETER
 NX = X_SIZE/DELTA_X									! convert um -> grids
-NY = Y_SIZE/DELTA_X	+NBY							! convert um -> grids
+NY = Y_SIZE/DELTA_X	+ NBY							! convert um -> grids
 if (mod(NX,2) /= 0) NX = NX+1						! ensure that NX is even (why?)
 NZ = NX
 if (CAPILLARY_DIAMETER == 0) then
@@ -1421,7 +1437,7 @@ CLAST_LIFETIME = CLAST_LIFETIME*24*60				! convert days -> minutes
 !MAX_RESORPTION_RATE = MAX_RESORPTION_RATE/DELTA_X	! convert um/min -> grids/min
 MAX_RESORPTION_D = MAX_RESORPTION_D/DELTA_X			! convert um -> grids
 SIGNAL_RADIUS = SIGNAL_RADIUS/DELTA_X				! convert um -> grids
-S1P1_BASERATE = 1./(60.*S1P1_RISETIME)				! convert time (hours) to rate (/min)
+S1PR1_BASERATE = 1./(60.*S1PR1_RISETIME)				! convert time (hours) to rate (/min)
 
 !write(*,*) 'DC_RADIUS, chemo_radius: ',DC_RADIUS,chemo_radius
 !chemo_N = max(3,int(chemo_radius + 0.5))	! convert from um to lattice grids
@@ -1575,6 +1591,7 @@ endif
 end subroutine
 
 !------------------------------------------------------------------------------------------------
+! This is set up to simulate either the monocyte model or the OC model.
 !------------------------------------------------------------------------------------------------
 subroutine simulate_step(res) BIND(C)
 !DEC$ ATTRIBUTES DLLEXPORT :: simulate_step
@@ -1583,34 +1600,35 @@ integer(c_int) :: res
 logical :: ok
 integer :: error
 real :: totsig, tnow, hour, dt
-integer, parameter :: NT_EVOLVE = 20
+integer, parameter :: NT_EVOLVE = 5		! 10 leads to instability
 
 res = 0
-!call logger("simulate_step")
+if (dbug) call logger("simulate_step")
 ok = .true.
 istep = istep + 1
 tnow = istep*DELTA_T
 dt = NT_EVOLVE*DELTA_T
 
-if (TESTING_OC) then
+if (OC_model) then
 	call simulate_OC_step(error)
 	res = error
 	return
 endif
 
 if (.not. initiated .and. tnow > STARTUP_TIME*24*60) then
+	call logger('call Initiation')
 	call Initiation
 endif
-if (mod(istep,100) == 0) then
+if (mod(istep,240) == 0) then
 	hour = istep/240.
 	write(logmsg,'(a,i8,f8.2,6i6)') 'istep: ',istep,hour,mono_cnt,nleft	!,mono(22)%status,mono(22)%site
 	call logger(logmsg)
 !	call CheckMono
 !	call CheckBlast
 endif
-!write(nflog,*) 'call updater'
+if (dbug) call logger('call updater')
 call updater
-!write(nflog,*) 'call MonoMover: ',nmono
+if (dbug) call logger('call MonoMover')
 call MonoMover
 if (initiated .and. mod(istep,NT_EVOLVE) == 0) then
     if (CXCL12_initialized) then
@@ -1739,18 +1757,24 @@ endif
 end subroutine
 
 !------------------------------------------------------------------------------------------------
+! run_case = 1 => monocyte model
 !------------------------------------------------------------------------------------------------
-subroutine execute(infile_array,buflen) BIND(C)
+subroutine execute(infile_array,buflen,run_case,res) BIND(C)
 !!DEC$ ATTRIBUTES DLLEXPORT :: EXECUTE
 !!DEC$ ATTRIBUTES C, REFERENCE, MIXED_STR_LEN_ARG, ALIAS:"execute" :: execute
 !DEC$ ATTRIBUTES DLLEXPORT :: execute
 use, intrinsic :: iso_c_binding
 character(c_char) :: infile_array(128)
-integer(c_int) :: buflen
+integer(c_int) :: buflen, run_case,res
 character*(128) :: infile
 logical :: ok
-integer :: i, res
+integer :: i
 
+if (run_case == 1) then
+	OC_model = .false.
+elseif (run_case == 2) then
+	OC_model = .true.
+endif
 use_CPORT1 = .false.	! TESTING DIRECT CALLING FROM C++
 infile = ''
 do i = 1,buflen
@@ -1794,6 +1818,7 @@ if (use_tcp) then
 	call connecter(ok)
 	if (.not.ok) then
 		call logger('Failed to make TCP connections')
+		res = 1
 		return
 	endif
 	call logger('did connecter')
@@ -1806,15 +1831,12 @@ if (ok) then
 	simulation_start = .true.
 	istep = 0
 	
-	if (TESTING_OC) then
+	if (OC_model) then
 		call test_OCdynamics
 	endif
-	
+	call logger('res = 0')
+	res = 0
 	return
-	
-	call simulate(ok)
-	call logger('Ended simulation')
-	call logger('Execution successful')
 else
 	call logger('setup failed')
 endif
@@ -1823,7 +1845,6 @@ if (ok) then
 else
 	res = 1
 endif
-call terminate_run(res)
 end subroutine
 
 end module

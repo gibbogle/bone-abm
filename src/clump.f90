@@ -213,7 +213,7 @@ end subroutine
 ! Two threshold approach: 
 ! Cell integrates RANK receptor signal (S).
 ! When S > ST1 the cell starts to respond to the attracting chemotactic signal from OBs.
-! As S increases the response to chemotactic signal increases, and the S1P1 level declines.
+! As S increases the response to chemotactic signal increases, and the S1PR1 level declines.
 ! When S > ST2 the cell becomes sticky.
 ! When two sticky cells meet they stick (with a probability determined by their stickiness levels).
 ! While stuck together they lose random motility.
