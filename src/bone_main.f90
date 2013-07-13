@@ -28,12 +28,13 @@ integer :: nt = 10000
 real :: simdays
 character*(64) :: infile = 'basecase.inp'
 integer :: res, nlen
+integer :: run_case = 1
 
 use_tcp = .false.
 call get_days(infile,simdays)
 write(*,*) 'DAYS: ',simdays
 nlen = len(infile)
-call execute(infile,nlen)
+call execute(infile,nlen,run_case,res)
 
 nt = simdays*24*60*4
 write(*,*) 'nt: ',nt

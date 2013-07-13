@@ -2571,29 +2571,29 @@ end function
 
 !---------------------------------------------------------------------
 !---------------------------------------------------------------------
-subroutine chemo(S,site,p,jmpdir,pstar)
-integer :: site(3), jmpdir(MAXRELDIR)
-real :: S, p(0:MAXRELDIR), pstar(0:MAXRELDIR)
-integer :: u(3), i
-real :: g(3), gdotu, psum
-
-g = S1P_grad(:,site(1),site(2),site(3))
-do i = 1,MAXRELDIR
-	if (p(i) == 0) cycle
-	u = jumpvec(:,jmpdir(i))
-	gdotu = g(1)*u(1) + g(2)*u(2) + g(3)*u(3)
-	pstar(i) = p(i) + Kchemo*S*gdotu
-	pstar(i) = max(pstar(i),0.0)
-	pstar(i) = min(pstar(i),1.0)
-	psum = psum + pstar(i)
-enddo
-if (psum > 1) then
-	pstar(1:MAXRELDIR) = pstar(1:MAXRELDIR)/psum
-	pstar(0) = 0
-else
-	pstar(0) = 1 - psum
-endif
-end subroutine
+!subroutine chemo(S,site,p,jmpdir,pstar)
+!integer :: site(3), jmpdir(MAXRELDIR)
+!real :: S, p(0:MAXRELDIR), pstar(0:MAXRELDIR)
+!integer :: u(3), i
+!real :: g(3), gdotu, psum
+!
+!g = S1P_grad(:,site(1),site(2),site(3))
+!do i = 1,MAXRELDIR
+!	if (p(i) == 0) cycle
+!	u = jumpvec(:,jmpdir(i))
+!	gdotu = g(1)*u(1) + g(2)*u(2) + g(3)*u(3)
+!	pstar(i) = p(i) + Kchemo*S*gdotu
+!	pstar(i) = max(pstar(i),0.0)
+!	pstar(i) = min(pstar(i),1.0)
+!	psum = psum + pstar(i)
+!enddo
+!if (psum > 1) then
+!	pstar(1:MAXRELDIR) = pstar(1:MAXRELDIR)/psum
+!	pstar(0) = 0
+!else
+!	pstar(0) = 1 - psum
+!endif
+!end subroutine
 
 !---------------------------------------------------------------------
 !---------------------------------------------------------------------

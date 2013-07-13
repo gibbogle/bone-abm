@@ -112,6 +112,7 @@ real :: CXCL12_GRADLIM = 5.0e-4			! was equal to the initial max CXCL12 gradient
 logical :: stuck
 logical :: initiated
 logical :: use_capillary
+logical :: CXCL12_initialized
 
 logical :: OC_model						! this flag turns on the osteoclast simulation
 
@@ -258,7 +259,9 @@ real :: d2, r2, sum, factor
 !return
 
 BlastSignal = 0
-if (pblast%status /= ALIVE) return
+if (pblast%status /= ALIVE) then
+    return
+endif
 bsite = pblast%site
 if (surface(bsite(1),bsite(3))%seal == 1) return
 r2 = OB_SIGNAL_RADIUS**2

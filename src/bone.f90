@@ -18,6 +18,7 @@ use fields
 use ode_diffuse
 use motion
 use omp_lib
+use chemokine
 
 implicit none 
 save
@@ -423,53 +424,53 @@ end subroutine
 subroutine Initiation
 integer :: x, z, xmin, iblast, ibinit, bsite(3), dx, dz
 real :: d2, r2, sig, sigmax
+logical :: bstart(MAX_BLAST)
 logical, parameter :: ALL_OBS = .true.
 logical, parameter :: HIGHEST = .false., ALL = .true.
 
 call logger('Initiation')
 r2 = OB_SIGNAL_RADIUS**2
 bstart = .false.
-if (ALL_OBS) then
-	do ibinit = 1,nblast
-		bsite = blast(ibinit)%site
-		do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
-			x = bsite(1) + dx
-			if (x < 1) cycle
-			do dz = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
-				z = bsite(3) + dz
-				d2 = dx**2 + dz**2
-				if (d2 > r2) cycle
-				if (surface(x,z)%target_depth == 0) cycle
-				surface(x,z)%seal = 0
-			enddo
-		enddo
-		blast(ibinit)%status = ALIVE
+!if (ALL_OBS) then
+!	do ibinit = 1,nblast
+!		bsite = blast(ibinit)%site
+!		do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
+!			x = bsite(1) + dx
+!			if (x < 1) cycle
+!			do dz = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
+!				z = bsite(3) + dz
+!				d2 = dx**2 + dz**2
+!				if (d2 > r2) cycle
+!				if (surface(x,z)%target_depth == 0) cycle
+!				surface(x,z)%seal = 0
+!			enddo
+!		enddo
+!		blast(ibinit)%status = ALIVE
+!	enddo
+!else
+if (HIGHEST) then
+	sigmax = 0
+	do iblast = 1,nblast
+		bsite = blast(iblast)%site
+		sig = surface(bsite(1),bsite(3))%signal
+		if (sig > sigmax) then
+			sigmax = sig
+			ibinit = iblast
+		endif
 	enddo
-else
-	if (HIGHEST) then
-		sigmax = 0
-		do iblast = 1,nblast
-			bsite = blast(iblast)%site
-			sig = surface(bsite(1),bsite(3))%signal
-			if (sig > sigmax) then
-				sigmax = sig
-				ibinit = iblast
-			endif
-		enddo
-	else
 elseif (.not.ALL) then
-		xmin = 1000
-		do iblast = 1,nblast
-			bsite = blast(iblast)%site
-			if (bsite(1) < xmin) then
-				xmin = bsite(1)
-				ibinit = iblast
-			endif
-		enddo
+	xmin = 1000
+	do iblast = 1,nblast
+		bsite = blast(iblast)%site
+		if (bsite(1) < xmin) then
+			xmin = bsite(1)
+			ibinit = iblast
+		endif
+	enddo
 	bstart(ibinit) = .true.
 else
     bstart = .true.
-	endif
+endif
 
 do ibinit = 1,nblast
     if (.not.bstart(ibinit)) cycle
@@ -487,7 +488,7 @@ do ibinit = 1,nblast
 	enddo
 	!blast%status = DORMANT
 	blast(ibinit)%status = ALIVE
-endif
+enddo
 CXCL12_chemotaxis = .true.
 initiated = .true.
 end subroutine
@@ -713,7 +714,7 @@ do iclump = 1,nclump
 		endif
 	elseif (pclump%status == FUSING) then
 		if (tnow >= pclump%fusetime) then
-!			write(logmsg,*) '***fuse clump: ',iclump,pclump%fusetime,tnow,pclump%cm 
+!			write(logmsg,*) '***fuse clump: ',iclump,pclump%fusetime,tnow,pclump%cm  
 !			call logger(logmsg)
 			call fuse_clump(pclump)
 !			write(logmsg,*) 'FUSED: ',iclump
@@ -726,6 +727,8 @@ do iclump = 1,nclump
 !			call logger(logmsg)
 			call createOsteoclast(pclump)
 			blast(pclump%iblast)%status = DORMANT
+			write(logmsg,*) 'OB dormant: ',pclump%iblast,blast(pclump%iblast)%status
+			call logger(logmsg)
 		endif
 	endif
 enddo
@@ -789,9 +792,7 @@ if (OC_model) then
 				endif
 			enddo
 		enddo
-		
-return  !  TESTING
-	
+			
 		if (tnow > pclast%movetime) then
 	!		write(*,*) 'Move osteoclast: ',tnow,iclast
 			call MoveClast(pclast,res)
@@ -833,6 +834,8 @@ return  !  TESTING
 	enddo
 endif
 
+return  !  TESTING
+
 if (dbug) call logger('osteoblasts')
 ! Osteoblast state changes and motion
 do iblast = 1,nblast
@@ -841,6 +844,7 @@ do iblast = 1,nblast
 	if (pblast%status == DORMANT .and. surface(site(1),site(3))%seal < 1) then
 		pblast%status = ALIVE
 		write(logmsg,*) 'OB alive: ',iblast
+		call logger(logmsg)
 	endif
 	if (pblast%status == DEAD) cycle
 !	if (tnow > pblast%movetime) then
@@ -1621,7 +1625,7 @@ if (.not. initiated .and. tnow > STARTUP_TIME*24*60) then
 endif
 if (mod(istep,240) == 0) then
 	hour = istep/240.
-	write(logmsg,'(a,i8,f8.2,6i6)') 'istep: ',istep,hour,mono_cnt,nleft	!,mono(22)%status,mono(22)%site
+	write(logmsg,'(a,i8,f8.2,2i6,2L2)') 'istep: ',istep,hour,mono_cnt,nleft, initiated, CXCL12_initialized	!,mono(22)%status,mono(22)%site
 	call logger(logmsg)
 !	call CheckMono
 !	call CheckBlast
@@ -1760,8 +1764,6 @@ end subroutine
 ! run_case = 1 => monocyte model
 !------------------------------------------------------------------------------------------------
 subroutine execute(infile_array,buflen,run_case,res) BIND(C)
-!!DEC$ ATTRIBUTES DLLEXPORT :: EXECUTE
-!!DEC$ ATTRIBUTES C, REFERENCE, MIXED_STR_LEN_ARG, ALIAS:"execute" :: execute
 !DEC$ ATTRIBUTES DLLEXPORT :: execute
 use, intrinsic :: iso_c_binding
 character(c_char) :: infile_array(128)
