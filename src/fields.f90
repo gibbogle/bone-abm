@@ -2,6 +2,8 @@
 
 module fields
 use global
+use chemokine
+
 implicit none
 save
 
@@ -23,6 +25,27 @@ outside = .false.
 end function
 
 !----------------------------------------------------------------------------------------
+! Convert halflife in hours to a decay rate /min
+!----------------------------------------------------------------------------------------
+real function DecayRate(halflife)
+real :: halflife
+
+DecayRate = log(2.0)/(halflife*60)
+end function
+
+!----------------------------------------------------------------------------------------
+!----------------------------------------------------------------------------------------
+subroutine setupChemo
+
+chemo(CXCL12)%name = "CXCL12"
+chemo(CXCL12)%diff_coef = CXCL12_KDIFFUSION
+chemo(CXCL12)%decay_rate = DecayRate(CXCL12_HALFLIFE)
+chemo(S1P)%name = "S1P"
+chemo(S1P)%diff_coef = S1P_KDIFFUSION
+chemo(S1P)%decay_rate = DecayRate(S1P_HALFLIFE)
+end subroutine
+
+!----------------------------------------------------------------------------------------
 ! Since it is assumed that the cells in the marrow have an insignificant effect on the 
 ! cytokine concentration, and also that the concentration in the blood is relatively
 ! constant, it is valid to consider the cytokine concentration field in the marrow
@@ -36,6 +59,9 @@ end function
 !----------------------------------------------------------------------------------------
 subroutine init_fields
 
+allocate(CXCL12_conc(NX,NY,NZ))
+allocate(CXCL12_grad(3,NX,NY,NZ))
+allocate(CXCL12_influx(NX,NY,NZ))
 if (use_CXCL12) then
 	call init_CXCL12
 endif
@@ -94,7 +120,7 @@ do x = 1,NX
 enddo
 
 if (steady) then
-	call steadystate(influx,S1P_KDIFFUSION,S1P_KDECAY,S1P_conc)
+	call steadystate(influx,chemo(S1P)%diff_coef,chemo(S1P)%decay_rate,S1P_conc)
 else
 !	allocate(dCdt(NX,NY,NZ))
 !	dCdt = 0
@@ -158,13 +184,13 @@ real :: g(3), gamp, gmax
 type(osteoblast_type), pointer :: pblast
 !real, parameter :: Kdecay = 0.00001, Kdiffusion = 0.001
 
-write(logmsg,*) 'Initializing CXCL12: KDECAY: ', CXCL12_KDECAY
+write(logmsg,*) 'Initializing CXCL12: KDECAY: ', chemo(CXCL12)%decay_rate
 !call formulate(CXCL12_KDIFFUSION,CXCL12_KDECAY)
 
 call logger(logmsg)
-allocate(CXCL12_conc(NX,NY,NZ))
-allocate(CXCL12_grad(3,NX,NY,NZ))
-allocate(CXCL12_influx(NX,NY,NZ))
+!allocate(CXCL12_conc(NX,NY,NZ))
+!allocate(CXCL12_grad(3,NX,NY,NZ))
+!allocate(CXCL12_influx(NX,NY,NZ))
 
 CXCL12_grad = 0
 CXCL12_influx = -1
@@ -193,16 +219,16 @@ do iblast = 1,nblast
 enddo
 if (sum == 0) return
 
-call steadystate(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc)
+call steadystate(CXCL12_influx,chemo(CXCL12)%diff_coef,chemo(CXCL12)%decay_rate,CXCL12_conc)
 call gradient(CXCL12_influx,CXCL12_conc,CXCL12_grad)
 !write(*,*) 'CXCL12 gradient: ',CXCL12_grad(:,25,25,25)
 write(logmsg,*) 0,CXCL12_conc(NX/2,NBY+2,NZ/2)
 call logger(logmsg)
 ! Testing convergence
-nt = 10
+nt = 0
 dt = 100*DELTA_T
 do it = 1,nt
-	call evolve(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc,dt)
+	call evolve(CXCL12_influx,chemo(CXCL12)%diff_coef,chemo(CXCL12)%decay_rate,CXCL12_conc,dt)
 	write(logmsg,*) it,CXCL12_conc(NX/2,NBY+2,NZ/2)
 	call logger(logmsg)
 	sum = 0
@@ -227,6 +253,7 @@ enddo
 write(logmsg,*) 'Max CXCL12 gradient at y=NBY+3: ',gmax
 call logger(logmsg)
 CXCL12_GRADLIM = gmax
+CXCL12_initialized = .true.
 end subroutine
 
 !----------------------------------------------------------------------------------------
@@ -268,15 +295,16 @@ do iblast = 1,nblast
 	x = pblast%site(1)
 	z = pblast%site(3)
 	sig = BlastSignal(pblast)
-	write(nflog,'(a,4i6,f8.3)') 'sig: ',iblast,nblast,x,z,sig
+	write(*,'(a,4i6,f8.3)') 'sig: ',iblast,nblast,x,z,sig
 	if (sig > OB_SIGNAL_THRESHOLD) then
 		CXCL12_influx(x,y,z) = sig
 	endif
 	totsig = totsig + CXCL12_influx(x,y,z)
 enddo
-!write(nflog,*) 'evolveCXCL12: totsig: ',istep,totsig
+write(logmsg,*) 'evolveCXCL12: totsig: ',istep,totsig
+call logger(logmsg)
 !if (totsig > 0) then
-	call evolve(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc,dt)
+	call evolve(CXCL12_influx,chemo(CXCL12)%diff_coef,chemo(CXCL12)%decay_rate,CXCL12_conc,dt)
 	call gradient(CXCL12_influx,CXCL12_conc,CXCL12_grad)
 !endif
 end subroutine
@@ -288,7 +316,7 @@ real :: influx(:,:,:), C(:,:,:)
 real :: Kdiffusion, Kdecay
 real :: dx2diff, total, maxchange, maxchange_par, total_par
 real, parameter :: alpha = 0.5
-real, parameter :: tol = 1.0e-6		! max change in C at any site as fraction of average C
+real, parameter :: tol = 1.0e-5		! max change in C at any site as fraction of average C
 integer :: nc, nc_par, k, it, kpar, dz
 integer :: zlim(2,16), z1, z2, zfr, zto, n	! max 16 threads
 real, allocatable :: C_par(:,:,:)
