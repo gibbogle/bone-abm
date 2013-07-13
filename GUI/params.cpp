@@ -84,21 +84,35 @@ Median T cell speed is roughly proportional to MOTILITY_BETA."},
 "T cell motility is described by speed and persistence parameters, each in the range 0 - 1.\n\
 MOTILITY_RHO determines the extent to which motion is in the same direction from one time step to the next."},
 
+{"CXCL12_CHEMOLEVEL", 1.0, 0.0, 1.0,
+"Level of CXCL12 chemotaxis",
+"Level of CXCL12-mediated chemotactic influence on a monocyte.  The overall CXCL12 chemotaxis influence factor is given by:\n\
+CXCL12 influence factor = ..."},
+
+{"CXCL12_KDIFFUSION", 100, 0.0, 0.0,
+"CXCL12 diffusion coefficient",
+"Coefficient of diffusion of CXCL12 through marrow."},
+
+{"CXCL12_HALFLIFE", 30, 0.0, 0.0,
+"CXCL12 half-life",
+"Half-life of CXCL12.\n\
+[min]"},
+
 {"S1P_CHEMOLEVEL", 0.1, 0.0, 1.0,
 "Level of S1P chemotaxis",
 "Level of S1P-mediated chemotactic influence on a monocyte.  The overall S1P chemotaxis influence factor is given by:\n\
 S1P influence factor = (Level of S1P chemotaxis)*min(1.0,(S1P gradient)/(Reference S1P gradient))*(cell S1P1 level)"},
 
-{"S1P_KDIFFUSION", 0.001, 0.0, 0.0,
+{"S1P_KDIFFUSION", 100, 0.0, 0.0,
 "S1P diffusion coefficient",
 "Coefficient of diffusion of S1P through marrow."},
 
-{"S1P_KDECAY", 0.00001, 0.0, 0.0,
-"S1P decay coefficient",
-"Coefficient of decay of S1P.\n\
-[/min]"},
+{"S1P_HALFLIFE", 30, 0.0, 0.0,
+"S1P half-life",
+"Half-life of S1P.\n\
+[min]"},
 
-{"S1P_GRADLIM", 0.02, 0.0, 0.0,
+{"S1P_GRADLIM", 0.0001, 0.0, 0.0,
 "Reference S1P gradient",
 "S1P gradient is scaled by this to arrive at the gradient influence factor.  The overall S1P chemotaxis influence factor is given by:\n\
 S1P influence factor = (Level of S1P chemotaxis)*min(1.0,(S1P gradient)/(Reference S1P gradient))*(cell S1P1 level)"},
@@ -114,6 +128,13 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Time required for monocyte S1P1 level to rise from 0 to 1. (Currently the rate of increase is treated as constant).\n\
 [hours]"},
 
+{"OB_PER_MM3", 5, 0, 0,
+"Osteoblasts/mm3",
+"Average number of osteoblasts per cubic mm of marrow (initial)."},
+
+{"OB_SIGNAL_FACTOR", 10, 0, 0,
+"OB signal factor",
+"Ratio of CXCL12 secretion to bone signal strength."},
 
 {"X_SIZE", 500, 0, 0,
 "Bone patch size",
@@ -125,12 +146,12 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Dimension of the modelled region in Y direction.\n\
 [um]"},
 
-{"CAPILLARY_DIAMETER", 0.0, 20.0, 200.0,
+{"CAPILLARY_DIAMETER", 20.0, 20.0, 200.0,
 "Diameter of a capillary",
 "(Currently we consider only a single capillary with a fixed diameter)\n\
 [um]"},
 
-{"MONO_PER_MM3", 1500, 0, 0,
+{"MONO_PER_MM3", 6000, 0, 0,
 "Monocytes/mm3",
 "Average number of monocytes per cubic mm of marrow (initial)."},
 
@@ -139,7 +160,7 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Rate of influx pf osteoclast-precursor monocytes from the blood.\n\
 [/hour]"},
 
-{"STEM_PER_MM3", 5, 0, 0,
+{"STEM_PER_MM3", 20, 0, 0,
 "Stem cells/mm3",
 "Average number of stem cells per cubic mm of marrow."},
 
@@ -182,7 +203,7 @@ probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1
 "Maximum resorption N",
 "Number of osteoclast monocytes corresponding to maximum resorption rate."},
 
-{"CROSS_PROB", 0.1, 0.0, 1.0,
+{"CROSS_PROB", 0.5, 0.0, 1.0,
 "Max capillary egress probability",
 "The probability (per time step) of a monocyte beginning to cross the endothelium into the capillary, while next to a capillary site\n\
 is given by: probability = (Max capillary egress probability)*(S1P1 - S1P1_THRESHOLD)/(1 - S1P1_THRESHOLD)\n\

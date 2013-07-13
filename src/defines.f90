@@ -2,6 +2,9 @@ module defines
 implicit none
 save
 
+INTEGER,  PARAMETER  ::  SP = kind(1.0), DP = kind(1.0d0)
+integer, parameter :: REAL_KIND = DP
+
 integer, parameter :: nfinp=10, nflog=11, nfpos=12
 integer, parameter :: TCP_PORT_0 = 5000		! main communication port (logging)
 integer, parameter :: TCP_PORT_1 = 5001		! data transfer port (plotting)
@@ -33,6 +36,12 @@ integer, parameter :: CROSSING = 8
 integer, parameter :: LEFT = 9
 integer, parameter :: DORMANT = 10
 
+! Chemokines
+integer, parameter :: MAX_CHEMO = 2
+integer, parameter :: CXCL12 = 1
+integer, parameter :: S1P = 2
+integer, parameter :: RANKL = 3
+
 ! OC-specific constants
 integer, parameter :: QUEUED = 2
 integer, parameter :: JOINING = 3
@@ -52,7 +61,7 @@ integer, parameter :: MAX_CLAST = 100
 integer, parameter :: MAX_BLAST = 200
 integer, parameter :: MAX_CAP = 100
 integer, parameter :: MAX_SIGNAL = 10000
-integer, parameter :: MAX_NCLUMP = 50
+integer, parameter :: MAX_NCLUMP = 1000
 integer, parameter :: MAX_CLUMP_CELLS = 50
 integer, parameter :: MAX_NUCLEI = 25
 real, parameter :: DELTA_T = 1.0		! minutes 
@@ -66,28 +75,6 @@ real, parameter :: OC_MOVE_THRESHOLD = 0.1
 character*(12), parameter :: stopfile = 'stop_dll'
 character*(13), parameter :: pausefile = 'pause_dll'
 
-!real, parameter :: capR = 1.5
-!real, parameter :: MONOCYTE_DIAMETER = 10	! um
-!real, parameter :: MONO_PER_MM3 = 2000
-!integer, parameter :: NSTEM = 20
-!real, parameter :: STEM_CYCLETIME = 6*60	! 6 hours
-
-!real, parameter :: SIGNAL_RADIUS = 10	! radius of influence (in lattice sites) of bone signal
-!real, parameter :: SIGNAL_THRESHOLD = 0.14
-!real, parameter :: SIGNAL_AFACTOR = 0.4	! field amplification factor
-!integer, parameter :: MTHRESHOLD = 25
-
-! Osteoclast parameters
-!real, parameter :: MAX_RESORPTION_RATE = 0.002
-!real, parameter :: MAX_RESORPTION_D = 10
-!integer, parameter :: MAX_RESORPTION_N = 30
-!real, parameter :: CLAST_LIFETIME = 96*60
-!real, parameter :: CROSSING_TIME = 2*60
-!real, parameter :: FUSING_TIME = 2*60
-!real, parameter :: CLAST_DWELL_TIME0 = 4*60
-!real, parameter :: CLAST_DWELL_TIME = 3*60 
-
-
 ! S1P1 parameters
 logical, parameter :: S1P_chemotaxis = .true.
 
@@ -96,19 +83,19 @@ logical, parameter :: S1P_chemotaxis = .true.
 !real, parameter :: S1P1_THRESHOLD = 0.5
 !real, parameter :: S1P1_BASERATE = 1.0/(6*60)	! 6 hours 
 
-! RANKL parameters
+! RANKL, CXCL12 parameters
 logical, parameter :: use_CXCL12 = .true.
-real, parameter :: CXCL12_KDIFFUSION = 2		! 1/10 of approx 1000 um^2/min
+!real, parameter :: CXCL12_KDIFFUSION = 100.0		! 1/10 of approx 1000 um^2/min
 ! http://www.math.ubc.ca/~ais/website/status/diffuse.html
 !real, parameter :: CXCL12_KDECAY = 0.00001	! <=== compute from CXCL12_HALFLIFE
-real, parameter :: CXCL12_HALFLIFE = 12*60
+!real, parameter :: CXCL12_HALFLIFE = 10 ! min
 real, parameter :: RANKSIGNAL_rateconstant = 0.3
 real, parameter :: RANKSIGNAL_halflife = 12*60		! mins
-real, parameter :: OB_SIGNAL_FACTOR = 0.5			! ratio of CXCL12 secretion to bone signal strength.
+!real, parameter :: OB_SIGNAL_FACTOR = 10.0			! ratio of CXCL12 secretion to bone signal strength. (0.5)
 real, parameter :: ST1 = 0.0	! -> CHEMOTACTIC (now cells are always chemotactic)
 real, parameter :: ST2 = 0.5	! -> STICKY
 
-real, parameter :: CXCL12_CHEMOLEVEL = 1.0	! 0.3
+!real, parameter :: CXCL12_CHEMOLEVEL = 1.0	! 0.3
 !real, parameter :: CXCL12_GRADLIM = 0.0005
 
 ! Clump parameters
@@ -135,11 +122,11 @@ real, parameter :: Kattraction = 4
 logical, parameter :: SIGNAL_POSITIVE = .false.
 
 ! Osteoblast parameters
-real, parameter :: OB_PER_UM3 = 1.0e-8
+!real, parameter :: OB_PER_MM3 = 0       !5.0
 real, parameter :: OB_SIGNAL_RADIUS = 4		! radius of disk over which OB integrates signal
-real, parameter :: OB_SIGNAL_THRESHOLD = 1.0	! 5
+real, parameter :: OB_SIGNAL_THRESHOLD = 2.0	! 5
 real, parameter :: OB_REACH = 40			! to make contact with a monocyte (microns)
-real, parameter :: BLAST_DWELL_TIME = 2*60
+real, parameter :: OB_DWELL_TIME = 2*60
 
 type monocyte_type
     integer :: ID

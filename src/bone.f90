@@ -1,5 +1,5 @@
-! There is an important design issue in the treatment of signals.
-! Currently no distinction is made between signal from the bone surface (osteocytes)
+! There is an important design issue in the treatment of signals. 
+! Currently no distinction is made between signal from the bone surface (osteocytes) 
 ! and signal from osteoblasts (RANKL).
 ! One very crude approach:
 ! (a) There is an osteocyte-generated signal from the bone that varies with the depth of bone to be excavated,
@@ -16,6 +16,7 @@ module bone_mod
 use, intrinsic :: ISO_C_binding
 use global
 use fields
+use ode_diffuse
 use motion
 use omp_lib
 
@@ -115,6 +116,8 @@ ok = .true.
 inputfile = infile
 call read_inputfile(ok)
 if (.not.ok) return
+
+call setupChemo
 
 Mnodes = ncpu
 #if defined(OPENMP) || defined(_OPENMP)
@@ -240,7 +243,7 @@ call CreatePatch
 NMONO_INITIAL = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*MONO_PER_MM3	! domain as fraction of 1 mm3 x rate of monocytes
 !NSTEM = (PI*NX*CAPILLARY_DIAMETER*DELTA_X**2/1.0e6)*STEM_PER_MM2	! capillary surface area as fraction of 1 mm2 x rate of stem cells
 NSTEM = (NX*(NY-NBY)*NZ*DELTA_X**3/1.0e9)*STEM_PER_MM3	! domain as fraction of 1 mm3 x rate of monocytes
-NBLAST_INITIAL = (patch%volume*DELTA_X**3)*OB_PER_UM3
+NBLAST_INITIAL = (patch%volume*DELTA_X**3)*OB_PER_MM3*1.0e-9
 
 allocate(mono(MAX_MONO))
 allocate(clast(MAX_CLAST))
@@ -252,11 +255,11 @@ if (TESTING_OC) then
 else
 	call InitialBlastPlacement
 	call logger('did InitialBlastPlacement')
-	!call Initiation
 	RANKSIGNAL_decayrate = log(2.0)/(RANKSIGNAL_HALFLIFE)    ! rate/min
-	CXCL12_KDECAY = log(2.0)/(CXCL12_HALFLIFE)    ! rate/min
 	call init_fields
 	call logger('Did init_fields')
+    call SetupODEdiff(CXCL12_influx)
+	call logger('Did SetupODEdiff')
 endif
 !write(*,*) 'Lacuna volume: ',patch%volume,NBLAST_INITIAL
 !write(logmsg,*) 'NSTEM, NMONO_INITIAL: ',NSTEM,NMONO_INITIAL
@@ -288,7 +291,6 @@ if (NSTEM > 0) then
 		i = i + 1
 		stem(i)%ID = i
 		stem(i)%site = (/x,y,z/)
-	!	call random_number(R)
 		R = par_uni(kpar)
 		stem(i)%dividetime = R*STEM_CYCLETIME	! stem cells are due to divide at random times
 		occupancy(x,y,z)%species = STEMCELL
@@ -298,8 +300,6 @@ endif
 nclump = 0
 stuck = .false.
 initiated = .false.
-!call setSignal(1,ON,ok)
-!if (.not.ok) return
 
 end subroutine
 
@@ -364,7 +364,7 @@ real :: d2min = 10	!0.4*OB_SIGNAL_RADIUS**2
 real, parameter :: MINIMUM_SIGNAL = 0.7
 logical, parameter :: REGULAR = .false.
 
-!NBLAST_INITIAL = 1
+!NBLAST_INITIAL = 0
 write(logmsg,*) 'InitialBlastPlacement: ',NBLAST_INITIAL
 call logger(logmsg)
 if (HALF_ELLIPSE) then
@@ -393,7 +393,7 @@ if (REGULAR) then
 		write(logmsg,'(a,4i4)') 'Placed OB: ',nblast,site
 		call logger(logmsg)
 	enddo
-else
+elseif (NBLAST_INITIAL > 0) then
 	do
 		R = par_uni(kpar)
 		x = xmin + R*(xmax-xmin) + 0.5
@@ -436,18 +436,12 @@ end subroutine
 subroutine Initiation
 integer :: x, z, xmin, iblast, ibinit, bsite(3), dx, dz
 real :: d2, r2, sig, sigmax
-logical, parameter :: HIGHEST = .false.
+logical :: bstart(MAX_BLAST)
+logical, parameter :: HIGHEST = .false., ALL = .true.
 
 call logger('Initiation')
 r2 = OB_SIGNAL_RADIUS**2
-!xmin = 1.0e10
-!do iblast = 1,nblast
-!	bsite = blast(iblast)%site
-!	if (bsite(1) < xmin) then
-!		xmin = bsite(1)
-!		ibinit = iblast
-!	endif
-!enddo
+bstart = .false.
 if (HIGHEST) then
 	sigmax = 0
 	do iblast = 1,nblast
@@ -458,7 +452,8 @@ if (HIGHEST) then
 			ibinit = iblast
 		endif
 	enddo
-else
+	bstart(ibinit) = .true.
+elseif (.not.ALL) then
 	xmin = 1000
 	do iblast = 1,nblast
 		bsite = blast(iblast)%site
@@ -467,21 +462,28 @@ else
 			ibinit = iblast
 		endif
 	enddo
+	bstart(ibinit) = .true.
+else
+    bstart = .true.
 endif
-bsite = blast(ibinit)%site
-do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
-	x = bsite(1) + dx
-	if (x < 1) cycle
-	do dz = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
-		z = bsite(3) + dz
-		d2 = dx**2 + dz**2
-		if (d2 > r2) cycle
-		if (surface(x,z)%target_depth == 0) cycle
-		surface(x,z)%seal = 0
-	enddo
+
+do ibinit = 1,nblast
+    if (.not.bstart(ibinit)) cycle
+    bsite = blast(ibinit)%site
+    do dx = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
+	    x = bsite(1) + dx
+	    if (x < 1) cycle
+	    do dz = -OB_SIGNAL_RADIUS,OB_SIGNAL_RADIUS
+		    z = bsite(3) + dz
+		    d2 = dx**2 + dz**2
+		    if (d2 > r2) cycle
+		    if (surface(x,z)%target_depth == 0) cycle
+		    surface(x,z)%seal = 0
+	    enddo
+    enddo
+    !blast%status = DORMANT
+    blast(ibinit)%status = ALIVE
 enddo
-!blast%status = DORMANT
-blast(ibinit)%status = ALIVE
 CXCL12_chemotaxis = .true.
 initiated = .true.
 end subroutine
@@ -500,7 +502,9 @@ blast(nblast)%ID = nblast
 blast(nblast)%status = DORMANT
 blast(nblast)%site = site
 blast(nblast)%iclump = 0
-!write(*,*) 'blast: ',nblast,blast(nblast)%site
+write(logmsg,*) 'New osteoblast: nblast: ',nblast,blast(nblast)%site
+call logger(logmsg)
+CXCL12_initialized = .false.
 end subroutine
 
 !------------------------------------------------------------------------------------------------
@@ -693,23 +697,24 @@ do iclump = 1,nclump
 			do i = 1,pclump%ncells
 				mono(pclump%list(i))%status = FUSING
 			enddo
-			write(logmsg,*) 'Started FUSING: ',iclump
-			call logger(logmsg)
+!			write(logmsg,*) 'Started FUSING: ',iclump,' OB: ',pclump%iblast
+!			call logger(logmsg)
 		endif
 	elseif (pclump%status == FUSING) then
 		if (tnow >= pclump%fusetime) then
 !			write(logmsg,*) '***fuse clump: ',iclump,pclump%fusetime,tnow,pclump%cm 
 !			call logger(logmsg)
 			call fuse_clump(pclump)
-			write(logmsg,*) 'FUSED: ',iclump
-			call logger(logmsg)
+!			write(logmsg,*) 'FUSED: ',iclump
+!			call logger(logmsg)
 		endif
 	elseif (pclump%status == FUSED) then
 		call lower_clump(pclump,on_surface)
 		if (on_surface) then
-			write(logmsg,*) 'On surface: ',iclump
-			call logger(logmsg)
+!			write(logmsg,*) 'On surface: ',iclump
+!			call logger(logmsg)
 			call createOsteoclast(pclump)
+			blast(pclump%iblast)%status = DORMANT
 		endif
 	endif
 enddo
@@ -771,6 +776,8 @@ do iclast = 1,nclast
 		enddo
 	enddo
 	
+return  !  TESTING
+	
 	if (tnow > pclast%movetime) then
 !		write(*,*) 'Move osteoclast: ',tnow,iclast
 		call MoveClast(pclast,res)
@@ -816,11 +823,12 @@ do iblast = 1,nblast
 	site = pblast%site
 	if (pblast%status == DORMANT .and. surface(site(1),site(3))%seal < 1) then
 		pblast%status = ALIVE
+		write(logmsg,*) 'OB alive: ',iblast
 	endif
 	if (pblast%status == DEAD) cycle
 !	if (tnow > pblast%movetime) then
 !		call MoveBlast(pblast,res)
-!		pblast%movetime = tnow + BLAST_DWELL_TIME
+!		pblast%movetime = tnow + OB_DWELL_TIME
 !	endif
 !	if (mod(istep,60*12) == 0) then
 !		write(logmsg,'(a,i4,f8.4)') 'blastsignal: ',iblast,BlastSignal(pblast)
@@ -1003,12 +1011,13 @@ integer :: kpar = 0
 tnow = istep*DELTA_T
 nclast = nclast + 1
 nliveclast = nliveclast + 1
-write(logmsg,*) 'createOsteoclast: ',nclast,tnow
+write(logmsg,*) 'createOsteoclast: ',nclast,tnow,pclump%site
 call logger(logmsg)
 pclast => clast(nclast)
 pclast%ID = nclast
 !pclast%site = pclump%cm + 0.5
 pclast%site = pclump%site
+pclast%cm = pclast%site
 pclast%site(2) = NBY + 1
 pclast%lastdir = random_int(1,8,kpar)
 pclast%entrytime = tnow
@@ -1340,45 +1349,33 @@ end subroutine
 !----------------------------------------------------------------------------------------
 subroutine read_inputfile(ok)
 logical :: ok
-real :: TC_AVIDITY_MEAN,TC_AVIDITY_SHAPE,TC_STIM_RATE_CONSTANT,TC_STIM_HALFLIFE,divide_mean1,divide_shape1
-real :: DC_LIFETIME_MEAN,DC_LIFETIME_SHAPE
-real :: IL2_THRESHOLD,ACTIVATION_THRESHOLD,FIRST_DIVISION_THRESHOLD,DIVISION_THRESHOLD,EXIT_THRESHOLD,STIMULATION_LIMIT
-real :: chemo_radius,chemo_K_exit,chemo_K_DC
 real :: S1P1_RISETIME
 
 ok = .false.
 open(nfinp,file=inputfile,status='old')
 
-!read(nfinp,*) TC_AVIDITY_MEAN				! mean of avidity distribution (only if fix_avidity = false)
-!read(nfinp,*) TC_AVIDITY_SHAPE			    ! shape -> 1 gives normal dist with small variance
-!read(nfinp,*) TC_STIM_RATE_CONSTANT			! rate const for TCR stimulation (-> molecules/min)
-!read(nfinp,*) TC_STIM_HALFLIFE				! halflife of T cell stimulation (hours)
-!read(nfinp,*) divide_mean1
-!read(nfinp,*) divide_shape1
 read(nfinp,*) MONOCYTE_DIAMETER				! monocyte diameter (um) = 10	! um
 read(nfinp,*) BETA							! speed: 0 < beta < 1		(0.65)
 read(nfinp,*) RHO							! persistence: 0 < rho < 1	(0.95)
+
+read(nfinp,*) CXCL12_CHEMOLEVEL
+read(nfinp,*) CXCL12_KDIFFUSION
+read(nfinp,*) CXCL12_HALFLIFE
+
 read(nfinp,*) S1P_CHEMOLEVEL
 read(nfinp,*) S1P_KDIFFUSION
-read(nfinp,*) S1P_KDECAY
+read(nfinp,*) S1P_HALFLIFE
 read(nfinp,*) S1P_GRADLIM
 read(nfinp,*) S1P1_THRESHOLD
 read(nfinp,*) S1P1_RISETIME
 
-!read(nfinp,*) DC_LIFETIME_MEAN				! days
-!read(nfinp,*) DC_LIFETIME_SHAPE 			! days
+read(nfinp,*) OB_PER_MM3
+read(nfinp,*) OB_SIGNAL_FACTOR
 
-!read(nfinp,*) IL2_THRESHOLD					! stimulation needed to initiate IL-2/CD25 production
-!read(nfinp,*) ACTIVATION_THRESHOLD			! stimulation needed for activation
-!read(nfinp,*) FIRST_DIVISION_THRESHOLD		! activation level needed for first division
-!read(nfinp,*) DIVISION_THRESHOLD			! activation level needed for subsequent division
-!read(nfinp,*) EXIT_THRESHOLD				! activation level below which exit is permitted
-!read(nfinp,*) STIMULATION_LIMIT				! maximum activation level
+read(nfinp,*) X_SIZE						! size of bone region (square) (um)
+read(nfinp,*) Y_SIZE						! thickness of slice (um)
 
-read(nfinp,*) X_SIZE						! size of bone region (square)
-read(nfinp,*) Y_SIZE						! thickness of slice
-
-read(nfinp,*) CAPILLARY_DIAMETER			! capillary diameter (um) (= 3)
+read(nfinp,*) CAPILLARY_DIAMETER			! capillary diameter (um)
 read(nfinp,*) MONO_PER_MM3					! initial (equil) number of monocytes/mm3 (= 2000)
 read(nfinp,*) IN_PER_HOUR					! rate of influx of monocytes from the blood
 read(nfinp,*) STEM_PER_MM3					! number of stem cells/mm3
@@ -1398,10 +1395,6 @@ read(nfinp,*) MAX_RESORPTION_N				! number of monos in osteoclast corresponding 
 !read(nfinp,*) MTHRESHOLD					! number of monocytes in the high-signal region that triggers fusing (25)
 
 read(nfinp,*) cross_prob					! probability (/timestep) of monocyte egress to capillary
-!read(nfinp,*) chemo_radius					! radius of chemotactic influence (sites)
-!read(nfinp,*) chemo_K_exit					! level of chemotactic influence towards exits
-!read(nfinp,*) chemo_K_DC					! level of chemotactic influence towards DCs
-
 read(nfinp,*) days							! number of days to simulate
 read(nfinp,*) seed(1)						! seed vector(1) for the RNGs
 read(nfinp,*) seed(2)						! seed vector(2) for the RNGs
@@ -1589,7 +1582,7 @@ use, intrinsic :: iso_c_binding
 integer(c_int) :: res
 logical :: ok
 integer :: error
-real :: totsig, tnow, hour
+real :: totsig, tnow, hour, dt
 integer, parameter :: NT_EVOLVE = 20
 
 res = 0
@@ -1597,6 +1590,7 @@ res = 0
 ok = .true.
 istep = istep + 1
 tnow = istep*DELTA_T
+dt = NT_EVOLVE*DELTA_T
 
 if (TESTING_OC) then
 	call simulate_OC_step(error)
@@ -1607,7 +1601,7 @@ endif
 if (.not. initiated .and. tnow > STARTUP_TIME*24*60) then
 	call Initiation
 endif
-if (mod(istep,1000) == 0) then
+if (mod(istep,100) == 0) then
 	hour = istep/240.
 	write(logmsg,'(a,i8,f8.2,6i6)') 'istep: ',istep,hour,mono_cnt,nleft	!,mono(22)%status,mono(22)%site
 	call logger(logmsg)
@@ -1619,7 +1613,15 @@ call updater
 !write(nflog,*) 'call MonoMover: ',nmono
 call MonoMover
 if (initiated .and. mod(istep,NT_EVOLVE) == 0) then
-	call evolveCXCL12(NT_EVOLVE,totsig)
+    if (CXCL12_initialized) then
+        call solver(istep,tnow,dt)
+!    	call evolveCXCL12(NT_EVOLVE,totsig)
+    elseif (nblast > 0) then
+        call init_CXCL12
+        if (CXCL12_initialized) then
+            call setupCXCL12
+        endif
+    endif
 !	if (totsig == 0 .and. nclump > 0) then
 !		call break_clumps
 !	endif

@@ -35,7 +35,6 @@ write(*,*) 'DAYS: ',simdays
 nlen = len(infile)
 call execute(infile,nlen)
 
-simdays = 1
 nt = simdays*24*60*4
 write(*,*) 'nt: ',nt
 do it = 1,nt

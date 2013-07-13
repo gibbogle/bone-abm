@@ -32,15 +32,22 @@ logical :: use_CPORT1 = .true.
 !DEC$ ATTRIBUTES DLLEXPORT :: use_TCP
 
 ! Parameters read from inputfile
+real :: CXCL12_CHEMOLEVEL
+real :: CXCL12_KDIFFUSION
+real :: CXCL12_HALFLIFE
+
 real :: MONOCYTE_DIAMETER = 10			! um
 real :: BETA							! speed: 0 < beta < 1 
 real :: RHO								! persistence: 0 < rho < 1
 real :: S1P_CHEMOLEVEL
 real :: S1P_KDIFFUSION
-real :: S1P_KDECAY
+real :: S1P_HALFLIFE
 real :: S1P_GRADLIM
 real :: S1P1_THRESHOLD
 real :: S1P1_BASERATE
+
+real :: OB_PER_MM3
+real :: OB_SIGNAL_FACTOR
 
 real :: X_SIZE
 real :: Y_SIZE
@@ -99,14 +106,14 @@ integer :: nmono, mono_cnt, nsignal, nclast, nblast, nborn, nleft, ncap, nentrys
 integer, allocatable :: entrysite(:,:)
 type(clump_type), target :: clump(MAX_NCLUMP)
 real :: RANKSIGNAL_decayrate			! from RANKSIGNAL_halflife
-real :: CXCL12_KDECAY					! from CXCL12_HALFLIFE
+!real :: CXCL12_KDECAY					! from CXCL12_HALFLIFE
 real :: CXCL12_GRADLIM = 5.0e-4			! was equal to the initial max CXCL12 gradient at NBY+3
 										! Now need to guess the value to use!!!!!!!!
 logical :: stuck
 logical :: initiated
 logical :: use_capillary
 
-logical, parameter :: TESTING_OC = .true.
+logical, parameter :: TESTING_OC = .false.
 
 contains
 

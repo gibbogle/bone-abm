@@ -385,8 +385,8 @@ do i = 1,pclump%ncells
 	enddo
 	if (kmin /= 0) then		! move the cell to this site
 		site2 = site1 + jumpvec(:,kmin)
-		call logger(logmsg)
 		write(logmsg,'(a,i6,7i4)') 'consolidate_clump: move: ',kcell,pclump%ID,site1,site2
+		call logger(logmsg)
 		mono(kcell)%site = site2
 		occupancy(site1(1),site1(2),site1(3))%indx = 0
 		occupancy(site2(1),site2(2),site2(3))%indx = kcell

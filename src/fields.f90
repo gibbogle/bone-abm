@@ -2,11 +2,13 @@
 
 module fields
 use global
+use chemokine
 implicit none
 save
 
 real, allocatable :: S1P_conc(:,:,:), S1P_grad(:,:,:,:)
 real, allocatable :: CXCL12_conc(:,:,:), CXCL12_grad(:,:,:,:), CXCL12_influx(:,:,:)
+logical :: CXCL12_initialized
 
 contains
 
@@ -21,6 +23,25 @@ if (y < 1 .or. y > NY) return
 if (z < 1 .or. z > NZ) return
 outside = .false.
 end function
+
+!------------------------------------------------------------------------------------------------
+! Currently using chemo(:) for CXCL12 only
+!------------------------------------------------------------------------------------------------
+subroutine setupChemo
+
+chemo(CXCL12)%name = 'CXCL12'
+chemo(CXCL12)%used = .true.
+chemo(CXCL12)%diff_coef = CXCL12_KDIFFUSION
+chemo(CXCL12)%halflife = CXCL12_HALFLIFE
+chemo(CXCL12)%decay_rate = log(2.0)/chemo(CXCL12)%halflife    ! rate/min
+!CXCL12_KDECAY = log(2.0)/(CXCL12_HALFLIFE)    ! rate/min
+
+chemo(S1P)%name = 'S1P'
+chemo(S1P)%used = .true.
+chemo(S1P)%diff_coef = S1P_KDIFFUSION
+chemo(S1P)%halflife = S1P_HALFLIFE
+chemo(S1P)%decay_rate = log(2.0)/chemo(S1P)%halflife    ! rate/min
+end subroutine
 
 !----------------------------------------------------------------------------------------
 ! Since it is assumed that the cells in the marrow have an insignificant effect on the 
@@ -37,7 +58,11 @@ end function
 subroutine init_fields
 
 if (use_CXCL12) then
+    allocate(CXCL12_conc(NX,NY,NZ))
+    allocate(CXCL12_grad(3,NX,NY,NZ))
+    allocate(CXCL12_influx(NX,NY,NZ))
 	call init_CXCL12
+    CXCL12_initialized = .false.
 endif
 if (S1P_chemotaxis) then
 	call init_S1P
@@ -94,7 +119,7 @@ do x = 1,NX
 enddo
 
 if (steady) then
-	call steadystate(influx,S1P_KDIFFUSION,S1P_KDECAY,S1P_conc)
+	call steadystate(influx,chemo(S1P)%diff_coef,chemo(S1P)%decay_rate,S1P_conc)
 else
 !	allocate(dCdt(NX,NY,NZ))
 !	dCdt = 0
@@ -156,15 +181,10 @@ integer :: isignal, site(3), x, y, z, it, nt, isig, iblast
 real :: dt, sum
 real :: g(3), gamp, gmax
 type(osteoblast_type), pointer :: pblast
-!real, parameter :: Kdecay = 0.00001, Kdiffusion = 0.001
 
-write(logmsg,*) 'Initializing CXCL12: KDECAY: ', CXCL12_KDECAY
+write(logmsg,*) 'Initializing CXCL12: decay_rate: ', chemo(CXCL12)%decay_rate
 !call formulate(CXCL12_KDIFFUSION,CXCL12_KDECAY)
-
 call logger(logmsg)
-allocate(CXCL12_conc(NX,NY,NZ))
-allocate(CXCL12_grad(3,NX,NY,NZ))
-allocate(CXCL12_influx(NX,NY,NZ))
 
 CXCL12_grad = 0
 CXCL12_influx = -1
@@ -188,30 +208,33 @@ do iblast = 1,nblast
 	z = pblast%site(3)
 	CXCL12_influx(x,y,z) = BlastSignal(pblast)
 	sum = sum + CXCL12_influx(x,y,z)
-!	write(*,*) iblast,x,z,CXCL12_influx(x,y,z)
+	write(logmsg,'(4i4,e12.4)') iblast,x,y,z,CXCL12_influx(x,y,z)
+	call logger(logmsg)
 enddo
 if (sum == 0) return
 
-call steadystate(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc)
+call steadystate(CXCL12_influx,chemo(CXCL12)%diff_coef,chemo(CXCL12)%decay_rate,CXCL12_conc)
 call gradient(CXCL12_influx,CXCL12_conc,CXCL12_grad)
-!write(*,*) 'CXCL12 gradient: ',CXCL12_grad(:,25,25,25)
-write(logmsg,*) 0,CXCL12_conc(NX/2,NBY+2,NZ/2)
-call logger(logmsg)
 ! Testing convergence
-nt = 10
-dt = 100*DELTA_T
-do it = 1,nt
-	call evolve(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc,dt)
-	write(logmsg,*) it,CXCL12_conc(NX/2,NBY+2,NZ/2)
-	call logger(logmsg)
-	sum = 0
-	do isig = 1,nsignal
-		site = signal(isig)%site
-		sum = sum + CXCL12_conc(site(1),NBY+1,site(3))
-	enddo
-	write(logmsg,*) 'Mean patch CXCL12: ',sum/nsignal
-	call logger(logmsg)
-enddo
+!nt = 0
+!dt = 10*DELTA_T
+!do it = 1,nt
+!	call evolve(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc,dt)
+!	write(logmsg,*) it,CXCL12_conc(NX/2,NBY+2,NZ/2)
+!	call logger(logmsg)
+!	sum = 0
+!	do isig = 1,nsignal
+!		site = signal(isig)%site
+!		sum = sum + CXCL12_conc(site(1),NBY+1,site(3))
+!	enddo
+!	write(logmsg,*) 'Mean patch CXCL12: ',sum/nsignal
+!	call logger(logmsg)
+!	call gradient(CXCL12_influx,CXCL12_conc,CXCL12_grad)
+!	y = NBY+4
+!	do x = 20,30
+!		write(nflog,'(i4,9e12.3)') x,(CXCL12_grad(:,x,y,z),z=20,22)
+!	enddo
+!enddo
 y = NBY + 3
 gmax = 0
 do x = 1,NX
@@ -223,9 +246,17 @@ do x = 1,NX
 		enddo
 !	enddo
 enddo
+write(logmsg,*) 'CXCL12 initialized'
+call logger(logmsg)
+y = NBY+4
+z = NZ/2
+do x = NX/2-4,NX/2+4
+	write(nflog,'(i4,9e12.3)') x,(CXCL12_grad(:,x,y,z))
+enddo
 write(logmsg,*) 'Max CXCL12 gradient at y=NBY+3: ',gmax
 call logger(logmsg)
 CXCL12_GRADLIM = gmax
+CXCL12_initialized = .true.
 end subroutine
 
 !----------------------------------------------------------------------------------------
@@ -267,20 +298,20 @@ do iblast = 1,nblast
 	x = pblast%site(1)
 	z = pblast%site(3)
 	sig = BlastSignal(pblast)
-	write(nflog,*) 'sig: ',iblast,sig
+	write(nflog,'(a,4i4,e12.3)') 'sig: ',iblast,x,y,z,sig
 	if (sig > OB_SIGNAL_THRESHOLD) then
 		CXCL12_influx(x,y,z) = sig
 	endif
 	totsig = totsig + CXCL12_influx(x,y,z)
 enddo
-!write(nflog,*) 'evolveCXCL12: totsig: ',istep,totsig
+write(nflog,*) 'evolveCXCL12: totsig: ',istep,totsig
 if (totsig > 0) then
-	call evolve(CXCL12_influx,CXCL12_KDIFFUSION,CXCL12_KDECAY,CXCL12_conc,dt)
+	call evolve(CXCL12_influx,chemo(CXCL12)%diff_coef,chemo(CXCL12)%decay_rate,CXCL12_conc,dt)
 	call gradient(CXCL12_influx,CXCL12_conc,CXCL12_grad)
-!	y = NBY+4
-!	do x = 20,30
-!		write(nflog,'(i4,9e12.3)') x,(CXCL12_grad(:,x,y,z),z=20,22)
-!	enddo
+	y = NBY+4
+	do x = 20,30
+		write(nflog,'(i4,9e12.3)') x,(CXCL12_grad(:,x,y,z),z=20,22)
+	enddo
 endif
 
 !write(logmsg,*) 'Mean patch CXCL12: ',sum/nsignal, totsig
@@ -295,12 +326,15 @@ real :: influx(:,:,:), C(:,:,:)
 real :: Kdiffusion, Kdecay
 real :: dx2diff, total, maxchange, maxchange_par, total_par
 real, parameter :: alpha = 0.5
-real, parameter :: tol = 1.0e-6		! max change in C at any site as fraction of average C
+real, parameter :: tol = 1.0e-5		! max change in C at any site as fraction of average C
 integer :: nc, nc_par, k, it, kpar, dz
 integer :: zlim(2,16), z1, z2, zfr, zto, n	! max 16 threads
 real, allocatable :: C_par(:,:,:)
 integer :: nt = 10000
 real, allocatable :: Ctemp(:,:,:)
+
+write(logmsg,'(a,2e12.4)') 'steadystate: Kdiffusion, Kdecay: ',Kdiffusion, Kdecay
+call logger(logmsg)
 
 dz = NZ/Mnodes + 0.5
 do k = 1,Mnodes
@@ -467,7 +501,7 @@ subroutine evolve(influx,Kdiffusion,Kdecay,C,dt)
 real :: influx(:,:,:), C(:,:,:)
 real :: Kdiffusion, Kdecay, dt
 real :: dx2diff, total, maxchange, C0, dC, sum, dV, dMdt
-real, parameter :: alpha = 0.99
+!real, parameter :: alpha = 0.99
 integer :: x, y, z, xx, yy, zz, nb, nc, k, it
 real, allocatable :: Ctemp(:,:,:)
 

@@ -266,7 +266,7 @@ call LiftSeal
 if (mod(istep_OC,10) == 0 .or. istep_OC >= 1000000) then	
 !	dbug = .true.
 	if (WOK) then
-		write(*,'(2i8,6(2x,2f6.2))') istep_OC,nclast,((OCstate(4*i-3),OCstate(4*i-1)),i=1,nclast)
+!		write(*,'(2i8,6(2x,2f6.2))') istep_OC,nclast,((OCstate(4*i-3),OCstate(4*i-1)),i=1,nclast)
 !		call LiftSeal
 		call OCfsignal(OCstate)
 !		ts_dbug = .true.
@@ -277,7 +277,6 @@ if (mod(istep_OC,10) == 0 .or. istep_OC >= 1000000) then
 		site(1) = site(1) - 1
 		site(3) = site(3) - 1
 		sig01 = TotalSignal(pclast,site)
-		write(*,*) 'sig10,sig01: ',sig10,sig01
 		ts_dbug = .false.
 	endif
 	dbug = .false.
@@ -1990,6 +1989,8 @@ do iclast = 1,nclast
 	if (pclast%status == DEAD) cycle 
 	r2 = pclast%radius**2
 	pclast%site = pclast%cm + 0.5
+!	write(logmsg,'(a,5i6)') 'iclast: site, npit',iclast,pclast%site,pclast%npit
+!	call logger(logmsg)
 	do i = 1,pclast%npit
 		d2 = pclast%pit(i)%delta(1)**2 + pclast%pit(i)%delta(3)**2
 		if (d2 > r2) cycle
@@ -2117,7 +2118,9 @@ integer :: site1(3),site2(3)
 integer :: region, kcell2
 integer :: irel,dir1,lastdir1,status
 integer :: savesite2(3,26), jmpdir(26)
-real(8) :: psum, p(26), R, wS1P(27), g(3), gamp, S1Pfactor, wCXCL12(27), CXCL12factor
+real(8) :: psum, p(26), R
+real(8) :: wS1P(27), g_S1P(3), gamp_S1P, S1Pfactor
+real(8) :: wCXCL12(27), g_CXCL12(3), gamp_CXCL12, CXCL12factor
 real :: f0, f, motility_factor
 logical :: free, cross, field
 
@@ -2152,7 +2155,6 @@ f0 = 0
 field = .false.
 
 R = par_uni(kpar)
-!call random_number(R)
 if (R <= dirprob(0)) then    ! case of no jump
 	return
 endif
@@ -2161,39 +2163,34 @@ endif
 
 ! Set up weights in the 6 principal axis directions corresponding to S1P_grad(:,:,:,:)
 if (S1P_chemotaxis) then
-	g = S1P_grad(:,site1(1),site1(2),site1(3))
-	gamp = sqrt(dot_product(g,g))	! Magnitude of S1P gradient
-	g = g/gamp
-	call chemo_weights(g,wS1P)		! w(:) now holds the normalized gradient vector components
-	S1Pfactor = S1P_CHEMOLEVEL*min(1.0,gamp/S1P_GRADLIM)*cell%S1P1
+	g_S1P = S1P_grad(:,site1(1),site1(2),site1(3))
+	gamp_S1P = sqrt(dot_product(g_S1P,g_S1P))	! Magnitude of S1P gradient
+	if (gamp_S1P > 0) then
+	    g_S1P = g_S1P/gamp_S1P
+	endif
+	call chemo_weights(g_S1P,wS1P)		! w(:) now holds the normalized gradient vector components
+	S1Pfactor = S1P_CHEMOLEVEL*min(1.0,gamp_S1P/S1P_GRADLIM)*cell%S1P1
 !	write(*,*) 'g,gamp: ',g,gamp
 !	write(*,*) 'wS1P: ',wS1P
 !	write(*,*) 'S1P1: ',cell%S1P1
 endif
 ! Set up weights in the 6 principal axis directions corresponding to CXCL12_grad(:,:,:,:)
 if (CXCL12_chemotaxis .and. initiated) then
-	g = CXCL12_grad(:,site1(1),site1(2),site1(3))
-	gamp = dot_product(g,g)	! Magnitude of CXCL12 gradient
-	if (gamp < 1.0e-6) then		!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! check threshold !!!!!!!!!
+	g_CXCL12 = CXCL12_grad(:,site1(1),site1(2),site1(3))
+	gamp_CXCL12 = dot_product(g_CXCL12,g_CXCL12)	! Magnitude of CXCL12 gradient
+	if (gamp_CXCL12 < 1.0e-6) then		!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! check threshold !!!!!!!!!
 		CXCL12factor = 0
 		wCXCL12 = 0
 	else
-		g = g/gamp
-		call chemo_weights(g,wCXCL12)		! w(:) now holds the normalized gradient vector components
+		g_CXCL12 = g_CXCL12/gamp_CXCL12
+		call chemo_weights(g_CXCL12,wCXCL12)		! w(:) now holds the normalized gradient vector components
 	!	CXCL12factor = CXCL12_CHEMOLEVEL*min(1.0,gamp/CXCL12_GRADLIM)*cell%RANKSIGNAL
-		CXCL12factor = CXCL12_CHEMOLEVEL*min(1.0,gamp/CXCL12_GRADLIM)
-		if (istep >= 5760 .and. kcell == 300) then
-			write(nflog,*) 'g,gamp: ',g,gamp,CXCL12_GRADLIM
-			write(nflog,*) 'wCXCL12: ',wCXCL12
-			write(nflog,*) 'CXCL12factor: ',CXCL12factor
-		endif
+		CXCL12factor = CXCL12_CHEMOLEVEL*min(1.0,gamp_CXCL12/CXCL12_GRADLIM)
 	endif
 else
 	CXCL12factor = 0
 	wCXCL12 = 0
 endif
-!write(*,*) 'S1Pfactor, CXCL12factor: ',S1Pfactor, CXCL12factor
-!stop
 lastdir1 = cell%lastdir
 p = 0
 psum = 0
@@ -2204,10 +2201,6 @@ do irel = 1,nreldir
 	if (site2(1) < 1 .or. site2(1) > NX) cycle
 	if (site2(2) < NBY+2 .or. site2(2) > NY) cycle
 	if (site2(3) < 1 .or. site2(3) > NZ) cycle
-	if (site2(3) > NZ) then
-		write(*,*) 'Error: MonoJumper: ',kcell,site1,irel,dir1,jumpvec(:,dir1),site2
-		stop
-	endif
 	! With the call to free_site() returning region and kcell, decisions can be made
 	! about transition to BLOOD, for example.
 	free = free_site(site2,region,kcell2)
@@ -2238,15 +2231,10 @@ do irel = 1,nreldir
 		if (CrossToBlood(kcell,site1)) then
 			return
 		endif
-!		write(*,*) 'Not free_site: ',site2
 	endif
 enddo
 
 if (psum == 0) then
-!	cell%lastdir = random_int(1,6,kpar)
-!	if (field) then
-!		write(*,*) 'clustering: ',kcell
-!	endif
 	write(logmsg,*) 'psum = 0: ',cell%ID
 	call logger(logmsg)
 	return
@@ -2256,7 +2244,6 @@ endif
 
 ! Now choose a direction on the basis of these probs p()
 R = par_uni(kpar)
-!call random_number(R)
 R = psum*R
 psum = 0
 do irel = 1,nreldir
@@ -2266,8 +2253,15 @@ do irel = 1,nreldir
    	endif
 enddo
 if (irel > nreldir) then
+    write(*,*) 'irel > nreldir: psum: ',istep,kcell,irel,psum
+    write(*,*) 'p:'
+    write(*,'(10f7.4)') p
+    write(*,*) 'g_CXCL12:'
+    write(*,'(10f7.4)') g_CXCL12
+    stop
 	irel = nreldir
 endif
+
 site2 = savesite2(:,irel)
 if (irel <= nreldir) then
 	dir1 = reldir(lastdir1,irel)
@@ -2312,8 +2306,6 @@ else					! +z
 	w(15) = g(3)		! reldir26(6,1)
 endif
 end subroutine
-
-
 
 !---------------------------------------------------------------------
 ! For a candidate destination site, returns .true. if the site is free,
@@ -2524,29 +2516,29 @@ end function
 
 !---------------------------------------------------------------------
 !---------------------------------------------------------------------
-subroutine chemo(S,site,p,jmpdir,pstar)
-integer :: site(3), jmpdir(MAXRELDIR)
-real :: S, p(0:MAXRELDIR), pstar(0:MAXRELDIR)
-integer :: u(3), i
-real :: g(3), gdotu, psum
-
-g = S1P_grad(:,site(1),site(2),site(3))
-do i = 1,MAXRELDIR
-	if (p(i) == 0) cycle
-	u = jumpvec(:,jmpdir(i))
-	gdotu = g(1)*u(1) + g(2)*u(2) + g(3)*u(3)
-	pstar(i) = p(i) + Kchemo*S*gdotu
-	pstar(i) = max(pstar(i),0.0)
-	pstar(i) = min(pstar(i),1.0)
-	psum = psum + pstar(i)
-enddo
-if (psum > 1) then
-	pstar(1:MAXRELDIR) = pstar(1:MAXRELDIR)/psum
-	pstar(0) = 0
-else
-	pstar(0) = 1 - psum
-endif
-end subroutine
+!subroutine chemo(S,site,p,jmpdir,pstar)
+!integer :: site(3), jmpdir(MAXRELDIR)
+!real :: S, p(0:MAXRELDIR), pstar(0:MAXRELDIR)
+!integer :: u(3), i
+!real :: g(3), gdotu, psum
+!
+!g = S1P_grad(:,site(1),site(2),site(3))
+!do i = 1,MAXRELDIR
+!	if (p(i) == 0) cycle
+!	u = jumpvec(:,jmpdir(i))
+!	gdotu = g(1)*u(1) + g(2)*u(2) + g(3)*u(3)
+!	pstar(i) = p(i) + Kchemo*S*gdotu
+!	pstar(i) = max(pstar(i),0.0)
+!	pstar(i) = min(pstar(i),1.0)
+!	psum = psum + pstar(i)
+!enddo
+!if (psum > 1) then
+!	pstar(1:MAXRELDIR) = pstar(1:MAXRELDIR)/psum
+!	pstar(0) = 0
+!else
+!	pstar(0) = 1 - psum
+!endif
+!end subroutine
 
 !---------------------------------------------------------------------
 !---------------------------------------------------------------------

@@ -138,7 +138,7 @@ MainWindow::MainWindow(QWidget *parent)
 	if (DISABLE_TABS) {
 //		tab_monocyte->setEnabled(false);
 //		tab_osteoclast->setEnabled(false);
-//		tab_signal->setEnabled(false);
+//		tab_osteoblast->setEnabled(false);
 	}
 	goToInputs();
 }
@@ -1043,7 +1043,7 @@ void MainWindow::runServer()
 	action_save_snapshot->setEnabled(false);
 	tab_monocyte->setEnabled(false);
 	tab_osteoclast->setEnabled(false);
-	tab_signal->setEnabled(false);
+    tab_osteoblast->setEnabled(false);
     tab_run->setEnabled(false);
 
 	if (show_outputdata)
@@ -1446,7 +1446,7 @@ void MainWindow::postConnection()
 	}
 	tab_monocyte->setEnabled(true);
 	tab_osteoclast->setEnabled(true);
-	tab_signal->setEnabled(true);
+    tab_osteoblast->setEnabled(true);
 	tab_run->setEnabled(true);
 
 	// Check if a result set of this name is already in the list, if so remove it
