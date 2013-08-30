@@ -84,13 +84,13 @@ end subroutine
 ! influx(x,y,z) >= 0 for gridcells within the region.
 !----------------------------------------------------------------------------------------
 subroutine init_S1P
-integer :: x, y, z, xx, yy, zz, k, nb
+integer :: x, y, z, xx, yy, zz, k, nb, it, nt
 real, allocatable :: influx(:,:,:)
 real, allocatable :: dCdt(:,:,:)
 real, parameter :: dt = 1.0
 real, parameter :: Kperm = 0.05		! determines rate of influx of S1P
-real :: g(3), gamp, gmax
-logical :: steady = .true.
+real :: g(3), gamp, gmax, dC, C, Kdecay, Kdiffusion, sum
+logical :: ODEsteady = .true.
 
 write(logmsg,*) 'Initializing S1P'
 call logger(logmsg)
@@ -119,43 +119,47 @@ do x = 1,NX
 	enddo
 enddo
 
-if (steady) then
+if (ODEsteady) then
 	call steadystate(influx,chemo(S1P)%diff_coef,chemo(S1P)%decay_rate,S1P_conc)
 else
-!	allocate(dCdt(NX,NY,NZ))
-!	dCdt = 0
-!	do it = 1,nt
-!		if (mod(it,100) == 0) write(*,*) 'it: ',it,S1P_conc(25,25,25)
-!		do z = 1,NZ
-!			do y = 1,NY
-!				do x = 1,NX
-!					dC = 0
-!					if (influx(x,y,z) < 0) cycle
-!					C = S1P_conc(x,y,z)
-!					dC = -Kdecay*C
-!					if (influx(x,y,z) > 0) then
-!						dC = dC + influx(x,y,z)*(1 - C)
-!					endif
-!					sum = 0
-!					nb = 0
-!					do k = 1,6
-!						xx = x + neumann(1,k)
-!						yy = y + neumann(2,k)
-!						zz = z + neumann(3,k)
-!						if (outside(xx,yy,zz)) cycle
-!						if (influx(xx,yy,zz) < 0) cycle
-!						nb = nb + 1
-!						sum = sum + S1P_conc(xx,yy,zz)
-!					enddo
-!					sum = sum - nb*C
-!					dC = dC + Kdiffusion*sum
-!					dCdt(x,y,z) = dC
-!				enddo
-!			enddo
-!		enddo
-!		S1P_conc = S1P_conc + dt*dCdt
-!	enddo
-!	deallocate(dCdt)
+    nt = 1000
+    Kdiffusion = chemo(S1P)%diff_coef
+    Kdecay = chemo(S1P)%decay_rate
+	allocate(dCdt(NX,NY,NZ))
+	S1P_conc = 0
+	dCdt = 0
+	do it = 1,nt
+		if (mod(it,100) == 0) write(*,*) 'it: ',it,S1P_conc(25,25,25)
+		do z = 1,NZ
+			do y = 1,NY
+				do x = 1,NX
+					dC = 0
+					if (influx(x,y,z) < 0) cycle
+					C = S1P_conc(x,y,z)
+					dC = -Kdecay*C
+					if (influx(x,y,z) > 0) then
+						dC = dC + influx(x,y,z)*(1 - C)
+					endif
+					sum = 0
+					nb = 0
+					do k = 1,6
+						xx = x + neumann(1,k)
+						yy = y + neumann(2,k)
+						zz = z + neumann(3,k)
+						if (outside(xx,yy,zz)) cycle
+						if (influx(xx,yy,zz) < 0) cycle
+						nb = nb + 1
+						sum = sum + S1P_conc(xx,yy,zz)
+					enddo
+					sum = sum - nb*C
+					dC = dC + Kdiffusion*sum
+					dCdt(x,y,z) = dC
+				enddo
+			enddo
+		enddo
+		S1P_conc = S1P_conc + dt*dCdt
+	enddo
+	deallocate(dCdt)
 endif
 ! Now compute the gradient field.
 call gradient(influx,S1P_conc,S1P_grad)
@@ -315,8 +319,7 @@ subroutine steadystate(influx,Kdiffusion,Kdecay,C)
 real :: influx(:,:,:), C(:,:,:)
 real :: Kdiffusion, Kdecay
 real :: dx2diff, total, maxchange, maxchange_par, total_par
-real, parameter :: alpha = 0.5
-real, parameter :: tol = 1.0e-5		! max change in C at any site as fraction of average C
+real, parameter :: tol = 1.0e-4		! max change in C at any site as fraction of average C
 integer :: nc, nc_par, k, it, kpar, dz
 integer :: zlim(2,16), z1, z2, zfr, zto, n	! max 16 threads
 real, allocatable :: C_par(:,:,:)
@@ -347,12 +350,17 @@ do it = 1,nt
 		total = total + total_par
 		maxchange = max(maxchange,maxchange_par)
 	enddo
+!	if (mod(it,100) == 0) then
+!	    write(*,*) 'maxchange*nc/total: ',maxchange*nc/total
+!	endif
 	if (maxchange < tol*total/nc) then
 		write(logmsg,*) 'Convergence reached: it: ',it
 		call logger(logmsg)
 		exit
 	endif
 enddo
+write(logmsg,*) 'iterations: ',it
+call logger(logmsg)
 end subroutine	
 
 !----------------------------------------------------------------------------------------
@@ -365,7 +373,7 @@ real :: C(:,:,:), Ctemp(:,:,:), influx(:,:,:)
 integer :: z1, z2, kpar
 real :: Kdiffusion, Kdecay
 real :: dx2diff, total, maxchange, dC, sum, dV
-real, parameter :: alpha = 0.7
+real, parameter :: alpha = 0.8
 integer :: x, y, z, xx, yy, zz, nb, nc, k, zpar
 
 dx2diff = DELTA_X**2/Kdiffusion

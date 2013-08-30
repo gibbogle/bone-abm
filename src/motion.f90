@@ -267,7 +267,7 @@ call UpdateSurface
 call MovePits
 call Resorb
 call LiftSeal
-if (mod(istep_OC,10) == 0 .or. istep_OC >= 1000000) then	
+if (mod(istep_OC,100) == 0 .or. istep_OC >= 1000000) then	
 !	dbug = .true.
 	if (WOK) then
 		write(*,'(2i8,6(2x,2f6.2))') istep_OC,nclast,((OCstate(4*i-3),OCstate(4*i-1)),i=1,nclast)
@@ -281,7 +281,7 @@ if (mod(istep_OC,10) == 0 .or. istep_OC >= 1000000) then
 		site(1) = site(1) - 1
 		site(3) = site(3) - 1
 		sig01 = TotalSignal(pclast,site)
-		write(*,*) 'sig10,sig01: ',sig10,sig01
+!		write(*,*) 'sig10,sig01: ',sig10,sig01
 		ts_dbug = .false.
 	endif
 	dbug = .false.
@@ -298,7 +298,7 @@ integer :: kpar = 0
 real, parameter :: interval = 5	! days
 
 call logger('OCsetup')
-nOClist = 4
+nOClist = 3
 allocate(OClist(nOClist))
 do iclast = 1,nOClist
 	pclast => OClist(iclast)
@@ -320,6 +320,7 @@ do iclast = 1,nOClist
 	pclast%radius = OCradius(n)
 	pclast%status = QUEUED
 	pclast%prevcm = -999
+    pclast%lastdir = random_int(1,8,kpar)
 	call MakePits(pclast)
 enddo
 nclast = 0
@@ -527,9 +528,11 @@ elseif (option == 2) then
 				pclast%count = pclast%count + 1
 				pclast%radius = (25/DELTA_X)*sqrt(pclast%count/20.)
 				pclast%nucleus_dietime(pclast%count) = tnow + get_nucleuslifetime()	!NUCLEUS_LIFETIME*24*60	! the last nucleus always has latest dietime
-				write(logmsg,'(a,2i4,f8.1)') 'UpdateNuclei: iclast, nucleus, dietime: ', &
-					iclast,pclast%count,pclast%nucleus_dietime(pclast%count)
-				call logger(logmsg)
+                if (verbose) then
+				    write(logmsg,'(a,2i4,f8.1)') 'UpdateNuclei: iclast, nucleus, dietime: ', &
+					    iclast,pclast%count,pclast%nucleus_dietime(pclast%count)
+       				call logger(logmsg)
+			    endif
 				call order_dietimes(pclast)
 				pclast%last_nucleus_add_time = tnow
 				call MakePits(pclast)
@@ -546,8 +549,10 @@ do iclast = 1,nclast
 	pclast => clast(iclast)
 	if (pclast%status /= RESORBING) cycle
 	if (pclast%nucleus_dietime(1) < tnow) then
-		write(logmsg,'(a,f8.1,3i6)') 'nucleus death: ',tnow,istep,iclast,pclast%count
-		call logger(logmsg)
+        if (verbose) then
+    		write(logmsg,'(a,f8.1,3i6)') 'nucleus death: ',tnow,istep,iclast,pclast%count
+    		call logger(logmsg)
+    	endif
 		pclast%count = pclast%count - 1
 		do i = 1,pclast%count
 			pclast%nucleus_dietime(i) = pclast%nucleus_dietime(i+1)
@@ -586,16 +591,14 @@ do iclast = 1,nOClist
 		pclast%status = JOINING
 		joined = .true.
 		nclast = nclast + 1
-		write(logmsg,*) 'Joining: ',iclast,t
-		call logger(logmsg)
+        if (verbose) then
+    		write(logmsg,*) 'Joining: ',iclast,t
+    		call logger(logmsg)
+    	endif
 		clast(nclast) = OClist(iclast)
 		pclast => clast(nclast)
 		call SetJoiningLocation(pclast)
 		pclast%dcm = 10
-		do i = 1,pclast%count
-			write(logmsg,'(a,i4,f8.1)') 'nucleus_dietime: ',i,pclast%nucleus_dietime(i)
-			call logger(logmsg)
-		enddo
 		exit
 	endif
 enddo
@@ -607,8 +610,10 @@ do iclast = 1,nclast
 !	write(*,'(a,i3,3f10.6)') 'd: ',iclast,pclast%dcm(1),pclast%dcm(3),d 
 	if (d < JOIN_DISP_THRESHOLD .or. t-pclast%entrytime > JOIN_TIME_LIMIT) then
 		pclast%status = RESORBING
-		write(logmsg,*) 'Joined: ',iclast,d, t-pclast%entrytime, JOIN_TIME_LIMIT
-		call logger(logmsg)
+        if (verbose) then
+		    write(logmsg,*) 'Joined: ',iclast,d, t-pclast%entrytime, JOIN_TIME_LIMIT
+		    call logger(logmsg)
+		endif
 	endif
 enddo
 end subroutine
@@ -622,7 +627,12 @@ real :: xmax, cm(3)
 integer :: iclast, imax
 integer :: kpar=0
 
+if (nclast == 1) then   ! first OC
+    pclast0%totalsignal = 0
+    return
+endif
 xmax = 0
+imax = 0
 do iclast = 1,nclast
 	pclast => clast(iclast)
 	if (pclast%status == DEAD) cycle
@@ -770,7 +780,11 @@ real :: d, x, z
 n = pclast%radius + 3
 k = 0
 do dx = -n,n
+    x = pclast%site(1) + dx 
+	if (x < 1 .or. x > NX) cycle
 	do dz = -n,n
+	    z = pclast%site(3) + dz
+    	if (z < 1 .or. z > NZ) cycle
 		d = sqrt(real(dx*dx + dz*dz))
 		if (d < pclast%radius + 2.0) then
 			k = k+1
@@ -1390,7 +1404,7 @@ do indx0 = 1,nindx
 		call logger(logmsg)
 		stop
 	endif
-	if (pclast0%status == JOINING) then
+	if (verbose .and. pclast0%status == JOINING) then
 		write(logmsg,*) 'OCfsignal: joining: indx0, iclast0: ',indx0,iclast0
 		call logger(logmsg)
 	endif
@@ -1990,17 +2004,17 @@ type(osteoclast_type), pointer :: pclast
 integer :: iclast, i, site(3), x, z
 real :: r2, d2
 
-call logger('UpdateSurface')
+!call logger('UpdateSurface')
 surface%iclast = 0
 do iclast = 1,nclast
-	write(logmsg,*) 'iclast,nclast: ',iclast,nclast
-	call logger(logmsg)
+!	write(logmsg,*) 'iclast,nclast: ',iclast,nclast
+!	call logger(logmsg)
 	pclast => clast(iclast)
 	if (pclast%status == DEAD) cycle 
 	r2 = pclast%radius**2
 	pclast%site = pclast%cm + 0.5
-	write(logmsg,*) 'r2, site: ',r2,pclast%site
-	call logger(logmsg)
+!	write(logmsg,*) 'r2, site: ',r2,pclast%site
+!	call logger(logmsg)
 	do i = 1,pclast%npit
 		d2 = pclast%pit(i)%delta(1)**2 + pclast%pit(i)%delta(3)**2
 		if (d2 > r2) cycle
