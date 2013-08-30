@@ -28,7 +28,7 @@ integer :: nt = 10000
 real :: simdays
 character*(64) :: infile = 'basecase.inp'
 integer :: res, nlen
-integer :: run_case = 1
+integer :: run_case = 1     ! 1 = mono, 2 = OC
 
 use_tcp = .false.
 call get_days(infile,simdays)

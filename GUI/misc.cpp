@@ -77,6 +77,7 @@ void SocketHandler::processor()
     socket = tcpServer->nextPendingConnection();
 	sprintf(msg,"got server connection: %p",socket);	
 	LOG_MSG(msg);
+    Sleep(100);
     emit sh_connected();
 	QString qdata;
 	QByteArray ba;
@@ -126,7 +127,7 @@ void ExecThread::run()
     int result;
 	const char *infile;
 	QString infile_path = inputFile;
-	QString casename = QFileInfo(inputFile).baseName();
+//	QString casename = QFileInfo(inputFile).baseName();
 	int len_infile = infile_path.length();
 	std::string std_infile = infile_path.toStdString();
 	infile = std_infile.c_str();
@@ -139,10 +140,12 @@ void ExecThread::run()
     }
 	// Now the "Stop" button can be enabled
 	emit(initialized());
+
 	get_dimensions(&NX,&NY,&NZ,&NBY);
 	sprintf(msg,"exthread: nsteps: %d",nsteps);
 	LOG_MSG(msg);
 	for (int i=1; i<= nsteps; i++) {
+        Sleep(1);
 		bool updated = false;
 		if (paused && !updated) {
 			snapshot();
@@ -155,9 +158,9 @@ void ExecThread::run()
 		int res=0;
 		simulate_step(&res);
 		if (stopped) break;
-		if (i%240 == 0) {
+        if (i%240 == 0) {   //0
 			mutex1.lock();
-			get_summary(summaryData);
+            get_summary(summaryData);
 			mutex1.unlock();
 			emit summary();		// Emit signal to update summary plots, at hourly intervals
 		}
@@ -174,7 +177,8 @@ void ExecThread::run()
 	snapshot();
 	Sleep(10);
 	terminate_run(&result);
-	LOG_MSG("Returning from exthread");
+    Sleep(10);
+    LOG_MSG("Returning from exthread");
 	return;
 }
 

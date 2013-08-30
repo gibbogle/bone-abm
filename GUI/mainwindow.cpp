@@ -85,7 +85,8 @@ MainWindow::MainWindow(QWidget *parent)
     first = true;
 	started = false;
     firstVTK = true;
-	showingVTK = 0;
+    showingVTK = 0;
+    vtk = NULL;
 	nGraphCases = 0;
 	for (int i=0; i<Plot::ncmax; i++) {
 		graphResultSet[i] = 0;
@@ -114,8 +115,8 @@ MainWindow::MainWindow(QWidget *parent)
 	loadParams();
 	writeout();
     timer = new QTimer(this);
-	vtk = new MyVTK(mdiArea_VTK);
-	vtk->init();
+    vtk = new MyVTK(mdiArea_VTK);
+    vtk->init();
 	tabs->setCurrentIndex(0);
 	goToInputs();
 }
@@ -807,14 +808,13 @@ void MainWindow::goToOutputs()
 //-------------------------------------------------------------
 void MainWindow::goToVTK()
 {
-	LOG_QMSG("goToVTK");
+//	LOG_QMSG("goToVTK");
 	if (started) {
 		stackedWidget->setCurrentIndex(2);
 		action_outputs->setEnabled(true);
-		action_inputs->setEnabled(true);
-		action_VTK->setEnabled(false);
-		showingVTK = 1;
-		LOG_QMSG("showingVTK");
+        action_inputs->setEnabled(true);
+        action_VTK->setEnabled(false);
+        showingVTK = 1;
 	}
 }
 
@@ -992,8 +992,10 @@ void MainWindow::runServer()
 	connect(sthread0, SIGNAL(sh_connected()), this, SLOT(preConnection()));
 	connect(sthread0, SIGNAL(sh_disconnected()), this, SLOT(postConnection()));
 	sthread0->start();
-	vtk->cleanup();
-	Sleep(100);
+    if (vtk) {
+        vtk->cleanup();
+    }
+    Sleep(100);
 
 	hours = 0;
 	nt_vtk = 0;
@@ -1049,7 +1051,7 @@ void MainWindow::preConnection()
 	vtkfile = casename + ".pos";
 	newR->casename = casename;
 	int nsteps = int(hours+1.5);
-	sprintf(msg,"preConnection: nsteps: %d",nsteps);
+    sprintf(msg,"preConnection: hourly plot points: %d",nsteps);
 	LOG_MSG(msg);
 	newR->nsteps = nsteps;
 	newR->tnow = new double[nsteps];
@@ -1562,7 +1564,7 @@ void MainWindow::changeParam()
 		} else if (wname.contains("cbox_")) {
 
 			QCheckBox *checkBox = (QCheckBox *)w;
-			int v;
+            int v=0;
 			QString wtag = wname.mid(5);
 			for (int k=0; k<parm->nParams; k++) {
 				PARAM_SET p = parm->get_param(k);

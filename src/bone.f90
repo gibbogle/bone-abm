@@ -137,6 +137,8 @@ surface%signal = 0
 
 if (OC_model) then
 	use_capillary = .false.
+	ncap = 0
+	nblast = 0
 	nentrysites = 0
 else
 	if (use_capillary) then
@@ -1347,6 +1349,7 @@ do iblast = 1,nblast
 	blast_list(j+5) = pblast%status
 enddo
 nblast_list = k
+
 end subroutine
 
 !-----------------------------------------------------------------------------------------

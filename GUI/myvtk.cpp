@@ -156,7 +156,7 @@ MyVTK::MyVTK(QWidget *page)
 
 	//Create a PolyData
 
-	polygonPolyData = vtkSmartPointer<vtkPolyData>::New();
+    polygonPolyData = vtkSmartPointer<vtkPolyData>::New();
 
 	polygonPolyData->Allocate();
 
@@ -165,7 +165,7 @@ MyVTK::MyVTK(QWidget *page)
 	polygonPolyData->InsertNextCell(VTK_QUAD, pointsIds);
 
 
-	//Create a mapper
+    //Create a mapper
 	tileMapper = vtkPolyDataMapper::New();
 	tileMapper->SetInput(polygonPolyData);
 	tileMapper->ScalarVisibilityOff();
@@ -177,7 +177,7 @@ MyVTK::MyVTK(QWidget *page)
 	textSource->Update();
 
 	// Create a mapper
-	textMapper = vtkPolyDataMapper::New();
+    textMapper = vtkPolyDataMapper::New();
 	textMapper->SetInputConnection(textSource->GetOutputPort());
 
 	// Create a glypher
@@ -607,7 +607,7 @@ void MyVTK::process_tiles()
 	unsigned char red[3] = {255,0,0};
 	unsigned char bone[3] = {250,250,128};
 
-	vtkSmartPointer<vtkCellArray> dummycells;
+//	vtkSmartPointer<vtkCellArray> dummycells;
 
 	// Set up bone surface tile actors.  These are unchanging, except when a new pit is
 	// initiated, in which case the position (y) is modified.  This is separate from
@@ -811,12 +811,14 @@ void MyVTK::process_tiles()
 //---------------------------------------------------------------------------------------------
 void MyVTK::init()
 {
-    T_Actor_list.clear();
+//    T_Actor_list.clear();
 	M_Actor_list.clear();
-    B_Actor_list.clear();
+//    B_Actor_list.clear();
 	C_Actor_list.clear();
-	Tile_Actor_list.clear();
-	verttile_list.clear();
+    OB_Actor_list.clear();
+    OC_Actor_list.clear();
+    Tile_Actor_list.clear();
+//	verttile_list.clear();
 }
 
 //---------------------------------------------------------------------------------------------
@@ -826,6 +828,7 @@ void MyVTK::cleanup()
 	int i;
 	vtkActor *actor;
 	LOG_MSG("VTK cleanup");
+
 	for (i = 0; i<M_Actor_list.length(); i++) {
 		actor = M_Actor_list[i];
 		if (actor != 0) {
@@ -840,14 +843,21 @@ void MyVTK::cleanup()
 			actor->Delete();
 		}
 	}
-	for (i = 0; i<B_Actor_list.length(); i++) {
-		actor = B_Actor_list[i];
+    for (i = 0; i<OB_Actor_list.length(); i++) {
+        actor = OB_Actor_list[i];
 		if (actor != 0) {
 			ren->RemoveActor(actor);
 			actor->Delete();
 		}
 	}
-	for (i = 0; i<Tile_Actor_list.length(); i++) {
+    for (i = 0; i<OC_Actor_list.length(); i++) {
+        actor = OC_Actor_list[i];
+        if (actor != 0) {
+            ren->RemoveActor(actor);
+            actor->Delete();
+        }
+    }
+    for (i = 0; i<Tile_Actor_list.length(); i++) {
 		actor = Tile_Actor_list[i];
 		if (actor != 0) {
 			ren->RemoveActor(actor);
@@ -877,26 +887,28 @@ void MyVTK::cleanup()
 		glactor->Delete();
 		glactor = 0;
 	}
-	for (i=0; i<verttile_list.length(); i++) {
-		actor = verttile_list[i].actor;
-		ren->RemoveActor(actor);
-		actor->Delete();
-	}
+//	for (i=0; i<verttile_list.length(); i++) {
+//		actor = verttile_list[i].actor;
+//		ren->RemoveActor(actor);
+//		actor->Delete();
+//	}
 
-	verttile_list.clear();
-	T_Actor_list.clear();
+//	verttile_list.clear();
+//	T_Actor_list.clear();
 	M_Actor_list.clear();
-    B_Actor_list.clear();
-	C_Actor_list.clear();
+    OB_Actor_list.clear();
+    OC_Actor_list.clear();
+    C_Actor_list.clear();
 	Tile_Actor_list.clear();
 	first_VTK = true;
+
 }
 
 //---------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------
 void MyVTK::renderCells()
 {
-//	LOG_MSG("VTK: renderCells");
+//    LOG_QMSG("VTK: renderCells");
 
 	process_Mcells();
 	process_capillaries();
@@ -904,7 +916,7 @@ void MyVTK::renderCells()
 	process_osteoclasts();
 	process_osteoblasts();
 
-	if (first_VTK) {
+    if (first_VTK) {
 		LOG_MSG("Initializing the renderer");
 		ren->ResetCamera();
 	}
@@ -1174,7 +1186,6 @@ void MyVTK::process_osteoblasts()
 	int iblast, k;
 	BLAST_POS ob;
 	vtkActor *actor;
-	double theta;
 	double blastColor[] = {0.0,0.5,1.0};
 
 	int na = OB_Actor_list.length();

@@ -139,14 +139,14 @@ public:
 	QList<BLAST_POS > blastpos_list;
 	QList<SURFACE_TILE> tile_list;
 	QList<VERT_TILE> verttile_list;
-	QList<vtkActor *> M_Actor_list;
-	QList<vtkActor *> T_Actor_list;
-	QList<vtkActor *> D_Actor_list;
-	QList<vtkActor *> B_Actor_list;
-	QList<vtkActor *> C_Actor_list;
-	QList<vtkActor *> OC_Actor_list;
-	QList<vtkActor *> OB_Actor_list;
-	QList<vtkActor *> Tile_Actor_list;
+    QList<vtkActor *> M_Actor_list;     // monocyte
+    QList<vtkActor *> T_Actor_list;     // T cell
+    QList<vtkActor *> D_Actor_list;     // D cell
+    QList<vtkActor *> B_Actor_list;     // B cell
+    QList<vtkActor *> C_Actor_list;     // capillary
+    QList<vtkActor *> OC_Actor_list;    // osteoclast
+    QList<vtkActor *> OB_Actor_list;    // osteoblast
+    QList<vtkActor *> Tile_Actor_list;  // tile
 
 	BONE **bone_array;
 
@@ -162,7 +162,7 @@ public:
 	vtkPolyDataMapper *cylMapper;
 	vtkPolyDataMapper *tileMapper;
 	vtkPolyDataMapper *clastMapper;
-	vtkPolyDataMapper *blastMapper;
+//	vtkPolyDataMapper *blastMapper;
 	vtkPolyDataMapper *textMapper;
 
 	vtkSmartPointer<vtkPolyData> polygonPolyData;

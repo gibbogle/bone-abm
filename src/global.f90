@@ -113,6 +113,7 @@ logical :: stuck
 logical :: initiated
 logical :: use_capillary
 logical :: CXCL12_initialized
+logical :: verbose = .false.
 
 logical :: OC_model						! this flag turns on the osteoclast simulation
 
